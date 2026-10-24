@@ -33,18 +33,25 @@ Rust, React and TypeScript. This is not an official OpenAI, Anthropic or GitHub 
 ## Download and run
 
 1. Open [Releases](https://github.com/MakFly/codenotch-windows/releases/latest).
-2. Download `CodeNotch-0.1.0-windows-x64.zip`, then extract it.
-3. Run `CodeNotch.exe`. Hover over the small tab on the right edge of the screen.
+2. Download and run `CodeNotch-0.1.0-windows-x64-setup.exe`.
+3. Launch CodeNotch from the Start menu. Hover over the small tab on the right edge of the screen.
 4. Open the settings wheel to configure accounts.
 
-The standalone `CodeNotch.exe` is also available. The ZIP includes the license,
-third-party notices and a getting-started guide.
+The installer installs for your Windows account, creates shortcuts and adds an
+entry to Windows Installed apps for removal. If WebView2 is missing, it downloads
+Microsoft's runtime installer; an internet connection is needed for that step.
+
+For portable use, download and extract `CodeNotch-0.1.0-windows-x64.zip`, then run
+`CodeNotch.exe`. The ZIP includes the license, third-party notices and a
+getting-started guide. A standalone executable is also available.
 
 Requires **Windows 10/11 x64** and the
 [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/).
-This first release is portable and unsigned, with no installer, automatic
-startup or automatic updater. Windows may block unsigned executables; do not
-disable security features to bypass a block.
+The installer and portable executable are unsigned. Windows may display a
+SmartScreen warning or block unsigned applications under Smart App Control;
+installation is not guaranteed on every security configuration. See
+[Microsoft's explanation](https://learn.microsoft.com/windows/apps/package-and-deploy/smartscreen-reputation).
+There is no automatic startup or automatic updater.
 
 Verify downloads against `SHA256SUMS.txt` using PowerShell:
 
@@ -131,6 +138,8 @@ bun run desktop:build --no-bundle
 ```
 
 The native binary is generated at `src-tauri/target/release/smashtoken.exe`.
+To also build the NSIS installer locally, run `bun run desktop:build` without
+`--no-bundle`. The installer is generated in `src-tauri/target/release/bundle/nsis/`.
 Internal package and configuration identifiers retain the original `smashtoken`
 name. Release downloads use `CodeNotch.exe`.
 

@@ -15,15 +15,24 @@ fournisseurs concernés.
 
 ## Installer
 
-1. Téléchargez `CodeNotch-0.1.0-windows-x64.zip` depuis les releases.
-2. Décompressez l'archive et lancez `CodeNotch.exe`.
+1. Téléchargez `CodeNotch-0.1.0-windows-x64-setup.exe` depuis les releases.
+2. Lancez l'installateur, puis CodeNotch depuis le menu Démarrer.
 3. Survolez la languette au bord droit et ouvrez les réglages avec la roue.
 4. Pour le français : **Appearance and alerts → Interface language → Français**.
 
-Windows 10/11 x64 et WebView2 sont requis. Version portable et non signée,
-sans installateur ni mise à jour automatique. Ne désactivez pas les protections
-Windows pour contourner un blocage. Les empreintes des téléchargements figurent
-dans `SHA256SUMS.txt`.
+L'application s'installe pour votre compte Windows, avec raccourcis et
+désinstallation depuis les applications installées de Windows. Si WebView2
+manque, l'installateur télécharge le programme d'installation Microsoft : cette
+étape nécessite une connexion internet. Windows 10/11 x64 est requis.
+
+Une version portable reste disponible : décompressez
+`CodeNotch-0.1.0-windows-x64.zip` et lancez `CodeNotch.exe`.
+
+L'installateur et l'application ne sont pas signés. SmartScreen peut afficher
+une alerte et Smart App Control peut bloquer leur exécution selon la configuration
+de sécurité. Voir les [explications de Microsoft](https://learn.microsoft.com/windows/apps/package-and-deploy/smartscreen-reputation).
+Pas de démarrage ni de mise à jour automatiques. Les empreintes des téléchargements
+figurent dans `SHA256SUMS.txt`.
 
 ## Utiliser
 
@@ -81,6 +90,8 @@ bun run desktop:build --no-bundle
 ```
 
 Binaire : `src-tauri/target/release/smashtoken.exe`.
+Pour compiler aussi l'installateur NSIS, lancez `bun run desktop:build` sans
+`--no-bundle`. Résultat dans `src-tauri/target/release/bundle/nsis/`.
 Le format des endpoints JSON personnalisés, les tests d'interface et les
 instructions de contribution figurent dans le [README anglais](../README.md)
 et [CONTRIBUTING.md](../CONTRIBUTING.md).

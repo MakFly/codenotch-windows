@@ -12,7 +12,9 @@ First public Windows release.
 - Separate settings window with modal account configuration.
 - English by default, with persistent English / French selection.
 - Windows Credential Manager for secrets added in the app.
-- Portable Windows x64 executable; no installer or automatic updater.
+- Windows x64 installer for the current user, with shortcuts, uninstaller and WebView2 bootstrapper; portable download also available.
+- Installer smoke-tested locally: install, launch and uninstall, with existing configuration preserved.
+- Unsigned downloads; no automatic updater.
 
 Subscription quotas and token counts depend on what each provider exposes.
 Claude and Copilot use internal endpoints that may change.
