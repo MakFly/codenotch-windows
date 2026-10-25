@@ -1,7 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.1.1 — 2026-10-25
 
+- **Built-in updates**: CodeNotch checks GitHub Releases at launch and twice a day, notifies once per version, and installs the signed installer in one click (Tauri updater, signature and signed version verified).
 - **Welcome screen** on first launch: the settings window opens by itself to connect ChatGPT, Claude, Gemini, Grok and OpenCode, with the language choice and a short guide. Existing installs without any account see it once; it can be shown again from Appearance and alerts.
 - **Grok** (Grok Build CLI) and **OpenCode** (OpenCode Go) connectors, following T3 Code: detection, sign-in from Quick connect, and quota readings. Grok sessions are renewed through `grok models` without a prompt.
 - **Quick connect**: sign in to Codex / ChatGPT, Claude and Gemini from Settings → Accounts, then the account is added automatically; each account dialog also offers **Sign in again**.

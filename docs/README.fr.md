@@ -1,6 +1,6 @@
 # CodeNotch pour Windows
 
-[English](../README.md) · [Télécharger la version 0.1.0](https://github.com/MakFly/codenotch-windows/releases/tag/v0.1.0)
+[English](../README.md) · [Télécharger la version 0.1.1](https://github.com/MakFly/codenotch-windows/releases/tag/v0.1.1)
 
 Une encoche discrète pour suivre les quotas de vos comptes IA sur Windows.
 Survolez un compte pour voir sa consommation et ses échéances de remise à
@@ -15,7 +15,7 @@ fournisseurs concernés.
 
 ## Installer
 
-1. Téléchargez `CodeNotch-0.1.0-windows-x64-setup.exe` depuis les releases.
+1. Téléchargez `CodeNotch-0.1.1-windows-x64-setup.exe` depuis les releases.
 2. Lancez l'installateur, puis CodeNotch depuis le menu Démarrer.
 3. Survolez la languette au bord droit et ouvrez les réglages avec la roue.
 4. Pour le français : **Appearance and alerts → Interface language → Français**.
@@ -26,7 +26,7 @@ manque, l'installateur télécharge le programme d'installation Microsoft : cett
 étape nécessite une connexion internet. Windows 10/11 x64 est requis.
 
 Une version portable reste disponible : décompressez
-`CodeNotch-0.1.0-windows-x64.zip` et lancez `CodeNotch.exe`.
+`CodeNotch-0.1.1-windows-x64.zip` et lancez `CodeNotch.exe`.
 
 L'installateur et l'application ne sont pas signés. SmartScreen peut afficher
 une alerte et Smart App Control peut bloquer leur exécution selon la configuration

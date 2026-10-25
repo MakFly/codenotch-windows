@@ -12,7 +12,7 @@ An independent Windows adaptation inspired by
 [CodeNotch by Vinz](https://github.com/vinzdg/codenotch), built with Tauri 2,
 Rust, React and TypeScript. This is not an official OpenAI, Anthropic or GitHub app.
 
-[Download v0.1.0](https://github.com/MakFly/codenotch-windows/releases/tag/v0.1.0)
+[Download v0.1.1](https://github.com/MakFly/codenotch-windows/releases/tag/v0.1.1)
 · [Français](docs/README.fr.md) · [Changelog](CHANGELOG.md)
 
 ![Quota details on hover, with sample data](docs/images/notch.png)
@@ -33,7 +33,7 @@ Rust, React and TypeScript. This is not an official OpenAI, Anthropic or GitHub 
 ## Download and run
 
 1. Open [Releases](https://github.com/MakFly/codenotch-windows/releases/latest).
-2. Download and run `CodeNotch-0.1.0-windows-x64-setup.exe`.
+2. Download and run `CodeNotch-0.1.1-windows-x64-setup.exe`.
 3. Launch CodeNotch from the Start menu. Hover over the small tab on the right edge of the screen.
 4. Open the settings wheel to configure accounts.
 
@@ -41,7 +41,7 @@ The installer installs for your Windows account, creates shortcuts and adds an
 entry to Windows Installed apps for removal. If WebView2 is missing, it downloads
 Microsoft's runtime installer; an internet connection is needed for that step.
 
-For portable use, download and extract `CodeNotch-0.1.0-windows-x64.zip`, then run
+For portable use, download and extract `CodeNotch-0.1.1-windows-x64.zip`, then run
 `CodeNotch.exe`. The ZIP includes the license, third-party notices and a
 getting-started guide. A standalone executable is also available.
 
@@ -51,12 +51,12 @@ The installer and portable executable are unsigned. Windows may display a
 SmartScreen warning or block unsigned applications under Smart App Control;
 installation is not guaranteed on every security configuration. See
 [Microsoft's explanation](https://learn.microsoft.com/windows/apps/package-and-deploy/smartscreen-reputation).
-There is no automatic startup or automatic updater.
+There is no automatic startup. Updates are built in: CodeNotch checks GitHub Releases at launch and twice a day, verifies the signature of the new installer, and installs it in one click from **Settings** (or **Appearance and alerts → Updates**).
 
 Verify downloads against `SHA256SUMS.txt` using PowerShell:
 
 ```powershell
-Get-FileHash .\CodeNotch-0.1.0-windows-x64.zip -Algorithm SHA256
+Get-FileHash .\CodeNotch-0.1.1-windows-x64.zip -Algorithm SHA256
 ```
 
 ## Connect your accounts
@@ -166,6 +166,24 @@ To also build the NSIS installer locally, run `bun run desktop:build` without
 `--no-bundle`. The installer is generated in `src-tauri/target/release/bundle/nsis/`.
 Internal package and configuration identifiers retain the original `smashtoken`
 name. Release downloads use `CodeNotch.exe`.
+
+### Publishing a release
+
+The in-app updater only installs installers signed with the project's key. The
+public key is in `src-tauri/tauri.conf.json` (`plugins.updater.pubkey`); keep the
+private key out of the repository.
+
+```powershell
+$env:TAURI_SIGNING_PRIVATE_KEY = Get-Content -Raw "$env:USERPROFILE\.tauri\codenotch.key"
+$env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = "<key password>"
+bun run desktop:build
+bun run release:package
+```
+
+`release/` then holds the signed `CodeNotch-<version>-windows-x64-setup.exe`,
+`latest.json`, the portable files and `SHA256SUMS.txt`. Upload them all to the
+GitHub release tagged `v<version>`: installed apps read
+`releases/latest/download/latest.json`.
 
 For UI tests, run `bun run dev` in another terminal, then:
 

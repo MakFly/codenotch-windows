@@ -12,7 +12,7 @@ import {
   Check,
   ChevronsRight,
 } from "lucide-react";
-import { Accounts, Preferences, Help, Welcome } from "./Settings";
+import { Accounts, Preferences, Help, Welcome, UpdateBanner } from "./Settings";
 import { Mark } from "./components/Controls";
 import {
   emptySnapshot,
@@ -224,6 +224,8 @@ export default function NotchApp() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
+  const [update, setUpdate] = useState<api.UpdateInfo | null>(null);
+  const [version, setVersion] = useState("");
   const [, setTime] = useState(0);
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const foldTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -327,6 +329,27 @@ export default function NotchApp() {
       prev?.focus();
     };
   }, [settingsOpen, nativeSettings]);
+  useEffect(() => {
+    let disposed = false;
+    let stop: (() => void) | undefined;
+    api.appVersion().then((v) => { if (!disposed) setVersion(v); }).catch(() => {});
+    void api.subscribeUpdate((u) => { if (!disposed) setUpdate(u); }).then((fn) => { if (disposed) fn(); else stop = fn; });
+    return () => { disposed = true; stop?.(); };
+  }, []);
+  async function checkForUpdate() {
+    setError("");
+    setNotice("");
+    setBusy(true);
+    try {
+      const found = await api.checkUpdate();
+      setUpdate(found);
+      if (!found) setNotice("CodeNotch est à jour.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
   async function run<T>(fn: () => Promise<T>, message?: string) {
     setError("");
     setNotice("");
@@ -656,7 +679,7 @@ export default function NotchApp() {
                   <Info size={17} />{t("À propos")}</button>
                 <div className="settings-nav-footer">
                   <span>{t("Adaptation Windows")}</span>
-                  <span>{t("v0.1.0 · locale")}</span>
+                  <span>{t("v{version} · locale", { version })}</span>
                 </div>
               </nav>
               <div className="settings-body">
@@ -666,6 +689,7 @@ export default function NotchApp() {
                     <span>{t(error || snapshot.storageError || "")}</span>
                   </div>
                 )}
+                {update && <UpdateBanner update={update} busy={busy} run={run} />}
                 {notice && (
                   <div className="message success" role="status">
                     <Check size={16} />
@@ -687,6 +711,8 @@ export default function NotchApp() {
                     busy={busy}
                     run={run}
                     onSaved={setSnapshot}
+                    version={version}
+                    onCheckUpdate={checkForUpdate}
                   />
                 ) : (
                   <Help />

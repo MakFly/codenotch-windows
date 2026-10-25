@@ -1,6 +1,6 @@
 [package]
 name = "smashtoken"
-version = "0.1.0"
+version = "0.1.1"
 description = "A Windows desktop notch for AI account quotas and usage"
 authors = ["Kev"]
 license = "MIT"
@@ -19,6 +19,7 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = ["tray-icon", "image-png"] }
 tauri-plugin-notification = "2"
 tauri-plugin-single-instance = "2"
+tauri-plugin-updater = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["process", "io-util", "time", "sync", "fs"] }

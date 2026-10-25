@@ -19,6 +19,7 @@ const pkg = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'));
 const tauri = JSON.parse(await readFile(join(root, 'src-tauri/tauri.conf.json'), 'utf8'));
 const cargo = await readFile(join(root, 'src-tauri/Cargo.toml'), 'utf8');
 if (pkg.version !== tauri.version || !cargo.includes(`version = "${pkg.version}"`)) throw new Error('Release versions do not match.');
+if (!tauri.plugins?.updater?.pubkey) throw new Error('Set plugins.updater.pubkey in tauri.conf.json before releasing.');
 const version: string = pkg.version;
 const source = join(root, 'src-tauri/target/release/smashtoken.exe');
 const binary = await readFile(source);
@@ -75,14 +76,29 @@ for (const name of Object.keys(pkg.dependencies).sort()) await addJavaScript(nam
 const thirdParty = 'Dependency license texts from locally installed packages, including build-time packages for completeness.\n\n' + notices.join('\n');
 await writeFile(join(stage, 'THIRD_PARTY_LICENSES.txt'), thirdParty);
 await writeFile(join(stage, 'BUILD-INFO.txt'), `CodeNotch for Windows ${version}\nSource commit: ${commit}\nPlatform: windows-x64\nBinary SHA-256: ${createHash('sha256').update(binary).digest('hex')}\n`);
-await writeFile(join(stage, 'GETTING-STARTED.txt'), `CodeNotch for Windows ${version}\n\nRun CodeNotch.exe. Hover over the tab at the right edge of the screen.\nHover over an account to see quotas; move away to collapse.\nThe settings wheel opens accounts and preferences.\nAppearance and alerts > Interface language: English / Francais.\nDrag the grip to remember placement.\nSign in through Codex or Claude Code before detecting local profiles.\nClosing settings keeps tracking active. Tray menu > Quit exits the app.\n\nRequires Windows 10/11 x64 and WebView2. The executable is unsigned.\nDo not disable Windows security features to bypass a block.\nNo installer or automatic updater is included.\n\nDocumentation and source:\nhttps://github.com/MakFly/codenotch-windows\n`);
+await writeFile(join(stage, 'GETTING-STARTED.txt'), `CodeNotch for Windows ${version}\n\nRun CodeNotch.exe. Hover over the tab at the right edge of the screen.\nHover over an account to see quotas; move away to collapse.\nThe settings wheel opens accounts and preferences.\nAppearance and alerts > Interface language: English / Francais.\nDrag the grip to remember placement.\nSign in through Codex or Claude Code before detecting local profiles.\nClosing settings keeps tracking active. Tray menu > Quit exits the app.\n\nRequires Windows 10/11 x64 and WebView2. The executable is unsigned.\nDo not disable Windows security features to bypass a block.\nThe portable build checks for signed updates and installs them with the setup program.\n\nDocumentation and source:\nhttps://github.com/MakFly/codenotch-windows\n`);
 await writeFile(join(stage, 'LIRE-MOI.txt'), `CodeNotch pour Windows ${version}\n\nLancez CodeNotch.exe et survolez la languette au bord droit.\nLa roue ouvre les reglages. Pour le francais :\nAppearance and alerts > Interface language > Francais.\nLe detail se referme lorsque la souris quitte l'encoche.\nDeplacez la poignee pour memoriser la position.\nConnectez Codex ou Claude Code avant de detecter les profils locaux.\nFermer les reglages laisse le suivi actif. Icone pres de l'horloge > Quitter.\n\nWindows 10/11 x64 et WebView2 requis. Version portable non signee.\nNe desactivez pas les protections Windows pour contourner un blocage.\n\nDocumentation : https://github.com/MakFly/codenotch-windows\n`);
 const contents = ['CodeNotch.exe', 'LICENSE', 'THIRD_PARTY_NOTICES.md', 'THIRD_PARTY_LICENSES.txt', 'BUILD-INFO.txt', 'GETTING-STARTED.txt', 'LIRE-MOI.txt'];
 const zipPath = join(output, `CodeNotch-${version}-windows-x64.zip`);
 const entries = await Promise.all(contents.map(async name => ({ name, data: await readFile(join(stage, name)) })));
 await writeFile(zipPath, zip(entries));
 await copyFile(join(stage, 'THIRD_PARTY_LICENSES.txt'), join(output, 'THIRD_PARTY_LICENSES.txt'));
-const assets = [join(stage, 'CodeNotch.exe'), zipPath, join(output, 'THIRD_PARTY_LICENSES.txt')];
+// Signed NSIS installer and the feed read by the in-app updater (tauri.conf.json > plugins.updater).
+// Build it with TAURI_SIGNING_PRIVATE_KEY set so Tauri writes the .sig next to the installer.
+const nsis = join(root, 'src-tauri/target/release/bundle/nsis');
+const built = existsSync(nsis) ? (await readdir(nsis)).find(name => name.endsWith(`_${version}_x64-setup.exe`)) : undefined;
+if (!built || !existsSync(join(nsis, `${built}.sig`))) throw new Error('Build the signed installer first: set TAURI_SIGNING_PRIVATE_KEY, then run bun run desktop:build.');
+const setupName = `CodeNotch-${version}-windows-x64-setup.exe`;
+await copyFile(join(nsis, built), join(output, setupName));
+const signature = (await readFile(join(nsis, `${built}.sig`), 'utf8')).trim();
+const download = { signature, url: `https://github.com/MakFly/codenotch-windows/releases/download/v${version}/${setupName}` };
+await writeFile(join(output, 'latest.json'), JSON.stringify({
+  version,
+  notes: `https://github.com/MakFly/codenotch-windows/releases/tag/v${version}`,
+  pub_date: new Date().toISOString(),
+  platforms: { 'windows-x86_64': download, 'windows-x86_64-nsis': download },
+}, null, 2) + '\n');
+const assets = [join(output, setupName), join(output, 'latest.json'), join(stage, 'CodeNotch.exe'), zipPath, join(output, 'THIRD_PARTY_LICENSES.txt')];
 const sums = [];
 for (const asset of assets) sums.push(`${createHash('sha256').update(await readFile(asset)).digest('hex')}  ${asset.split(/[\\/]/).pop()}`);
 await writeFile(join(output, 'SHA256SUMS.txt'), sums.join('\n') + '\n');

@@ -1,3 +1,4 @@
+import { getVersion } from "@tauri-apps/api/app";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -187,6 +188,19 @@ export const finishLogin = (provider: LoginProvider) =>
   native
     ? invoke<Snapshot>("finish_login", { provider })
     : Promise.resolve(structuredClone(preview));
+export interface UpdateInfo {
+  version: string;
+  current: string;
+  notes: string | null;
+}
+export const appVersion = () =>
+  native ? getVersion() : Promise.resolve(__APP_VERSION__);
+export const checkUpdate = () =>
+  native ? invoke<UpdateInfo | null>("check_update") : Promise.resolve(null);
+export const installUpdate = () =>
+  native ? invoke<void>("install_update") : Promise.resolve();
+export const subscribeUpdate = (fn: (u: UpdateInfo) => void) =>
+  native ? listen<UpdateInfo>("update-available", (e) => fn(e.payload)) : Promise.resolve(() => {});
 export async function windowAction(
   action:
     "minimize" | "hide" | "toggleMaximize" | "startDragging" | "dashboard",

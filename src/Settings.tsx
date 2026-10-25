@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import {
+  Download,
   LogIn,
   Plus,
   X,
@@ -653,16 +654,53 @@ export function Accounts({
   );
 }
 
+/** Announces a signed release found by the updater and installs it on request. */
+export function UpdateBanner({
+  update,
+  busy,
+  run,
+}: {
+  update: api.UpdateInfo;
+  busy: boolean;
+  run: Run;
+}) {
+  const { t } = useLocale();
+  const [installing, setInstalling] = useState(false);
+  return (
+    <div className="message info update-banner" role="status">
+      <Download size={16} />
+      <div className="message-body">
+        <strong>{t("CodeNotch {version} est disponible", { version: update.version })}</strong>
+        <span>{installing
+          ? t("Téléchargement et vérification de la signature… CodeNotch redémarrera tout seul.")
+          : t("Version actuelle : {current}. La mise à jour est signée et s’installe en un clic.", { current: update.current })}</span>
+      </div>
+      <button className="button primary" disabled={busy || installing}
+        onClick={() => {
+          setInstalling(true);
+          void run(api.installUpdate).finally(() => setInstalling(false));
+        }}>
+        {installing ? <LoaderCircle className="spin" size={15} /> : <Download size={15} />}
+        {installing ? t("Mise à jour…") : t("Mettre à jour")}
+      </button>
+    </div>
+  );
+}
+
 export function Preferences({
   settings,
   busy,
   run,
   onSaved,
+  version,
+  onCheckUpdate,
 }: {
   settings: Settings;
   busy: boolean;
   run: Run;
   onSaved: (s: Snapshot) => void;
+  version: string;
+  onCheckUpdate: () => void;
 }) {
   const { t } = useLocale();
   const update = (patch: Partial<Settings>) =>
@@ -695,6 +733,14 @@ export function Preferences({
             </div>
             <button className="button secondary" disabled={busy} onClick={() => update({ onboardingDone: false })}>
               {t("Revoir l’écran d’accueil")}</button>
+          </div>
+          <div className="setting-row">
+            <div>
+              <strong>{t("Mises à jour")}</strong>
+              <p>{t("Version {version}. CodeNotch vérifie au démarrage puis deux fois par jour ; chaque mise à jour est signée avant d’être installée.", { version })}</p>
+            </div>
+            <button className="button secondary" disabled={busy || !api.native} onClick={onCheckUpdate}>
+              <RefreshCw size={15} />{t("Vérifier")}</button>
           </div>
           <h2>
             <Monitor size={20} />{t("Encoche")}</h2>

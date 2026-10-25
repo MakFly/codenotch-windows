@@ -88,6 +88,12 @@ try {
   await page.evaluate(() => (window as any).emitTauri('login-finished', { provider: 'codex', success: false, error: 'Connexion ChatGPT annulée ou refusée.' }));
   await expect(section.getByRole('alert')).toContainText('Connexion ChatGPT annulée ou refusée.');
 
+  // A signed release found by the updater is announced and installed on request.
+  await page.evaluate(() => (window as any).emitTauri('update-available', { version: '0.1.2', current: '0.1.1', notes: null }));
+  await expect(page.getByText('CodeNotch 0.1.2 est disponible')).toBeVisible();
+  await page.getByRole('button', { name: 'Mettre à jour', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => (window as any).calls.some(([c]: [string]) => c === 'install_update'))).toBe(true);
+
   const calls: [string, any][] = await page.evaluate(() => (window as any).calls);
   expect(calls.find(([c]) => c === 'start_login')?.[1]).toEqual({ provider: 'claude', profilePath: null });
   expect(calls.filter(([c, a]) => c === 'finish_login').map(([, a]) => a.provider)).toEqual(['claude', 'codex']);

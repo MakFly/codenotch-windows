@@ -1699,3 +1699,12 @@ html:has(body.native-widget) {
 .welcome-steps {
   padding: 0;
 }
+.update-banner {
+  align-items: center;
+}
+.update-banner .message-body {
+  flex: 1;
+}
+.update-banner strong {
+  font-weight: 600;
+}

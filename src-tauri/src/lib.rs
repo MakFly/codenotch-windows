@@ -7,6 +7,7 @@ mod login;
 mod model;
 mod opencode;
 mod providers;
+mod updater;
 mod widget;
 
 use model::*;
@@ -855,12 +856,24 @@ fn minimize_dashboard(app: tauri::AppHandle) -> Result<(), String> {
     dashboard::apply(&app, dashboard::Action::Minimize)
 }
 
+#[tauri::command]
+async fn check_update(app: tauri::AppHandle) -> Result<Option<updater::UpdateInfo>, String> {
+    updater::check(&app).await
+}
+
+#[tauri::command]
+async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
+    updater::install(&app).await
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _, _| {
             show_dashboard(app.clone())
         }))
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .manage(updater::Pending::default())
         .invoke_handler(tauri::generate_handler![
             get_snapshot,
             refresh,
@@ -876,7 +889,9 @@ pub fn run() {
             hide_dashboard,
             minimize_dashboard,
             set_notch_mode,
-            drag_notch
+            drag_notch,
+            check_update,
+            install_update
         ])
         .setup(|app| {
             let dir = app.path().app_config_dir()?;
@@ -989,6 +1004,7 @@ pub fn run() {
                 tray = tray.icon(icon.clone());
             }
             tray.build(app)?;
+            updater::watch(app.handle().clone());
             if first_run {
                 // The settings window starts hidden; open it on the welcome screen.
                 show_dashboard(app.handle().clone());

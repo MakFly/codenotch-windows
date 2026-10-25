@@ -31,7 +31,6 @@
   "Apparence et alertes": "Appearance and alerts",
   "À propos": "About",
   "Adaptation Windows": "Windows adaptation",
-  "v0.1.0 · locale": "v0.1.0 · local",
   "Compte enregistré. Le suivi démarrera automatiquement.": "Account saved. Tracking will start automatically.",
   "Choisissez les comptes affichés dans l’encoche.": "Choose the accounts displayed in the notch.",
   "Comptes configurés": "Configured accounts",
@@ -304,5 +303,18 @@
   "OpenCode Go · endpoint d’usage": "OpenCode Go · usage endpoint",
   "Mensuel": "Monthly",
   "Abonnement": "Subscription",
-  "Session Grok expirée. Utilise « Se connecter » dans Comptes, puis actualise.": "Grok session expired. Use “Sign in” in Accounts, then refresh."
+  "Session Grok expirée. Utilise « Se connecter » dans Comptes, puis actualise.": "Grok session expired. Use “Sign in” in Accounts, then refresh.",
+  "v{version} · locale": "v{version} · local",
+  "CodeNotch {version} est disponible": "CodeNotch {version} is available",
+  "Téléchargement et vérification de la signature… CodeNotch redémarrera tout seul.": "Downloading and checking the signature… CodeNotch will restart by itself.",
+  "Version actuelle : {current}. La mise à jour est signée et s’installe en un clic.": "Current version: {current}. The update is signed and installs in one click.",
+  "Mise à jour…": "Updating…",
+  "Mettre à jour": "Update",
+  "Mises à jour": "Updates",
+  "Version {version}. CodeNotch vérifie au démarrage puis deux fois par jour ; chaque mise à jour est signée avant d’être installée.": "Version {version}. CodeNotch checks at launch and twice a day; every update is signature-checked before it installs.",
+  "CodeNotch est à jour.": "CodeNotch is up to date.",
+  "Vérification des mises à jour indisponible.": "Update checks are unavailable.",
+  "Impossible de vérifier les mises à jour. Vérifie la connexion, puis réessaie.": "Unable to check for updates. Check your connection, then try again.",
+  "Aucune mise à jour en attente. Vérifie à nouveau.": "No pending update. Check again.",
+  "Échec du téléchargement ou de la vérification de la mise à jour.": "The update failed to download or its signature did not verify."
 }
