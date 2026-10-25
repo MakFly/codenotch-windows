@@ -93,6 +93,10 @@ pub struct SettingsView {
     pub(crate) channels: crate::channels::Channels,
     /// CLI install and sign-in state per login provider, for quick connect.
     pub(crate) statuses: Vec<crate::login::ProviderStatus>,
+    /// Where each CLI of data/cli-agents.json is installed, in catalog order.
+    pub(crate) detected: Vec<Option<String>>,
+    /// The full CLI list is unfolded.
+    pub(crate) show_all_agents: bool,
     /// The open dropdown, by id.
     open_select: Option<&'static str>,
     /// The open accordion item of the Appearance and Alerts pages.
@@ -145,6 +149,8 @@ impl SettingsView {
             login: None,
             channels,
             statuses: crate::welcome::statuses(),
+            detected: crate::agents::detect(),
+            show_all_agents: false,
             open_select: None,
             accounts_tab: AccountsTab::Configured,
             appearance_open: Some("language"),

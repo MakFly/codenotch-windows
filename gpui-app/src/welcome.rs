@@ -123,9 +123,227 @@ fn short_source(path: &str, french: bool) -> (String, String) {
     (file, place)
 }
 
+/// The agent's logo when CodeNotch has one, otherwise its initial on a small tile.
+fn agent_mark(agent: &crate::agents::Agent, size: f32) -> AnyElement {
+    match &agent.logo {
+        Some(logo) => provider_icon(logo, size),
+        None => div()
+            .size(px(size))
+            .flex_none()
+            .flex()
+            .items_center()
+            .justify_center()
+            .rounded(px(5.))
+            .border_1()
+            .border_color(rgba(0xffffff1a))
+            .bg(rgb(0x1f1f22))
+            .text_size(px(size * 0.5))
+            .font_weight(FontWeight::SEMIBOLD)
+            .text_color(rgb(0xc3c3c8))
+            .child(agent.name.chars().next().unwrap_or('?').to_uppercase().to_string())
+            .into_any_element(),
+    }
+}
+
+fn homepage_button(id: String, url: Option<String>, french: bool) -> AnyElement {
+    let Some(url) = url else {
+        return div().into_any_element();
+    };
+    div()
+        .id(SharedString::from(id))
+        .flex()
+        .flex_none()
+        .items_center()
+        .gap(px(6.))
+        .h(px(30.))
+        .px(px(10.))
+        .rounded(px(6.))
+        .cursor_pointer()
+        .text_size(px(12.))
+        .text_color(rgb(0xc3c3c8))
+        .hover(|d| d.bg(rgba(0xffffff0f)).text_color(rgb(0xffffff)))
+        .tooltip(crate::settings::tip(url.clone()))
+        .child(icon("external-link", 13., 0xc3c3c8))
+        .child(t(french, "Site officiel"))
+        .on_click(move |_, _, _| {
+            let _ = login::open_url(&url);
+        })
+        .into_any_element()
+}
+
 impl SettingsView {
+    /// Installed CLIs CodeNotch has no sign-in for: quotas unpublished, or added by token.
+    fn other_cli_row(&self, index: usize, french: bool, cx: &mut Context<Self>) -> AnyElement {
+        let agent = &crate::agents::all()[index];
+        let path = self.detected[index].clone().unwrap_or_default();
+        let (file, place) = short_source(&path, french);
+        let by_token = agent.quota.is_some();
+        let action = if by_token {
+            let provider = agent.quota.clone().unwrap_or_default();
+            button(
+                SharedString::from(format!("agent-add-{}", agent.id)),
+                Kind::Primary,
+                Some("plus"),
+                t(french, "Ajouter"),
+                Some(Box::new(cx.listener(move |this, _: &ClickEvent, window, cx| {
+                    let account = Account {
+                        id: String::new(),
+                        name: String::new(),
+                        provider: provider.clone(),
+                        enabled: true,
+                        profile_path: String::new(),
+                        endpoint: String::new(),
+                        secret_env: String::new(),
+                        has_secret: false,
+                    };
+                    this.open_editor(Some(account), window, cx)
+                }))),
+            )
+        } else {
+            homepage_button(format!("agent-site-{}", agent.id), agent.homepage.clone(), french)
+        };
+        div()
+            .flex()
+            .items_center()
+            .gap(px(14.))
+            .px(px(16.))
+            .py(px(12.))
+            .hover(|d| d.bg(rgba(0xffffff08)))
+            .child(agent_mark(agent, 22.))
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .flex_1()
+                    .min_w_0()
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(px(8.))
+                            .child(div().text_size(px(13.)).font_weight(FontWeight::MEDIUM).child(agent.name.clone()))
+                            .child(if by_token {
+                                pill(Tone::Info, t(french, "Ajout par jeton"))
+                            } else {
+                                pill(Tone::Idle, t(french, "Pas de quota publié"))
+                            }),
+                    )
+                    .child(
+                        div()
+                            .id(SharedString::from(format!("agent-source-{}", agent.id)))
+                            .mt(px(4.))
+                            .flex()
+                            .items_center()
+                            .gap(px(6.))
+                            .text_size(px(11.))
+                            .text_color(rgb(0x7e7e88))
+                            .tooltip(crate::settings::tip(path.clone()))
+                            .child(icon("terminal", 12., 0x7e7e88))
+                            .child(div().font_family("Consolas").child(file))
+                            .child(div().text_color(rgb(0x5c5c64)).child("·"))
+                            .child(place),
+                    ),
+            )
+            .child(action)
+            .into_any_element()
+    }
+
+    /// Every CLI in the catalog, folded by default: name, command, state and official site.
+    fn all_agents(&self, french: bool, cx: &mut Context<Self>) -> AnyElement {
+        let agents = crate::agents::all();
+        let open = self.show_all_agents;
+        let header = div()
+            .id("all-agents-toggle")
+            .mt(px(20.))
+            .flex()
+            .items_center()
+            .gap(px(6.))
+            .cursor_pointer()
+            .child(icon(if open { "chevron-down" } else { "chevron-right" }, 14., 0x77777f))
+            .child(
+                div()
+                    .text_size(px(10.5))
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .text_color(rgb(0x77777f))
+                    .child(t(french, "Tous les CLI").to_uppercase()),
+            )
+            .child(
+                div()
+                    .px(px(6.))
+                    .rounded_full()
+                    .bg(rgba(0xffffff0a))
+                    .text_size(px(10.5))
+                    .text_color(rgb(0x9a9aa3))
+                    .child(agents.len().to_string()),
+            )
+            .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
+                this.show_all_agents = !this.show_all_agents;
+                cx.notify();
+            }));
+        let rows: Vec<AnyElement> = open
+            .then(|| {
+                agents
+                    .iter()
+                    .enumerate()
+                    .map(|(i, agent)| {
+                        let installed = self.detected.get(i).is_some_and(|p| p.is_some());
+                        let state = if agent.quota.is_some() {
+                            pill(Tone::Ok, t(french, "Quotas lus"))
+                        } else if installed {
+                            pill(Tone::Info, t(french, "Installé"))
+                        } else {
+                            div().into_any_element()
+                        };
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(px(12.))
+                            .px(px(16.))
+                            .py(px(8.))
+                            .hover(|d| d.bg(rgba(0xffffff08)))
+                            .child(agent_mark(agent, 18.))
+                            .child(
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .gap(px(8.))
+                                    .flex_1()
+                                    .min_w_0()
+                                    .child(div().text_size(px(12.5)).font_weight(FontWeight::MEDIUM).child(agent.name.clone()))
+                                    .child(
+                                        div()
+                                            .font_family("Consolas")
+                                            .text_size(px(11.))
+                                            .text_color(rgb(0x7e7e88))
+                                            .child(agent.commands.first().cloned().unwrap_or_default()),
+                                    )
+                                    .child(state),
+                            )
+                            .child(homepage_button(format!("all-site-{}", agent.id), agent.homepage.clone(), french))
+                            .into_any_element()
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        div()
+            .flex()
+            .flex_col()
+            .child(header)
+            .when(open, |d| {
+                d.child(div().mt(px(8.)).child(row_card(rows, false))).child(
+                    div()
+                        .mt(px(8.))
+                        .text_size(px(10.5))
+                        .text_color(rgb(0x6b6b72))
+                        .child(t(french, "Liste tirée du catalogue d’Orca (github.com/stablyai/orca), mise à jour par « bun run sync:agents ».")),
+                )
+            })
+            .into_any_element()
+    }
+
     pub(crate) fn load_statuses(&mut self) {
         self.statuses = statuses();
+        self.detected = crate::agents::detect();
     }
 
     /// Opens the provider's official sign-in from a quick-connect row.
@@ -479,6 +697,20 @@ impl SettingsView {
                 }
             })
             .collect();
+        // Installed CLIs CodeNotch cannot sign in to: shown with their official site, or added
+        // by token when CodeNotch reads their quotas.
+        let other_rows: Vec<AnyElement> = crate::agents::all()
+            .iter()
+            .enumerate()
+            .filter(|(i, agent)| {
+                self.detected.get(*i).is_some_and(|p| p.is_some()) && !login::PROVIDERS.contains(&agent.id.as_str())
+            })
+            .map(|(i, _)| i)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .map(|i| self.other_cli_row(i, french, cx))
+            .collect();
+        let all_agents = self.all_agents(french, cx);
         let install_cards: Vec<AnyElement> = to_install.iter().map(|&i| self.install_card(i, french, cx)).collect();
         // Two cards per line, like the mock's grid.
         let mut install_grid: Vec<AnyElement> = vec![];
@@ -538,6 +770,11 @@ impl SettingsView {
                 d.child(div().mt(px(20.)).child(group_label(t(french, "Disponibles"))))
                     .child(div().flex().flex_col().gap(px(12.)).children(install_grid))
             })
+            .when(!other_rows.is_empty(), |d| {
+                d.child(div().mt(px(20.)).child(group_label(t(french, "Autres CLI installés"))))
+                    .child(row_card(other_rows, false))
+            })
+            .child(all_agents)
             .into_any_element()
     }
 

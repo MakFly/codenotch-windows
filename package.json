@@ -17,6 +17,7 @@
     "desktop": "tauri dev",
     "desktop:build": "tauri build",
     "release:package": "bun scripts/package-release.ts",
+    "sync:agents": "bun scripts/sync-cli-agents.ts",
     "check": "tsc -b",
     "test": "bun test tests",
     "test:native": "cargo test --manifest-path src-tauri/Cargo.toml",

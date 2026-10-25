@@ -26,6 +26,7 @@ mod providers;
 mod telegram;
 
 mod account_form;
+mod agents;
 mod assets;
 mod channels;
 mod desktop;
