@@ -3,26 +3,35 @@
 Experimental native rewrite of the notch with [GPUI](https://gpui.rs), Zed's GPU UI framework.
 No WebView: the provider code from `src-tauri/src` (`model`, `providers`, `claude`, `codex`,
 `gemini`, `grok`, `opencode`, `login`, `alerts`) is mounted as-is with `#[path]`, so both apps
-read quotas the same way.
+read quotas the same way. Provider logos come from the same `src/lib/glyphs.json`.
 
 ```bash
 cargo run --manifest-path gpui-app/Cargo.toml
 ```
 
+Add `-- --settings` to open the settings window at launch.
+
 ## What works
 
-- Notch rail on the right edge of the primary display, one usage ring per enabled account.
+- Notch rail on the right edge of the primary display, one usage ring per enabled account,
+  with the provider's logo.
 - Hover or click a ring to open the usage popover (windows, reset countdown, forecast, refresh).
 - Auto-hide: folded to a peek tab, revealed on hover, folded again 240 ms after the pointer
   leaves both the rail and the popover; » folds it by hand.
 - Hidden in game mode and, when the setting asks for it, while an app is full screen.
-- Tray icon (`tray-icon` crate): game mode toggle and Quit; Settings is greyed out until ported.
+- Tray icon (`tray-icon` crate): Settings, game mode toggle and Quit, in the chosen language.
+- Settings window with a Cursor-style frameless header (logo, context pill, caption buttons):
+  - Accounts: enable or disable, remove (with confirmation), detect local CLI profiles.
+  - Language: French or English, applied at once to the notch, the window and the tray menu.
+  - Alerts: notifications, warning and critical levels, urgent alerts in full screen,
+    limit forecast and its lead time, quota-back notice.
 - Polling with the same scheduling rules as the Tauri backend (provider backoff, Claude floor).
-- Reads the Tauri app's `%APPDATA%\dev.kev.smashtoken\config.json`, never writes it; without
-  one, local CLI profiles are discovered as on first launch.
+- Configuration: saved to `%APPDATA%\dev.kev.smashtoken\config.gpui.json`, first copied from
+  the Tauri app's `config.json`, which is never written; without either, local CLI profiles
+  are discovered as on first launch.
 
 ## Not yet ported
 
-Settings and welcome screens, account login, saving game mode (it is in memory only),
-fold animation, Escape to fold, drag to move, alert delivery (Windows, Telegram, Discord),
-updater, provider logos.
+Text fields, and so adding, signing in to or editing an account and setting up Telegram or
+Discord; the welcome screen; notch position and poll interval settings; alert delivery
+(Windows, Telegram, Discord); fold animation, Escape to fold, drag to move; updater.

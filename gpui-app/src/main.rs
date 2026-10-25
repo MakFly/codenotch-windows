@@ -21,7 +21,9 @@ mod opencode;
 #[path = "../../src-tauri/src/providers.rs"]
 mod providers;
 
+mod assets;
 mod desktop;
+mod settings;
 mod store;
 mod tray;
 mod ui;
@@ -39,11 +41,14 @@ fn main() {
         .expect("tokio runtime");
     store::RUNTIME.set(runtime.handle().clone()).ok();
 
-    Application::new().run(|cx: &mut App| {
+    Application::new().with_assets(assets::Assets).run(|cx: &mut App| {
         let (config, storage_error) = store::load();
         let store = cx.new(|_| store::Store::new(config, storage_error));
         ui::open_rail(store.clone(), cx);
         tray::install(store.clone(), cx);
+        if std::env::args().any(|a| a == "--settings") {
+            settings::open(store.clone(), cx);
+        }
         let watched = store.clone();
         cx.spawn(async move |cx| loop {
             if let Some(fullscreen) = desktop::fullscreen_active() {

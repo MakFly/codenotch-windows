@@ -2,7 +2,8 @@ use crate::model::{Reading, Window as Quota};
 use crate::desktop;
 use crate::store::{self, Store};
 use gpui::{
-    canvas, div, point, prelude::*, px, relative, rgb, rgba, App, Bounds, Context, DisplayId,
+    canvas, div, point, prelude::*, px, relative, rgb, rgba, svg, AnyElement, App, Bounds, Context,
+    DisplayId,
     Entity, FontWeight, PathBuilder, Pixels, Point, Rgba, SharedString, Size, Window,
     WindowBackgroundAppearance, WindowBounds, WindowKind, WindowOptions,
 };
@@ -30,7 +31,7 @@ pub fn provider_title(provider: &str) -> &'static str {
     }
 }
 
-fn provider_mark(provider: &str) -> &'static str {
+pub(crate) fn provider_mark(provider: &str) -> &'static str {
     match provider {
         "codex" => "Cx",
         "claude" => "Cl",
@@ -58,7 +59,7 @@ fn headline(reading: Option<&Reading>) -> Option<&Quota> {
         .max_by(|a, b| a.used_percent.total_cmp(&b.used_percent))
 }
 
-fn tr(french: bool, fr: &str, en: &str) -> String {
+pub(crate) fn tr(french: bool, fr: &str, en: &str) -> String {
     if french { fr } else { en }.to_owned()
 }
 
@@ -215,7 +216,24 @@ fn paint_arc(window: &mut Window, center: Point<Pixels>, radius: f32, to: f32, c
     }
 }
 
-fn ring(value: Option<f64>, mark: &'static str, stale: bool) -> impl IntoElement {
+/// The provider's logo tinted with the current text color, or its short mark.
+pub(crate) fn provider_icon(provider: &str, size: f32) -> AnyElement {
+    match crate::assets::logo(provider) {
+        Some(path) => svg()
+            .path(path)
+            .size(px(size))
+            .flex_none()
+            .text_color(rgb(0xf5f5f5))
+            .into_any_element(),
+        None => div()
+            .text_xs()
+            .font_weight(FontWeight::BOLD)
+            .child(provider_mark(provider))
+            .into_any_element(),
+    }
+}
+
+fn ring(value: Option<f64>, provider: &str, stale: bool) -> impl IntoElement {
     let color = usage_color(value);
     div()
         .relative()
@@ -237,12 +255,7 @@ fn ring(value: Option<f64>, mark: &'static str, stale: bool) -> impl IntoElement
             .absolute()
             .size_full(),
         )
-        .child(
-            div()
-                .text_xs()
-                .font_weight(FontWeight::BOLD)
-                .child(mark),
-        )
+        .child(provider_icon(provider, 22.))
         .when(stale, |d| {
             d.child(
                 div()
@@ -348,7 +361,7 @@ impl Render for Rail {
                     .cursor_pointer()
                     .hover(|d| d.bg(rgba(0xffffff10)))
                     .when(selected, |d| d.bg(rgba(0xffffff18)))
-                    .child(ring(value, provider_mark(&account.provider), stale))
+                    .child(ring(value, &account.provider, stale))
                     .child(
                         div()
                             .text_sm()
@@ -542,8 +555,10 @@ impl Render for Popover {
             .child(
                 div()
                     .flex()
+                    .items_center()
                     .gap_1()
                     .text_lg()
+                    .child(div().mr_1().child(provider_icon(&account.provider, 22.)))
                     .child(
                         div()
                             .font_weight(FontWeight::BOLD)

@@ -9,7 +9,9 @@ use tray_icon::{
 /// Keeps the tray icon alive for the whole session; dropping it removes the icon.
 struct Tray {
     _icon: TrayIcon,
+    settings: MenuItem,
     game: CheckMenuItem,
+    quit: MenuItem,
 }
 impl Global for Tray {}
 
@@ -21,23 +23,27 @@ fn icon() -> Option<Icon> {
     Icon::from_rgba(image.into_raw(), width, height).ok()
 }
 
-pub fn install(store: Entity<Store>, cx: &mut App) {
+/// Menu labels and the game mode check follow the saved settings.
+fn sync(store: &Entity<Store>, cx: &mut App) {
     let s = store.read(cx);
     let french = s.french();
-    let pick = |fr: &str, en: &str| if french { fr } else { en }.to_owned();
-    // The settings window is not ported yet.
-    let settings = MenuItem::new(
-        pick("Réglages CodeNotch (bientôt)", "CodeNotch settings (soon)"),
-        false,
-        None,
-    );
-    let game = CheckMenuItem::new(
-        pick("Mode jeu — masquer l’encoche", "Game mode — hide notch"),
-        true,
-        s.config.settings.game_mode,
-        None,
-    );
-    let quit = MenuItem::new(pick("Quitter", "Quit"), true, None);
+    let game_mode = s.config.settings.game_mode;
+    let tray = cx.global::<Tray>();
+    tray.settings
+        .set_text(if french { "Réglages CodeNotch" } else { "CodeNotch settings" });
+    tray.game.set_text(if french {
+        "Mode jeu — masquer l’encoche"
+    } else {
+        "Game mode — hide notch"
+    });
+    tray.game.set_checked(game_mode);
+    tray.quit.set_text(if french { "Quitter" } else { "Quit" });
+}
+
+pub fn install(store: Entity<Store>, cx: &mut App) {
+    let settings = MenuItem::new("", true, None);
+    let game = CheckMenuItem::new("", true, false, None);
+    let quit = MenuItem::new("", true, None);
     let Ok(menu) = Menu::with_items(&[&settings, &game, &quit]) else {
         return;
     };
@@ -51,8 +57,19 @@ pub fn install(store: Entity<Store>, cx: &mut App) {
     let Ok(tray) = builder.build() else {
         return;
     };
-    let (game_id, quit_id) = (game.id().clone(), quit.id().clone());
-    cx.set_global(Tray { _icon: tray, game });
+    let (settings_id, game_id, quit_id) = (
+        settings.id().clone(),
+        game.id().clone(),
+        quit.id().clone(),
+    );
+    cx.set_global(Tray {
+        _icon: tray,
+        settings,
+        game,
+        quit,
+    });
+    sync(&store, cx);
+    cx.observe(&store, |store, cx| sync(&store, cx)).detach();
 
     // Menu events arrive on a channel; drain it from the UI thread.
     cx.spawn(async move |cx| loop {
@@ -60,19 +77,25 @@ pub fn install(store: Entity<Store>, cx: &mut App) {
             .timer(Duration::from_millis(100))
             .await;
         while let Ok(event) = MenuEvent::receiver().try_recv() {
-            if event.id == quit_id {
-                let _ = cx.update(|cx| cx.quit());
-            } else if event.id == game_id {
-                let _ = cx.update(|cx| {
-                    let on = store.update(cx, |s, cx| {
-                        // In memory only: the prototype never writes the Tauri configuration.
-                        s.config.settings.game_mode = !s.config.settings.game_mode;
+            let _ = cx.update(|cx| {
+                if event.id == quit_id {
+                    cx.quit();
+                } else if event.id == settings_id {
+                    crate::settings::open(store.clone(), cx);
+                } else if event.id == game_id {
+                    let result = store.update(cx, |s, cx| {
+                        let mut settings = s.config.settings.clone();
+                        settings.game_mode = !settings.game_mode;
+                        let result = s.save_settings(settings);
                         cx.notify();
-                        s.config.settings.game_mode
+                        result
                     });
-                    cx.global::<Tray>().game.set_checked(on);
-                });
-            }
+                    // Windows already flipped the check; put it back on a failed save.
+                    if result.is_err() {
+                        sync(&store, cx);
+                    }
+                }
+            });
         }
     })
     .detach();

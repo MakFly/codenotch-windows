@@ -12,6 +12,7 @@ pub struct Store {
     pub tracker: alerts::Tracker,
     pub selected: Option<String>,
     pub popover: Option<WindowHandle<crate::ui::Popover>>,
+    pub settings_window: Option<WindowHandle<crate::settings::SettingsView>>,
     /// Folded to the peek tab; only ever true with auto-hide.
     pub collapsed: bool,
     /// Whether the pointer is over the rail and over the popover.
@@ -32,6 +33,7 @@ impl Store {
             tracker: alerts::Tracker::default(),
             selected: None,
             popover: None,
+            settings_window: None,
             collapsed,
             hover: [false; 2],
             fold_generation: 0,
@@ -84,7 +86,84 @@ impl Store {
             .collect()
     }
 
+    /// Validates and saves new settings, as `save_settings` does in the Tauri backend.
+    pub fn save_settings(&mut self, settings: Settings) -> Result<(), String> {
+        if !["en", "fr"].contains(&settings.language.as_str())
+            || !(50..=100).contains(&settings.alert_percent)
+            || !(50..=100).contains(&settings.critical_percent)
+            || ![15, 30, 60].contains(&settings.forecast_minutes)
+        {
+            return Err("Invalid settings.".into());
+        }
+        let mut next = self.config.clone();
+        next.settings = settings;
+        self.commit(next)
+    }
+
+    pub fn set_enabled(&mut self, id: &str, enabled: bool) -> Result<(), String> {
+        let mut next = self.config.clone();
+        let account = next
+            .accounts
+            .iter_mut()
+            .find(|a| a.id == id)
+            .ok_or("Account not found.")?;
+        account.enabled = enabled;
+        self.commit(next)
+    }
+
+    pub fn remove_account(&mut self, id: &str) -> Result<(), String> {
+        let account = self
+            .config
+            .accounts
+            .iter()
+            .find(|a| a.id == id)
+            .ok_or("Account not found.")?;
+        if account.has_secret {
+            keyring::Entry::new("SmashToken", id)
+                .and_then(|e| e.delete_credential())
+                .map_err(|_| "Cannot erase the saved secret. Try again.")?;
+        }
+        let mut next = self.config.clone();
+        next.accounts.retain(|a| a.id != id);
+        self.commit(next)?;
+        self.readings.remove(id);
+        Ok(())
+    }
+
+    /// Adds the local CLI profiles that are not tracked yet; returns how many.
+    pub fn add_discovered(&mut self) -> Result<usize, String> {
+        let mut next = self.config.clone();
+        let before = next.accounts.len();
+        for account in discover() {
+            if next.accounts.len() < 20
+                && !next.accounts.iter().any(|a| {
+                    a.provider == account.provider && profile_key(a) == profile_key(&account)
+                })
+            {
+                next.accounts.push(account);
+            }
+        }
+        let added = next.accounts.len() - before;
+        if added > 0 {
+            self.commit(next)?;
+        }
+        Ok(added)
+    }
+
+    fn commit(&mut self, next: Config) -> Result<(), String> {
+        if let Some(error) = &self.storage_error {
+            return Err(error.clone());
+        }
+        save(&next)?;
+        self.config = next;
+        Ok(())
+    }
+
     fn apply(&mut self, account: Account, result: Result<Reading, providers::Failure>) {
+        // Removed while its reading was in flight.
+        if !self.config.accounts.iter().any(|a| a.id == account.id) {
+            return;
+        }
         let at = chrono::Utc::now().timestamp();
         let previous = self.readings.get(&account.id).cloned();
         let reading = match result {
@@ -158,12 +237,32 @@ pub async fn poll(store: &Entity<Store>, force: bool, cx: &mut AsyncApp) {
 }
 
 /// The Tauri app's configuration file, read but never written so both builds can coexist.
-fn config_path() -> Option<PathBuf> {
+fn tauri_config_path() -> Option<PathBuf> {
     Some(dirs::config_dir()?.join("dev.kev.smashtoken").join("config.json"))
 }
 
+/// The prototype saves next to the Tauri configuration, in its own file, so the two
+/// builds never overwrite each other. It starts as a copy of the Tauri one.
+pub fn config_path() -> Option<PathBuf> {
+    Some(dirs::config_dir()?.join("dev.kev.smashtoken").join("config.gpui.json"))
+}
+
+pub fn save(config: &Config) -> Result<(), String> {
+    let path = config_path().ok_or("No configuration folder on this PC.")?;
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir).map_err(|_| "Cannot create the configuration folder.")?;
+    }
+    let bytes = serde_json::to_vec_pretty(config).map_err(|_| "Invalid configuration.")?;
+    let temporary = path.with_extension("tmp");
+    std::fs::write(&temporary, bytes).map_err(|_| "Cannot write the local configuration.")?;
+    std::fs::rename(temporary, path).map_err(|_| "Cannot replace the local configuration.".to_owned())
+}
+
 pub fn load() -> (Config, Option<String>) {
-    let Some(path) = config_path().filter(|p| p.exists()) else {
+    let Some(path) = config_path()
+        .filter(|p| p.exists())
+        .or_else(|| tauri_config_path().filter(|p| p.exists()))
+    else {
         return (
             Config {
                 accounts: discover(),
@@ -182,6 +281,21 @@ pub fn load() -> (Config, Option<String>) {
             Some(format!("Unreadable configuration: {}", path.display())),
         ),
     }
+}
+
+/// Identifies a profile folder, treating an empty path as the CLI's default one.
+fn profile_key(account: &Account) -> Option<String> {
+    login::PROVIDERS
+        .contains(&account.provider.as_str())
+        .then(|| {
+            let path = if account.profile_path.is_empty() {
+                login::default_profile(&account.provider)
+            } else {
+                PathBuf::from(&account.profile_path)
+            };
+            let key = path.to_string_lossy().replace('/', "\\");
+            key.trim_end_matches('\\').to_lowercase()
+        })
 }
 
 /// Local CLI profiles, as the Tauri app finds them on first launch.
