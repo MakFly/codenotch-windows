@@ -21,7 +21,9 @@ mod opencode;
 #[path = "../../src-tauri/src/providers.rs"]
 mod providers;
 
+mod desktop;
 mod store;
+mod tray;
 mod ui;
 
 use gpui::{App, AppContext, Application};
@@ -41,6 +43,20 @@ fn main() {
         let (config, storage_error) = store::load();
         let store = cx.new(|_| store::Store::new(config, storage_error));
         ui::open_rail(store.clone(), cx);
+        tray::install(store.clone(), cx);
+        let watched = store.clone();
+        cx.spawn(async move |cx| loop {
+            if let Some(fullscreen) = desktop::fullscreen_active() {
+                let _ = watched.update(cx, |s, cx| {
+                    if s.fullscreen != fullscreen {
+                        s.fullscreen = fullscreen;
+                        cx.notify();
+                    }
+                });
+            }
+            cx.background_executor().timer(Duration::from_secs(1)).await;
+        })
+        .detach();
         cx.spawn(async move |cx| loop {
             store::poll(&store, false, cx).await;
             cx.background_executor().timer(Duration::from_secs(10)).await;

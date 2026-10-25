@@ -1,8 +1,9 @@
 use crate::model::{Reading, Window as Quota};
+use crate::desktop;
 use crate::store::{self, Store};
 use gpui::{
     canvas, div, point, prelude::*, px, relative, rgb, rgba, App, Bounds, Context, DisplayId,
-    Entity, FontWeight, MouseButton, PathBuilder, Pixels, Point, Rgba, SharedString, Size, Window,
+    Entity, FontWeight, PathBuilder, Pixels, Point, Rgba, SharedString, Size, Window,
     WindowBackgroundAppearance, WindowBounds, WindowKind, WindowOptions,
 };
 use std::f32::consts::{FRAC_PI_2, TAU};
@@ -13,6 +14,9 @@ const CELL: f32 = 84.;
 const PAD: f32 = 12.;
 const POPOVER_WIDTH: f32 = 300.;
 const POPOVER_GAP: f32 = 8.;
+const PEEK_WIDTH: f32 = 12.;
+const PEEK_HEIGHT: f32 = 72.;
+const TOOLS: f32 = 36.;
 
 pub fn provider_title(provider: &str) -> &'static str {
     match provider {
@@ -116,26 +120,76 @@ fn popup_options(bounds: Bounds<Pixels>, display: Option<DisplayId>) -> WindowOp
     }
 }
 
-/// Opens the notch on the right edge of the primary display, vertically centered.
-pub fn open_rail(store: Entity<Store>, cx: &mut App) {
-    let Some(display) = cx.primary_display() else {
-        return;
+/// The rail when open, or the peek tab when folded, on the right edge and vertically centered.
+fn rail_bounds(screen: Bounds<Pixels>, s: &Store) -> Bounds<Pixels> {
+    let size = if s.collapsed {
+        Size {
+            width: px(PEEK_WIDTH),
+            height: px(PEEK_HEIGHT),
+        }
+    } else {
+        let count = s.enabled().len().max(1) as f32;
+        let tools = if s.config.settings.auto_hide { TOOLS } else { 0. };
+        Size {
+            width: px(RAIL_WIDTH),
+            height: px(PAD * 2. + CELL * count + tools),
+        }
     };
-    let count = store.read(cx).enabled().len().max(1);
-    let size = Size {
-        width: px(RAIL_WIDTH),
-        height: px(PAD * 2. + CELL * count as f32),
-    };
-    let screen = display.bounds();
     let origin = point(
         screen.origin.x + screen.size.width - size.width,
         screen.origin.y + (screen.size.height - size.height) / 2.,
     );
-    cx.open_window(
-        popup_options(Bounds { origin, size }, Some(display.id())),
-        |_, cx| cx.new(|cx| Rail::new(store, cx)),
-    )
+    Bounds { origin, size }
+}
+
+/// Opens the notch on the primary display.
+pub fn open_rail(store: Entity<Store>, cx: &mut App) {
+    let Some(display) = cx.primary_display() else {
+        return;
+    };
+    let screen = display.bounds();
+    let bounds = rail_bounds(screen, store.read(cx));
+    cx.open_window(popup_options(bounds, Some(display.id())), |window, cx| {
+        cx.new(|cx| Rail::new(store, screen, window, cx))
+    })
     .expect("notch window");
+}
+
+/// Reveals on hover; folds once the pointer has left both the rail and the popover
+/// for 240 ms, so crossing the gap between them does not fold.
+pub fn set_hover(store: &Entity<Store>, which: usize, hovered: bool, cx: &mut App) {
+    let pending = store.update(cx, |s, cx| {
+        s.hover[which] = hovered;
+        s.fold_generation += 1;
+        if hovered && s.collapsed {
+            s.collapsed = false;
+            cx.notify();
+        }
+        (!s.hover.contains(&true)).then_some(s.fold_generation)
+    });
+    let Some(generation) = pending else {
+        return;
+    };
+    let store = store.clone();
+    cx.spawn(async move |cx| {
+        cx.background_executor()
+            .timer(Duration::from_millis(240))
+            .await;
+        let _ = cx.update(|cx| {
+            if store.read(cx).fold_generation == generation {
+                fold(&store, cx);
+            }
+        });
+    })
+    .detach();
+}
+
+pub fn fold(store: &Entity<Store>, cx: &mut App) {
+    close_popover(store, cx);
+    store.update(cx, |s, cx| {
+        s.collapsed = s.config.settings.auto_hide;
+        cx.notify();
+    });
 }
 
 fn paint_arc(window: &mut Window, center: Point<Pixels>, radius: f32, to: f32, color: Rgba) {
@@ -204,18 +258,73 @@ fn ring(value: Option<f64>, mark: &'static str, stale: bool) -> impl IntoElement
 
 pub struct Rail {
     store: Entity<Store>,
+    screen: Bounds<Pixels>,
+    hovered: bool,
+    /// Last (bounds, visible) given to Windows, to skip redundant calls.
+    applied: Option<(Bounds<Pixels>, bool)>,
 }
 
 impl Rail {
-    fn new(store: Entity<Store>, cx: &mut Context<Self>) -> Self {
-        cx.observe(&store, |_, _, cx| cx.notify()).detach();
-        Self { store }
+    fn new(
+        store: Entity<Store>,
+        screen: Bounds<Pixels>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        cx.observe_in(&store, window, |this: &mut Self, _, window, cx| {
+            this.apply(window, cx);
+            cx.notify();
+        })
+        .detach();
+        let mut rail = Self {
+            store,
+            screen,
+            hovered: false,
+            applied: None,
+        };
+        rail.apply(window, cx);
+        rail
+    }
+
+    fn apply(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let s = self.store.read(cx);
+        let next = (rail_bounds(self.screen, s), s.visible());
+        if self.applied == Some(next) {
+            return;
+        }
+        self.applied = Some(next);
+        desktop::place(window, next.0, next.1, cx);
+        if !next.1 && s.popover.is_some() {
+            let store = self.store.clone();
+            cx.defer(move |cx| close_popover(&store, cx));
+        }
     }
 }
 
 impl Render for Rail {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // GPUI refreshes the window when the pointer enters or leaves it.
+        let hovered = window.is_window_hovered();
+        if hovered != self.hovered {
+            self.hovered = hovered;
+            let store = self.store.clone();
+            cx.defer(move |cx| set_hover(&store, 0, hovered, cx));
+        }
         let s = self.store.read(cx);
+        if s.collapsed {
+            let store = self.store.clone();
+            return div()
+                .id("peek")
+                .size_full()
+                .bg(rgb(0x000000))
+                .rounded_l(px(6.))
+                .border_1()
+                .border_color(rgba(0xffffff28))
+                .cursor_pointer()
+                .on_click(move |_, _, cx| set_hover(&store, 0, true, cx));
+        }
+        let auto_hide = s.config.settings.auto_hide;
+        let fold_store = self.store.clone();
         let accounts = s.enabled();
         let cells: Vec<_> = accounts
             .iter()
@@ -246,12 +355,21 @@ impl Render for Rail {
                             .font_weight(FontWeight::BOLD)
                             .child(value.map_or("—".into(), |v| format!("{v:.0}%"))),
                     )
+                    .on_hover({
+                        let (store, id) = (store.clone(), id.clone());
+                        move |hovered, window, cx| {
+                            if *hovered {
+                                open_popover(&store, id.clone(), index, window.bounds(), cx)
+                            }
+                        }
+                    })
                     .on_click(move |_, window, cx| {
-                        toggle_popover(&store, id.clone(), index, window.bounds(), cx)
+                        open_popover(&store, id.clone(), index, window.bounds(), cx)
                     })
             })
             .collect();
         div()
+            .id("rail")
             .size_full()
             .flex()
             .flex_col()
@@ -262,8 +380,6 @@ impl Render for Rail {
             .border_1()
             .border_color(rgba(0xffffff1c))
             .text_color(rgb(0xf5f5f5))
-            // Prototype only: there is no tray icon yet, so a right click quits.
-            .on_mouse_down(MouseButton::Right, |_, _, cx| cx.quit())
             .children(cells)
             .when(accounts.is_empty(), |d| {
                 d.child(
@@ -276,6 +392,22 @@ impl Render for Rail {
                         .child("—"),
                 )
             })
+            .when(auto_hide, |d| {
+                d.child(
+                    div()
+                        .id("fold")
+                        .h(px(TOOLS))
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .rounded_lg()
+                        .cursor_pointer()
+                        .text_color(rgb(0xa3a3a8))
+                        .hover(|d| d.bg(rgba(0xffffff10)).text_color(rgb(0xf5f5f5)))
+                        .child("»")
+                        .on_click(move |_, _, cx| fold(&fold_store, cx)),
+                )
+            })
     }
 }
 
@@ -285,12 +417,13 @@ fn popover_height(s: &Store, id: &str) -> f32 {
     let warning = reading.is_some_and(|r| r.status != "ok" && !r.message.is_empty());
     // Padding, header, identity and footer, then one 16 px gap per row.
     let rows = windows + 2. + if warning { 1. } else { 0. };
-    110. + rows * 16. + windows * 62. + if warning { 20. } else { 0. }
+    124. + rows * 16. + windows * 62. + if warning { 20. } else { 0. }
 }
 
 fn close_popover(store: &Entity<Store>, cx: &mut App) {
     let handle = store.update(cx, |s, cx| {
         s.selected = None;
+        s.hover[1] = false;
         cx.notify();
         s.popover.take()
     });
@@ -301,18 +434,17 @@ fn close_popover(store: &Entity<Store>, cx: &mut App) {
     }
 }
 
-fn toggle_popover(
+fn open_popover(
     store: &Entity<Store>,
     id: String,
     index: usize,
     rail: Bounds<Pixels>,
     cx: &mut App,
 ) {
-    let same = store.read(cx).selected.as_deref() == Some(id.as_str());
-    close_popover(store, cx);
-    if same {
+    if store.read(cx).selected.as_deref() == Some(id.as_str()) {
         return;
     }
+    close_popover(store, cx);
     let height = popover_height(store.read(cx), &id);
     let center = rail.origin.y + px(PAD + CELL * index as f32 + CELL / 2.);
     let bounds = Bounds {
@@ -327,7 +459,7 @@ fn toggle_popover(
     };
     let handle = cx
         .open_window(popup_options(bounds, None), |window, cx| {
-            cx.new(|cx| Popover::new(store.clone(), id.clone(), window, cx))
+            cx.new(|cx| Popover::new(store.clone(), id.clone(), bounds, window, cx))
         })
         .ok();
     store.update(cx, |s, cx| {
@@ -340,16 +472,25 @@ fn toggle_popover(
 pub struct Popover {
     store: Entity<Store>,
     account_id: String,
+    bounds: Bounds<Pixels>,
+    hovered: bool,
 }
 
 impl Popover {
-    fn new(store: Entity<Store>, account_id: String, window: &mut Window, cx: &mut Context<Self>) -> Self {
+    fn new(
+        store: Entity<Store>,
+        account_id: String,
+        bounds: Bounds<Pixels>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        desktop::place(window, bounds, true, cx);
         cx.observe_in(&store, window, |this: &mut Self, store, window, cx| {
-            let height = popover_height(store.read(cx), &this.account_id);
-            window.resize(Size {
-                width: px(POPOVER_WIDTH),
-                height: px(height),
-            });
+            let height = px(popover_height(store.read(cx), &this.account_id));
+            if this.bounds.size.height != height {
+                this.bounds.size.height = height;
+                desktop::place(window, this.bounds, true, cx);
+            }
             cx.notify();
         })
         .detach();
@@ -361,12 +502,23 @@ impl Popover {
             }
         })
         .detach();
-        Self { store, account_id }
+        Self {
+            store,
+            account_id,
+            bounds,
+            hovered: false,
+        }
     }
 }
 
 impl Render for Popover {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let hovered = window.is_window_hovered();
+        if hovered != self.hovered {
+            self.hovered = hovered;
+            let store = self.store.clone();
+            cx.defer(move |cx| set_hover(&store, 1, hovered, cx));
+        }
         let s = self.store.read(cx);
         let french = s.french();
         let now = chrono::Utc::now().timestamp();
@@ -408,7 +560,11 @@ impl Render for Popover {
                     .text_color(muted)
                     .hover(|d| d.bg(rgba(0xffffff14)))
                     .child("×")
-                    .on_click(cx.listener(|this, _, _, cx| close_popover(&this.store, cx))),
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        close_popover(&this.store, cx);
+                        // The pointer is no longer over a popover: fold unless it is on the rail.
+                        set_hover(&this.store, 1, false, cx);
+                    })),
             );
 
         let identity = div()

@@ -12,10 +12,18 @@ pub struct Store {
     pub tracker: alerts::Tracker,
     pub selected: Option<String>,
     pub popover: Option<WindowHandle<crate::ui::Popover>>,
+    /// Folded to the peek tab; only ever true with auto-hide.
+    pub collapsed: bool,
+    /// Whether the pointer is over the rail and over the popover.
+    pub hover: [bool; 2],
+    /// Bumped on every hover change so a pending fold can tell it is outdated.
+    pub fold_generation: u64,
+    pub fullscreen: bool,
 }
 
 impl Store {
     pub fn new(config: Config, storage_error: Option<String>) -> Self {
+        let collapsed = config.settings.auto_hide;
         Self {
             config,
             readings: HashMap::new(),
@@ -24,11 +32,21 @@ impl Store {
             tracker: alerts::Tracker::default(),
             selected: None,
             popover: None,
+            collapsed,
+            hover: [false; 2],
+            fold_generation: 0,
+            fullscreen: false,
         }
     }
 
     pub fn french(&self) -> bool {
         self.config.settings.language == "fr"
+    }
+
+    /// Game mode, or full screen when the setting asks for it, hides the notch entirely.
+    pub fn visible(&self) -> bool {
+        let s = &self.config.settings;
+        s.widget && !s.game_mode && !(s.hide_in_fullscreen && self.fullscreen)
     }
 
     pub fn enabled(&self) -> Vec<Account> {
