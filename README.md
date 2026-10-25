@@ -174,8 +174,8 @@ public key is in `src-tauri/tauri.conf.json` (`plugins.updater.pubkey`); keep th
 private key out of the repository.
 
 ```powershell
-$env:TAURI_SIGNING_PRIVATE_KEY = Get-Content -Raw "$env:USERPROFILE\.tauri\codenotch.key"
-$env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = "<key password>"
+$env:TAURI_SIGNING_PRIVATE_KEY = "$env:USERPROFILE\.tauri\codenotch.key"
+$env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = ""  # the current key has no password
 bun run desktop:build
 bun run release:package
 ```
