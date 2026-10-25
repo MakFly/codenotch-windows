@@ -510,7 +510,9 @@ impl SettingsView {
                         div()
                             .flex_1()
                             .min_w_0()
-                            .child(div().text_size(px(13.)).font_weight(FontWeight::SEMIBOLD).child(t(french, heading)))
+                            .when(!heading.is_empty(), |d| {
+                                d.child(div().text_size(px(13.)).font_weight(FontWeight::SEMIBOLD).child(t(french, heading)))
+                            })
                             .when(intro, |d| {
                                 d.child(
                                     div()

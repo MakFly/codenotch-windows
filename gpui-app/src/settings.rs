@@ -21,6 +21,14 @@ pub(crate) const TEXT: u32 = 0xf5f5f5;
 pub(crate) const ACCENT: u32 = 0x5c9bf5;
 pub(crate) const DANGER: u32 = 0xf1a1a1;
 
+/// The three parts of the Accounts page, shown one at a time.
+#[derive(Clone, Copy, PartialEq)]
+enum AccountsTab {
+    Configured,
+    Quick,
+    Catalog,
+}
+
 #[derive(Clone, Copy, PartialEq)]
 enum Section {
     Accounts,
@@ -89,6 +97,7 @@ pub struct SettingsView {
     /// The open dropdown, by id.
     open_select: Option<&'static str>,
     /// The open accordion item of the Appearance and Alerts pages.
+    accounts_tab: AccountsTab,
     appearance_open: Option<&'static str>,
     alerts_open: Option<&'static str>,
     /// The install command just copied, shown as « Copié » for a moment.
@@ -138,6 +147,7 @@ impl SettingsView {
             channels,
             statuses: crate::welcome::statuses(),
             open_select: None,
+            accounts_tab: AccountsTab::Configured,
             appearance_open: Some("language"),
             alerts_open: Some("discord"),
             usage: crate::usage::Usage::default(),
@@ -611,9 +621,79 @@ fn position_label(edge: &str) -> &'static str {
 // ---- Pages --------------------------------------------------------------------------
 
 impl SettingsView {
+    /// shadcn/ui `Tabs`: a muted rounded track, the active trigger raised on it.
+    fn accounts_tabs(&self, french: bool, count: usize, cx: &mut Context<Self>) -> AnyElement {
+        let tabs = [
+            (AccountsTab::Configured, "Comptes configurés", Some(count)),
+            (AccountsTab::Quick, "Connexion rapide", None),
+            (AccountsTab::Catalog, "Ajouter un fournisseur", None),
+        ];
+        div()
+            .flex()
+            .w_full()
+            .h(px(36.))
+            .p(px(3.))
+            .gap(px(2.))
+            .rounded(px(8.))
+            .bg(rgb(0x1c1c1f))
+            .border_1()
+            .border_color(rgba(LINE))
+            .children(tabs.into_iter().map(|(tab, label, badge)| {
+                let active = self.accounts_tab == tab;
+                div()
+                    .id(SharedString::from(format!("accounts-tab-{label}")))
+                    .flex_1()
+                    .h_full()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .gap(px(6.))
+                    .rounded(px(6.))
+                    .border_1()
+                    .text_size(px(12.5))
+                    .font_weight(FontWeight::MEDIUM)
+                    .cursor_pointer()
+                    .when(active, |d| {
+                        d.bg(rgb(0x2a2a2e))
+                            .border_color(rgba(0xffffff1a))
+                            .text_color(rgb(0xffffff))
+                            .shadow_sm()
+                    })
+                    .when(!active, |d| {
+                        d.border_color(rgba(0x00000000))
+                            .text_color(rgb(0xa1a1aa))
+                            .hover(|d| d.text_color(rgb(0xffffff)))
+                    })
+                    .child(t(french, label))
+                    .when_some(badge, |d, n| {
+                        d.child(
+                            div()
+                                .px(px(6.))
+                                .rounded_full()
+                                .bg(if active { rgba(0xffffff14) } else { rgba(0xffffff0a) })
+                                .text_size(px(10.5))
+                                .text_color(rgb(0xc3c3c8))
+                                .child(n.to_string()),
+                        )
+                    })
+                    .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
+                        this.accounts_tab = tab;
+                        this.message = None;
+                        cx.notify();
+                    }))
+            }))
+            .into_any_element()
+    }
+
     fn accounts_page(&mut self, french: bool, cx: &mut Context<Self>) -> Vec<AnyElement> {
         let accounts = self.store.read(cx).config.accounts.clone();
-        let mut out = vec![self.quick_connect(french, "Connexion rapide", true, cx)];
+        let tab = self.accounts_tab;
+        let mut out = vec![self.accounts_tabs(french, accounts.len(), cx)];
+        if tab == AccountsTab::Quick {
+            // The tab names the section, so the block keeps only its intro and summary.
+            out.push(self.quick_connect(french, "", true, cx));
+            return out;
+        }
 
         let detect = text_button(
             "detect",
@@ -716,11 +796,13 @@ impl SettingsView {
                 )))
                 .into_any_element(),
         );
-        out.push(div().flex().flex_col().children(list).into_any_element());
+        if tab == AccountsTab::Configured {
+            out.push(div().flex().flex_col().children(list).into_any_element());
+            return out;
+        }
 
         // `.connectors-catalog`
         let mut catalog: Vec<AnyElement> = vec![
-            div().text_size(px(13.)).font_weight(FontWeight::SEMIBOLD).child(t(french, "Ajouter un fournisseur")).into_any_element(),
             div()
                 .mt(px(7.))
                 .mb(px(10.))
