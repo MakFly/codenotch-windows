@@ -7,8 +7,6 @@ use serde::Deserialize;
 const FEED: &str = "https://github.com/MakFly/codenotch-windows/releases/latest/download/latest.json";
 /// The updater public key from `src-tauri/tauri.conf.json`.
 const PUBLIC_KEY: &str = "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEU5OTZDMDU4N0JCNERDMTIKUldRUzNMUjdXTUNXNlZhS0Q3QkNwblVTaHcrVGFvSmZhT2xWazlNNnpCSHNmbmZVTDloR1lGM1MK";
-/// The identifier the installer's shortcuts carry, which Windows needs to show a toast.
-pub const APP_ID: &str = "dev.kev.smashtoken";
 
 #[derive(Clone, Debug)]
 pub struct Release {
@@ -121,22 +119,12 @@ pub fn run_installer(_: &std::path::Path) -> Result<(), String> {
     Err("Impossible de lancer l’installation de la mise à jour.".into())
 }
 
-/// A Windows notification, once per version. Installed builds have a Start menu shortcut
-/// carrying `APP_ID`; a build run from elsewhere borrows PowerShell's so the toast still shows.
-#[cfg(windows)]
+/// A Windows notification, shown once per version by the caller.
 pub fn notify(version: &str, french: bool) {
-    let installed = std::env::current_exe()
-        .ok()
-        .and_then(|exe| exe.parent().map(|dir| dir.join("uninstall.exe").exists()))
-        .unwrap_or(false);
-    let id = if installed { APP_ID } else { tauri_winrt_notification::Toast::POWERSHELL_APP_ID };
     let (title, body) = if french {
         (format!("CodeNotch {version} est disponible"), "Ouvre les réglages pour mettre à jour.")
     } else {
         (format!("CodeNotch {version} is available"), "Open Settings to update.")
     };
-    let _ = tauri_winrt_notification::Toast::new(id).title(&title).text1(body).show();
+    crate::desktop::toast(&title, body);
 }
-
-#[cfg(not(windows))]
-pub fn notify(_: &str, _: bool) {}

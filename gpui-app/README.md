@@ -47,6 +47,5 @@ Add `-- --settings` to open the settings window at launch.
 
 ## Not yet ported
 
-Alert delivery (Windows,
-Telegram, Discord); Escape to fold, drag to move (the grip is drawn only). Text fields have
+Escape to fold, drag to move (the grip is drawn only). Text fields have
 no Tab navigation or undo yet.

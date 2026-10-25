@@ -14,7 +14,7 @@ An independent Windows adaptation inspired by
 Since 0.2.0 it no longer needs WebView2. This is not an official OpenAI,
 Anthropic or GitHub app.
 
-[Download v0.2.0](https://github.com/MakFly/codenotch-windows/releases/tag/v0.2.0)
+[Download v0.2.1](https://github.com/MakFly/codenotch-windows/releases/tag/v0.2.1)
 · [Français](docs/README.fr.md) · [Changelog](CHANGELOG.md)
 
 ![Quota details on hover](docs/images/notch.png)
@@ -26,27 +26,27 @@ Anthropic or GitHub app.
 - A **Home** page with every account's main window, reset times and shortcuts.
 - The computer's live CPU, RAM and GPU use in the settings header.
 - Automatic collapse when the pointer leaves; four configurable screen edges.
-- Four screen edges; moving the notch by its grip is not ported to 0.2.0 yet.
+- Four screen edges; moving the notch by its grip is not ported to the native app yet.
 - Automatic hiding during full-screen games and videos, plus manual game mode.
 - Multiple profiles per provider and local Codex / Claude profile detection.
-- Separate settings, modal account editing and threshold alerts (delivery not ported to 0.2.0 yet).
+- Separate settings, modal account editing and threshold alerts (Windows notifications, Discord).
 - **English by default**, with saved English / French selection.
 - Local account handling, Windows Credential Manager storage and no app telemetry.
 
 ## Download and run
 
 1. Open [Releases](https://github.com/MakFly/codenotch-windows/releases/latest).
-2. Download and run `CodeNotch-0.2.0-windows-x64-setup.exe`.
+2. Download and run `CodeNotch-0.2.1-windows-x64-setup.exe`.
 3. Launch CodeNotch from the Start menu. Hover over the small tab on the right edge of the screen.
 4. Open the settings from the notch or the tray icon to configure accounts.
 
 The installer installs for your Windows account, creates shortcuts and adds an
 entry to Windows Installed apps for removal.
 
-**Coming from 0.1.x?** Nothing to do: the built-in updater offers 0.2.0, installs
+**Coming from 0.1.x?** Nothing to do: the built-in updater offers the new version, installs
 it over the previous version, and keeps your accounts and settings.
 
-For portable use, download and extract `CodeNotch-0.2.0-windows-x64.zip`, then run
+For portable use, download and extract `CodeNotch-0.2.1-windows-x64.zip`, then run
 `CodeNotch.exe`. The ZIP includes the license, third-party notices and a
 getting-started guide. A standalone executable is also available.
 
@@ -60,7 +60,7 @@ There is no automatic startup. Updates are built in: CodeNotch checks GitHub Rel
 Verify downloads against `SHA256SUMS.txt` using PowerShell:
 
 ```powershell
-Get-FileHash .\CodeNotch-0.2.0-windows-x64.zip -Algorithm SHA256
+Get-FileHash .\CodeNotch-0.2.1-windows-x64.zip -Algorithm SHA256
 ```
 
 ## Connect your accounts
@@ -127,7 +127,7 @@ Pages are grouped into collapsible sections (one open at a time, remembered).
 
 - **Appearance → Interface language** switches English / Français.
 - **Appearance → Updates** shows the version and checks for a new one on demand.
-- **Appearance → Notch** sets the screen edge (dragging the grip is not ported to 0.2.0 yet).
+- **Appearance → Notch** sets the screen edge (dragging the grip is not ported to the native app yet).
 - **Auto-collapse** controls the idle tab. Details close when the pointer leaves.
 - **Hide in full screen** suppresses the notch and alerts during full-screen apps.
 - **Game mode** keeps them hidden until disabled, including after a restart.
@@ -145,10 +145,6 @@ Refresh intervals are 30, 60, 120 or 300 seconds. Claude enforces a minimum of
 Readings stay in memory for the session; any history comes from the provider.
 
 ## Alerts (for agents running in the background)
-
-> **0.2.0:** alerts are configured and computed (the forecast shows in the usage
-> details), but the native app does not send them yet, neither as Windows
-> notifications nor to Discord. Delivery comes back in a later update.
 
 ![Alerts with Discord set up](docs/images/alerts.png)
 
@@ -209,7 +205,7 @@ name. Release downloads use `CodeNotch.exe`.
 
 ### Publishing a release
 
-The in-app updater, in 0.2.0 and in the 0.1.x Tauri builds, only installs an
+The in-app updater, in the native app and in the 0.1.x Tauri builds, only installs an
 installer signed with the project's key, for the version the feed announces. The
 public key is in `gpui-app/src/updater.rs` and `src-tauri/tauri.conf.json`; keep
 the private key out of the repository.

@@ -1,6 +1,6 @@
 # CodeNotch pour Windows
 
-[English](../README.md) · [Télécharger la version 0.2.0](https://github.com/MakFly/codenotch-windows/releases/tag/v0.2.0)
+[English](../README.md) · [Télécharger la version 0.2.1](https://github.com/MakFly/codenotch-windows/releases/tag/v0.2.1)
 
 Une encoche discrète pour suivre les quotas de vos comptes IA sur Windows.
 Survolez un compte pour voir sa consommation et ses échéances de remise à
@@ -16,7 +16,7 @@ application officielle des fournisseurs concernés.
 
 ## Installer
 
-1. Téléchargez `CodeNotch-0.2.0-windows-x64-setup.exe` depuis les releases.
+1. Téléchargez `CodeNotch-0.2.1-windows-x64-setup.exe` depuis les releases.
 2. Lancez l'installateur, puis CodeNotch depuis le menu Démarrer.
 3. Survolez la languette au bord droit ; les réglages s'ouvrent depuis l'encoche ou l'icône près de l'horloge.
 4. Pour le français : **Appearance → Interface language → Français**.
@@ -25,11 +25,11 @@ L'application s'installe pour votre compte Windows, avec raccourcis et
 désinstallation depuis les applications installées de Windows.
 Windows 10/11 x64 est requis.
 
-**Vous avez la 0.1.x ?** Rien à faire : la mise à jour intégrée propose la 0.2.0,
+**Vous avez la 0.1.x ?** Rien à faire : la mise à jour intégrée propose la nouvelle version,
 l'installe par-dessus et conserve vos comptes et réglages.
 
 Une version portable reste disponible : décompressez
-`CodeNotch-0.2.0-windows-x64.zip` et lancez `CodeNotch.exe`.
+`CodeNotch-0.2.1-windows-x64.zip` et lancez `CodeNotch.exe`.
 
 L'installateur et l'application ne sont pas signés. SmartScreen peut afficher
 une alerte et Smart App Control peut bloquer leur exécution selon la configuration
@@ -43,10 +43,10 @@ figurent dans `SHA256SUMS.txt`.
 
 - Codex / ChatGPT, Claude Code, Gemini, Copilot, Ollama et endpoints JSON personnalisés.
 - Plusieurs profils par fournisseur ; détection locale des profils Codex, Claude et Gemini.
-- Quatre bords possibles (le déplacement par la poignée n'est pas encore porté dans la 0.2.0).
+- Quatre bords possibles (le déplacement par la poignée n'est pas encore porté dans l'app native).
 - Détails au survol et repli automatique au départ de la souris.
 - Masquage en plein écran et mode jeu manuel pour les jeux en fenêtre.
-- Réglages séparés, formulaires en modale et alertes de seuil (l'envoi des alertes n'est pas encore porté dans la 0.2.0).
+- Réglages séparés, formulaires en modale et alertes de seuil (notifications Windows, Discord).
 - Anglais par défaut, français disponible et choix enregistré.
 - Page **Accueil** : la fenêtre principale de chaque compte, ses échéances et des raccourcis.
 - Consommation CPU, RAM et GPU de l'ordinateur en temps réel dans l'en-tête des réglages.
