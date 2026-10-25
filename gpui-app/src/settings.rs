@@ -19,6 +19,7 @@ pub(crate) const DANGER: u32 = 0xff6b5a;
 #[derive(Clone, Copy, PartialEq)]
 enum Section {
     Accounts,
+    Notch,
     Language,
     Alerts,
 }
@@ -561,6 +562,105 @@ impl SettingsView {
         )]
     }
 
+    fn notch(&mut self, french: bool, cx: &mut Context<Self>) -> Vec<AnyElement> {
+        let s = self.store.read(cx).config.settings.clone();
+        let positions = [
+            ("right", tr(french, "À droite", "Right")),
+            ("left", tr(french, "À gauche", "Left")),
+            ("top", tr(french, "En haut", "Top")),
+            ("bottom", tr(french, "En bas", "Bottom")),
+        ]
+        .into_iter()
+        .map(|(edge, label)| {
+            (
+                SharedString::from(format!("edge-{edge}")),
+                label,
+                s.widget_position == edge,
+                self.setting(cx, move |s| s.widget_position = edge.into()),
+            )
+        })
+        .collect();
+        let intervals = [(30u64, "30 s"), (60, "1 min"), (120, "2 min"), (300, "5 min")]
+            .into_iter()
+            .map(|(n, label)| {
+                (
+                    SharedString::from(format!("poll-{n}")),
+                    label.to_owned(),
+                    s.poll_seconds == n,
+                    self.setting(cx, move |s| s.poll_seconds = n),
+                )
+            })
+            .collect();
+        vec![
+            card(
+                tr(french, "Encoche", "Notch"),
+                vec![
+                    row(
+                        tr(french, "Afficher l’encoche", "Show the notch"),
+                        tr(
+                            french,
+                            "Les quotas restent visibles au bord de l’écran. Survolez un anneau pour afficher les détails.",
+                            "Quotas stay visible at the screen edge. Hover a ring to see the details.",
+                        ),
+                        toggle("widget", s.widget, self.setting(cx, |s| s.widget = !s.widget)),
+                    ),
+                    row(
+                        tr(french, "Replier automatiquement", "Fold automatically"),
+                        tr(
+                            french,
+                            "Une languette discrète au repos. Survolez-la pour déplier les comptes ; éloignez la souris pour les masquer.",
+                            "A discreet tab at rest. Hover it to unfold the accounts; move the pointer away to hide them.",
+                        ),
+                        toggle("auto-hide", s.auto_hide, self.setting(cx, |s| s.auto_hide = !s.auto_hide)),
+                    ),
+                    row(
+                        tr(french, "Position", "Position"),
+                        tr(
+                            french,
+                            "Bord de l’écran principal où s’affiche l’encoche, hors barre des tâches.",
+                            "Edge of the main display where the notch sits, clear of the taskbar.",
+                        ),
+                        segmented(positions),
+                    ),
+                    row(
+                        tr(french, "Masquer en plein écran", "Hide in full screen"),
+                        tr(
+                            french,
+                            "Masque l’encoche et ses alertes pendant un jeu ou une vidéo en plein écran, même sans bordure. Retour automatique après Alt+Tab.",
+                            "Hides the notch and its alerts during a full-screen game or video, borderless included. Back automatically after Alt+Tab.",
+                        ),
+                        toggle(
+                            "hide-fullscreen",
+                            s.hide_in_fullscreen,
+                            self.setting(cx, |s| s.hide_in_fullscreen = !s.hide_in_fullscreen),
+                        ),
+                    ),
+                    row(
+                        tr(french, "Mode jeu", "Game mode"),
+                        tr(
+                            french,
+                            "Masque l’encoche et ses alertes jusqu’à désactivation. Pour les jeux en fenêtre, active-le depuis l’icône près de l’horloge.",
+                            "Hides the notch and its alerts until turned off. For windowed games, switch it from the icon near the clock.",
+                        ),
+                        toggle("game-mode", s.game_mode, self.setting(cx, |s| s.game_mode = !s.game_mode)),
+                    ),
+                ],
+            ),
+            card(
+                tr(french, "Actualisation", "Refresh"),
+                vec![row(
+                    tr(french, "Fréquence des relevés", "Reading frequency"),
+                    tr(
+                        french,
+                        "Claude respecte un minimum de 2 minutes. Les délais imposés par les fournisseurs sont prioritaires.",
+                        "Claude keeps a 2-minute minimum. Delays set by the providers always come first.",
+                    ),
+                    segmented(intervals),
+                )],
+            ),
+        ]
+    }
+
     fn alerts(&mut self, french: bool, cx: &mut Context<Self>) -> Vec<AnyElement> {
         let s = self.store.read(cx).config.settings.clone();
         let percent_stepper = |this: &Self,
@@ -694,6 +794,11 @@ impl Render for SettingsView {
                 tr(french, "Choisissez les comptes affichés dans l’encoche.", "Choose the accounts shown in the notch."),
                 self.accounts(french, cx),
             ),
+            Section::Notch => (
+                tr(french, "Encoche", "Notch"),
+                tr(french, "Position, repli, plein écran et fréquence des relevés.", "Position, folding, full screen and reading frequency."),
+                self.notch(french, cx),
+            ),
             Section::Language => (
                 tr(french, "Langue", "Language"),
                 tr(french, "Langue de l’encoche et des réglages.", "Language of the notch and settings."),
@@ -712,6 +817,7 @@ impl Render for SettingsView {
 
         let nav = [
             (Section::Accounts, tr(french, "Comptes", "Accounts")),
+            (Section::Notch, tr(french, "Encoche", "Notch")),
             (Section::Language, tr(french, "Langue", "Language")),
             (Section::Alerts, tr(french, "Alertes", "Alerts")),
         ]

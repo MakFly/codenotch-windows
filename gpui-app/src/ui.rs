@@ -122,24 +122,72 @@ fn popup_options(bounds: Bounds<Pixels>, display: Option<DisplayId>) -> WindowOp
 }
 
 /// The rail when open, or the peek tab when folded, on the right edge and vertically centered.
-fn rail_bounds(screen: Bounds<Pixels>, s: &Store) -> Bounds<Pixels> {
-    let size = if s.collapsed {
-        Size {
-            width: px(PEEK_WIDTH),
-            height: px(PEEK_HEIGHT),
+#[derive(Clone, Copy, PartialEq)]
+enum Edge {
+    Right,
+    Left,
+    Top,
+    Bottom,
+}
+
+impl Edge {
+    fn of(s: &Store) -> Self {
+        match s.config.settings.widget_position.as_str() {
+            "left" => Edge::Left,
+            "top" => Edge::Top,
+            "bottom" => Edge::Bottom,
+            _ => Edge::Right,
         }
+    }
+
+    fn vertical(self) -> bool {
+        matches!(self, Edge::Right | Edge::Left)
+    }
+
+    /// Rounds the corners facing the screen, leaving the side against the edge square.
+    fn round<T: Styled>(self, element: T, radius: f32) -> T {
+        match self {
+            Edge::Right => element.rounded_l(px(radius)),
+            Edge::Left => element.rounded_r(px(radius)),
+            Edge::Top => element.rounded_b(px(radius)),
+            Edge::Bottom => element.rounded_t(px(radius)),
+        }
+    }
+
+    /// Points toward the edge: folding pushes the notch into it.
+    fn fold_glyph(self) -> &'static str {
+        match self {
+            Edge::Right => "»",
+            Edge::Left => "«",
+            Edge::Top => "˄",
+            Edge::Bottom => "˅",
+        }
+    }
+}
+
+/// The rail when open, or the peek tab when folded, centered on the chosen edge.
+fn rail_bounds(screen: Bounds<Pixels>, s: &Store) -> Bounds<Pixels> {
+    let edge = Edge::of(s);
+    let (along, across) = if s.collapsed {
+        (PEEK_HEIGHT, PEEK_WIDTH)
     } else {
         let count = s.enabled().len().max(1) as f32;
         let tools = if s.config.settings.auto_hide { TOOLS } else { 0. };
-        Size {
-            width: px(RAIL_WIDTH),
-            height: px(PAD * 2. + CELL * count + tools),
-        }
+        (PAD * 2. + CELL * count + tools, RAIL_WIDTH)
     };
-    let origin = point(
-        screen.origin.x + screen.size.width - size.width,
-        screen.origin.y + (screen.size.height - size.height) / 2.,
-    );
+    let size = if edge.vertical() {
+        Size { width: px(across), height: px(along) }
+    } else {
+        Size { width: px(along), height: px(across) }
+    };
+    let center_x = screen.origin.x + (screen.size.width - size.width) / 2.;
+    let center_y = screen.origin.y + (screen.size.height - size.height) / 2.;
+    let origin = match edge {
+        Edge::Right => point(screen.origin.x + screen.size.width - size.width, center_y),
+        Edge::Left => point(screen.origin.x, center_y),
+        Edge::Top => point(center_x, screen.origin.y),
+        Edge::Bottom => point(center_x, screen.origin.y + screen.size.height - size.height),
+    };
     Bounds { origin, size }
 }
 
@@ -291,7 +339,8 @@ impl Rail {
         .detach();
         let mut rail = Self {
             store,
-            screen,
+            // Keep clear of the taskbar, whichever edge it is on.
+            screen: desktop::work_area(window.scale_factor()).unwrap_or(screen),
             hovered: false,
             applied: None,
         };
@@ -305,9 +354,13 @@ impl Rail {
         if self.applied == Some(next) {
             return;
         }
+        let moved = self
+            .applied
+            .is_some_and(|(before, _)| before.origin != next.0.origin && !s.collapsed);
         self.applied = Some(next);
         desktop::place(window, next.0, next.1, cx);
-        if !next.1 && s.popover.is_some() {
+        // A popover opened beside the old position would be left floating.
+        if (!next.1 || moved) && s.popover.is_some() {
             let store = self.store.clone();
             cx.defer(move |cx| close_popover(&store, cx));
         }
@@ -324,18 +377,19 @@ impl Render for Rail {
             cx.defer(move |cx| set_hover(&store, 0, hovered, cx));
         }
         let s = self.store.read(cx);
+        let edge = Edge::of(s);
+        let vertical = edge.vertical();
         if s.collapsed {
             let store = self.store.clone();
-            return div()
-                .id("peek")
-                .size_full()
+            return edge
+                .round(div().id("peek").size_full(), 6.)
                 .bg(rgb(0x000000))
-                .rounded_l(px(6.))
                 .border_1()
                 .border_color(rgba(0xffffff28))
                 .cursor_pointer()
                 .on_click(move |_, _, cx| set_hover(&store, 0, true, cx));
         }
+        let area = self.screen;
         let auto_hide = s.config.settings.auto_hide;
         let fold_store = self.store.clone();
         let accounts = s.enabled();
@@ -351,7 +405,8 @@ impl Render for Rail {
                 let id = account.id.clone();
                 div()
                     .id(SharedString::from(account.id.clone()))
-                    .h(px(CELL))
+                    .when(vertical, |d| d.h(px(CELL)))
+                    .when(!vertical, |d| d.w(px(CELL)))
                     .flex()
                     .flex_col()
                     .items_center()
@@ -372,24 +427,20 @@ impl Render for Rail {
                         let (store, id) = (store.clone(), id.clone());
                         move |hovered, window, cx| {
                             if *hovered {
-                                open_popover(&store, id.clone(), index, window.bounds(), cx)
+                                open_popover(&store, id.clone(), index, window.bounds(), area, cx)
                             }
                         }
                     })
                     .on_click(move |_, window, cx| {
-                        open_popover(&store, id.clone(), index, window.bounds(), cx)
+                        open_popover(&store, id.clone(), index, window.bounds(), area, cx)
                     })
             })
             .collect();
-        div()
-            .id("rail")
-            .size_full()
+        edge.round(div().id("rail").size_full(), 24.)
             .flex()
-            .flex_col()
-            .py(px(PAD))
-            .px(px(6.))
+            .when(vertical, |d| d.flex_col().py(px(PAD)).px(px(6.)))
+            .when(!vertical, |d| d.flex_row().px(px(PAD)).py(px(6.)))
             .bg(rgb(0x000000))
-            .rounded_l(px(24.))
             .border_1()
             .border_color(rgba(0xffffff1c))
             .text_color(rgb(0xf5f5f5))
@@ -397,7 +448,8 @@ impl Render for Rail {
             .when(accounts.is_empty(), |d| {
                 d.child(
                     div()
-                        .h(px(CELL))
+                        .when(vertical, |d| d.h(px(CELL)))
+                        .when(!vertical, |d| d.w(px(CELL)))
                         .flex()
                         .items_center()
                         .justify_center()
@@ -409,7 +461,8 @@ impl Render for Rail {
                 d.child(
                     div()
                         .id("fold")
-                        .h(px(TOOLS))
+                        .when(vertical, |d| d.h(px(TOOLS)))
+                        .when(!vertical, |d| d.w(px(TOOLS)))
                         .flex()
                         .items_center()
                         .justify_center()
@@ -417,7 +470,7 @@ impl Render for Rail {
                         .cursor_pointer()
                         .text_color(rgb(0xa3a3a8))
                         .hover(|d| d.bg(rgba(0xffffff10)).text_color(rgb(0xf5f5f5)))
-                        .child("»")
+                        .child(edge.fold_glyph())
                         .on_click(move |_, _, cx| fold(&fold_store, cx)),
                 )
             })
@@ -452,27 +505,36 @@ fn open_popover(
     id: String,
     index: usize,
     rail: Bounds<Pixels>,
+    area: Bounds<Pixels>,
     cx: &mut App,
 ) {
     if store.read(cx).selected.as_deref() == Some(id.as_str()) {
         return;
     }
     close_popover(store, cx);
-    let height = popover_height(store.read(cx), &id);
-    let center = rail.origin.y + px(PAD + CELL * index as f32 + CELL / 2.);
+    let edge = Edge::of(store.read(cx));
+    let (w, h) = (px(POPOVER_WIDTH), px(popover_height(store.read(cx), &id)));
+    let gap = px(POPOVER_GAP);
+    // Centered on the hovered cell, on the side facing the screen.
+    let offset = px(PAD + CELL * index as f32 + CELL / 2.);
+    let origin = match edge {
+        Edge::Right => point(rail.origin.x - w - gap, rail.origin.y + offset - h / 2.),
+        Edge::Left => point(rail.origin.x + rail.size.width + gap, rail.origin.y + offset - h / 2.),
+        Edge::Top => point(rail.origin.x + offset - w / 2., rail.origin.y + rail.size.height + gap),
+        Edge::Bottom => point(rail.origin.x + offset - w / 2., rail.origin.y - gap - h),
+    };
+    let clamp = |v: Pixels, lo: Pixels, len: Pixels, size: Pixels| v.max(lo).min(lo + len - size);
     let bounds = Bounds {
         origin: point(
-            rail.origin.x - px(POPOVER_WIDTH + POPOVER_GAP),
-            center - px(height / 2.),
+            clamp(origin.x, area.origin.x, area.size.width, w),
+            clamp(origin.y, area.origin.y, area.size.height, h),
         ),
-        size: Size {
-            width: px(POPOVER_WIDTH),
-            height: px(height),
-        },
+        size: Size { width: w, height: h },
     };
+    let anchored_bottom = edge == Edge::Bottom;
     let handle = cx
         .open_window(popup_options(bounds, None), |window, cx| {
-            cx.new(|cx| Popover::new(store.clone(), id.clone(), bounds, window, cx))
+            cx.new(|cx| Popover::new(store.clone(), id.clone(), bounds, anchored_bottom, window, cx))
         })
         .ok();
     store.update(cx, |s, cx| {
@@ -494,13 +556,18 @@ impl Popover {
         store: Entity<Store>,
         account_id: String,
         bounds: Bounds<Pixels>,
+        anchored_bottom: bool,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
         desktop::place(window, bounds, true, cx);
-        cx.observe_in(&store, window, |this: &mut Self, store, window, cx| {
+        cx.observe_in(&store, window, move |this: &mut Self, store, window, cx| {
             let height = px(popover_height(store.read(cx), &this.account_id));
             if this.bounds.size.height != height {
+                // Above a bottom notch, grow upward so the popover stays clear of it.
+                if anchored_bottom {
+                    this.bounds.origin.y += this.bounds.size.height - height;
+                }
                 this.bounds.size.height = height;
                 desktop::place(window, this.bounds, true, cx);
             }

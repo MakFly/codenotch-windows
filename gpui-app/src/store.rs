@@ -97,8 +97,14 @@ impl Store {
             || !(50..=100).contains(&settings.alert_percent)
             || !(50..=100).contains(&settings.critical_percent)
             || ![15, 30, 60].contains(&settings.forecast_minutes)
+            || ![30, 60, 120, 300].contains(&settings.poll_seconds)
+            || !["top", "bottom", "left", "right"].contains(&settings.widget_position.as_str())
         {
             return Err("Invalid settings.".into());
+        }
+        // A drag-saved placement belongs to the previous edge.
+        if settings.widget_position != self.config.settings.widget_position {
+            settings.widget_placement = None;
         }
         settings.telegram_chat_id = settings.telegram_chat_id.trim().to_owned();
         if !settings.telegram_chat_id.is_empty()
@@ -106,9 +112,16 @@ impl Store {
         {
             return Err("Identifiant de chat Telegram invalide : un nombre (ex. 123456789 ou -100…) ou @nom_du_canal.".into());
         }
+        let auto_hide = settings.auto_hide;
+        let auto_hide_changed = auto_hide != self.config.settings.auto_hide;
         let mut next = self.config.clone();
         next.settings = settings;
-        self.commit(next)
+        self.commit(next)?;
+        // Turning auto-hide on folds the notch; turning it off keeps it open.
+        if auto_hide_changed {
+            self.collapsed = auto_hide;
+        }
+        Ok(())
     }
 
     /// Adds or updates an account, as `save_account` does in the Tauri backend: the secret

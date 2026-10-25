@@ -13,7 +13,7 @@ Add `-- --settings` to open the settings window at launch.
 
 ## What works
 
-- Notch rail on the right edge of the primary display, one usage ring per enabled account,
+- Notch rail on any edge of the primary display (clear of the taskbar), one usage ring per enabled account,
   with the provider's logo.
 - Hover or click a ring to open the usage popover (windows, reset countdown, forecast, refresh).
 - Auto-hide: folded to a peek tab, revealed on hover, folded again 240 ms after the pointer
@@ -25,6 +25,7 @@ Add `-- --settings` to open the settings window at launch.
   - Accounts: add or edit (provider, name, profile folder, JSON URL, token kept in Windows
     Credential Manager, environment variable), sign in through the official CLI, enable or
     disable, remove (with confirmation), detect local CLI profiles.
+  - Notch: show, fold automatically, edge, hide in full screen, game mode, poll interval.
   - Language: French or English, applied at once to the notch, the window and the tray menu;
     the welcome screen can be shown again from here.
 - Welcome screen on first launch (no account yet, as in the Tauri app): CLI install and
@@ -40,6 +41,6 @@ Add `-- --settings` to open the settings window at launch.
 
 ## Not yet ported
 
-Notch position and poll interval settings; alert delivery (Windows,
+Alert delivery (Windows,
 Telegram, Discord); fold animation, Escape to fold, drag to move; updater. Text fields have
 no Tab navigation or undo yet.

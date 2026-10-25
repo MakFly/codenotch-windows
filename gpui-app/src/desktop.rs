@@ -45,6 +45,30 @@ pub fn place(window: &Window, bounds: Bounds<Pixels>, visible: bool, cx: &App) {
 #[cfg(not(windows))]
 pub fn place(_: &Window, _: Bounds<Pixels>, _: bool, _: &App) {}
 
+/// The primary display minus the taskbar, in logical pixels.
+#[cfg(windows)]
+pub fn work_area(scale: f32) -> Option<Bounds<Pixels>> {
+    use gpui::{point, px, size};
+    use windows_sys::Win32::{
+        Foundation::RECT,
+        UI::WindowsAndMessaging::{SystemParametersInfoW, SPI_GETWORKAREA},
+    };
+    let mut r = RECT { left: 0, top: 0, right: 0, bottom: 0 };
+    let ok = unsafe { SystemParametersInfoW(SPI_GETWORKAREA, 0, &mut r as *mut RECT as _, 0) };
+    (ok != 0).then(|| {
+        let logical = |v: i32| px(v as f32 / scale);
+        Bounds {
+            origin: point(logical(r.left), logical(r.top)),
+            size: size(logical(r.right - r.left), logical(r.bottom - r.top)),
+        }
+    })
+}
+
+#[cfg(not(windows))]
+pub fn work_area(_: f32) -> Option<Bounds<Pixels>> {
+    None
+}
+
 fn covers_monitor(client: (i32, i32, i32, i32), monitor: (i32, i32, i32, i32)) -> bool {
     client.0 <= monitor.0 + 1
         && client.1 <= monitor.1 + 1
