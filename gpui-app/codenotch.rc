@@ -1,0 +1,2 @@
+// Icon #1 is the one Windows shows for the executable and GPUI loads for its windows.
+1 ICON "../src-tauri/icons/icon.ico"

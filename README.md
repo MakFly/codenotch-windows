@@ -9,44 +9,48 @@ Windows desktop. Hover to see usage, reset times and token activity when the
 provider reports them.
 
 An independent Windows adaptation inspired by
-[CodeNotch by Vinz](https://github.com/vinzdg/codenotch), built with Tauri 2,
-Rust, React and TypeScript. This is not an official OpenAI, Anthropic or GitHub app.
+[CodeNotch by Vinz](https://github.com/vinzdg/codenotch), written in Rust with
+[GPUI](https://www.gpui.rs), the native UI framework behind the Zed editor.
+Since 0.2.0 it no longer needs WebView2. This is not an official OpenAI,
+Anthropic or GitHub app.
 
-[Download v0.1.3](https://github.com/MakFly/codenotch-windows/releases/tag/v0.1.3)
+[Download v0.2.0](https://github.com/MakFly/codenotch-windows/releases/tag/v0.2.0)
 · [Français](docs/README.fr.md) · [Changelog](CHANGELOG.md)
 
-![Quota details on hover, with sample data](docs/images/notch.png)
-
-*Preview uses fictional data. The Windows app reads your configured accounts.*
+![Quota details on hover](docs/images/notch.png)
 
 ## Features
 
+- Native Rust app: small, fast to start, no browser engine.
 - Compact quota rings for each enabled account and details on hover.
+- A **Home** page with every account's main window, reset times and shortcuts.
+- The computer's live CPU, RAM and GPU use in the settings header.
 - Automatic collapse when the pointer leaves; four configurable screen edges.
-- Draggable placement with remembered monitor position.
+- Four screen edges; moving the notch by its grip is not ported to 0.2.0 yet.
 - Automatic hiding during full-screen games and videos, plus manual game mode.
 - Multiple profiles per provider and local Codex / Claude profile detection.
-- Separate settings, modal account editing and optional threshold notifications.
+- Separate settings, modal account editing and threshold alerts (delivery not ported to 0.2.0 yet).
 - **English by default**, with saved English / French selection.
 - Local account handling, Windows Credential Manager storage and no app telemetry.
 
 ## Download and run
 
 1. Open [Releases](https://github.com/MakFly/codenotch-windows/releases/latest).
-2. Download and run `CodeNotch-0.1.3-windows-x64-setup.exe`.
+2. Download and run `CodeNotch-0.2.0-windows-x64-setup.exe`.
 3. Launch CodeNotch from the Start menu. Hover over the small tab on the right edge of the screen.
-4. Open the settings wheel to configure accounts.
+4. Open the settings from the notch or the tray icon to configure accounts.
 
 The installer installs for your Windows account, creates shortcuts and adds an
-entry to Windows Installed apps for removal. If WebView2 is missing, it downloads
-Microsoft's runtime installer; an internet connection is needed for that step.
+entry to Windows Installed apps for removal.
 
-For portable use, download and extract `CodeNotch-0.1.3-windows-x64.zip`, then run
+**Coming from 0.1.x?** Nothing to do: the built-in updater offers 0.2.0, installs
+it over the previous version, and keeps your accounts and settings.
+
+For portable use, download and extract `CodeNotch-0.2.0-windows-x64.zip`, then run
 `CodeNotch.exe`. The ZIP includes the license, third-party notices and a
 getting-started guide. A standalone executable is also available.
 
-Requires **Windows 10/11 x64** and the
-[Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/).
+Requires **Windows 10/11 x64**.
 The installer and portable executable are unsigned. Windows may display a
 SmartScreen warning or block unsigned applications under Smart App Control;
 installation is not guaranteed on every security configuration. See
@@ -56,12 +60,12 @@ There is no automatic startup. Updates are built in: CodeNotch checks GitHub Rel
 Verify downloads against `SHA256SUMS.txt` using PowerShell:
 
 ```powershell
-Get-FileHash .\CodeNotch-0.1.3-windows-x64.zip -Algorithm SHA256
+Get-FileHash .\CodeNotch-0.2.0-windows-x64.zip -Algorithm SHA256
 ```
 
 ## Connect your accounts
 
-![Welcome screen with sample accounts](docs/images/welcome.png)
+![Welcome screen](docs/images/welcome.png)
 
 On first launch, CodeNotch opens a welcome screen to connect your subscriptions
 (you can show it again from **Appearance**). Afterwards, open
@@ -80,7 +84,7 @@ CodeNotch then detects the new session and adds the account. Each row shows
 which CLI was found, or the command that installs it. CodeNotch never sees the
 authorization code or the token exchange.
 
-![Quick connect in Accounts, with sample data](docs/images/accounts.png)
+![Quick connect in Accounts](docs/images/accounts.png)
 
 | Provider | Connection | Available readings |
 | --- | --- | --- |
@@ -111,12 +115,19 @@ This app does not provide native connectors for every AI service.
 
 ## Settings
 
-![Appearance settings](docs/images/settings.png)
+![Home page of the settings](docs/images/home.png)
 
-Settings are grouped into collapsible sections (one open at a time, remembered).
+The settings open on **Home**: the main quota window of every account in the
+notch, when it resets, and shortcuts to connect another account, move the notch
+or tune alerts. The header shows the computer's live CPU, RAM and GPU use.
+
+![Appearance settings with the Updates section open](docs/images/settings.png)
+
+Pages are grouped into collapsible sections (one open at a time, remembered).
 
 - **Appearance → Interface language** switches English / Français.
-- Drag the grip to save position and monitor. Choosing another edge resets placement.
+- **Appearance → Updates** shows the version and checks for a new one on demand.
+- **Appearance → Notch** sets the screen edge (dragging the grip is not ported to 0.2.0 yet).
 - **Auto-collapse** controls the idle tab. Details close when the pointer leaves.
 - **Hide in full screen** suppresses the notch and alerts during full-screen apps.
 - **Game mode** keeps them hidden until disabled, including after a restart.
@@ -134,6 +145,10 @@ Refresh intervals are 30, 60, 120 or 300 seconds. Claude enforces a minimum of
 Readings stay in memory for the session; any history comes from the provider.
 
 ## Alerts (for agents running in the background)
+
+> **0.2.0:** alerts are configured and computed (the forecast shows in the usage
+> details), but the native app does not send them yet, neither as Windows
+> notifications nor to Discord. Delivery comes back in a later update.
 
 ![Alerts with Discord set up](docs/images/alerts.png)
 
@@ -163,8 +178,8 @@ Readings stay in memory for the session; any history comes from the provider.
 - No CodeNotch server, analytics or telemetry; readings go directly to configured providers.
 - Existing authentication stays in the provider's local profile.
 - Added secrets use **Windows Credential Manager**, under the `SmashToken` service name.
-- Configuration: `%APPDATA%\dev.kev.smashtoken\config.json`.
-- The renderer receives usage readings, not authentication tokens.
+- Configuration: `%APPDATA%\dev.kev.smashtoken\config.gpui.json`. On its first
+  launch, 0.2.0 starts from the `config.json` of earlier versions, which it never modifies.
 - Custom endpoints require HTTPS, except HTTP on localhost. Redirects are blocked; responses are limited to 2 MB.
 
 Do not share authentication files or personal usage screenshots in issues.
@@ -172,40 +187,43 @@ See [Security](SECURITY.md) for private vulnerability reporting.
 
 ## Build locally
 
-Install [Bun](https://bun.sh), Rust stable with the MSVC toolchain, WebView2,
-and Visual Studio Build Tools with **Desktop development with C++**.
-See [Tauri's Windows prerequisites](https://v2.tauri.app/start/prerequisites/).
+Install Rust stable with the MSVC toolchain and Visual Studio Build Tools with
+**Desktop development with C++**. The app lives in `gpui-app/`; it shares the
+provider connectors in `src-tauri/src/` and the English strings in
+`src/lib/messages.en.json` with the 0.1.x Tauri app, which stays in the
+repository for reference.
 
 ```powershell
 git clone https://github.com/MakFly/codenotch-windows.git
-cd codenotch-windows
-bun install --frozen-lockfile
-bun run desktop
+cd codenotch-windows\gpui-app
+cargo run -- --settings
 ```
 
 ```powershell
-bun run test
-bun run test:native
-bun run build
-bun run desktop:build --no-bundle
+cargo build --release
 ```
 
-The native binary is generated at `src-tauri/target/release/smashtoken.exe`.
-To also build the NSIS installer locally, run `bun run desktop:build` without
-`--no-bundle`. The installer is generated in `src-tauri/target/release/bundle/nsis/`.
+The native binary is generated at `gpui-app/target/release/codenotch-gpui.exe`.
 Internal package and configuration identifiers retain the original `smashtoken`
 name. Release downloads use `CodeNotch.exe`.
 
 ### Publishing a release
 
-The in-app updater only installs installers signed with the project's key. The
-public key is in `src-tauri/tauri.conf.json` (`plugins.updater.pubkey`); keep the
-private key out of the repository.
+The in-app updater, in 0.2.0 and in the 0.1.x Tauri builds, only installs an
+installer signed with the project's key, for the version the feed announces. The
+public key is in `gpui-app/src/updater.rs` and `src-tauri/tauri.conf.json`; keep
+the private key out of the repository.
+
+The installer script is `gpui-app/installer/installer.nsi`. It keeps the product
+name, install folder, uninstall entry and `smashtoken.exe` binary name of the
+Tauri builds, so updates install over them. It is built with the `makensis` that
+the Tauri CLI downloads (run `bun run desktop:build` once if it is missing).
 
 ```powershell
-$env:TAURI_SIGNING_PRIVATE_KEY = "$env:USERPROFILE\.tauri\codenotch.key"
+cd gpui-app; cargo build --release; cd ..
+bun install --frozen-lockfile
+$env:TAURI_SIGNING_PRIVATE_KEY_PATH = "$env:USERPROFILE\.tauri\codenotch.key"
 $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = ""  # the current key has no password
-bun run desktop:build
 bun run release:package
 ```
 
@@ -213,16 +231,6 @@ bun run release:package
 `latest.json`, the portable files and `SHA256SUMS.txt`. Upload them all to the
 GitHub release tagged `v<version>`: installed apps read
 `releases/latest/download/latest.json`.
-
-For UI tests, run `bun run dev` in another terminal, then:
-
-```powershell
-bunx playwright install chromium
-bun run test:ui
-```
-
-`http://127.0.0.1:1437/?demo=1` is a fictional-data preview. Browser previews
-cannot access local provider accounts; demo mode is disabled in Tauri.
 
 ## Custom JSON endpoint
 
@@ -249,7 +257,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) and [CHANGELOG.md](CHANGELOG.md).
 
 - [CodeNotch / Vinz](https://github.com/vinzdg/codenotch): visual and functional reference, adapted provider glyphs and formats.
 - [Coucou / Louis-CFM](https://github.com/Louis-CFM/coucou): initial Tauri reference; no Coucou code or media is bundled.
-- React, Tauri, Radix UI, Lucide and their respective contributors.
+- [GPUI](https://www.gpui.rs) by Zed Industries, Lucide icons, and, for the 0.1.x builds, React, Tauri and Radix UI, with their respective contributors.
 
 Licensed under [MIT](LICENSE). Preserve the upstream attribution in
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
