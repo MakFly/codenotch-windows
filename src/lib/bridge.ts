@@ -211,3 +211,21 @@ export async function windowAction(
   else if (action === "minimize") await invoke("minimize_dashboard");
   else await getCurrentWindow()[action]();
 }
+export interface TelegramChat {
+  id: string;
+  name: string;
+}
+export const saveTelegramToken = (token: string | null) =>
+  native
+    ? invoke<Snapshot>("save_telegram_token", { token })
+    : Promise.reject(new Error("Disponible dans l’application Windows"));
+export const detectTelegramChats = (token: string | null) =>
+  native ? invoke<TelegramChat[]>("detect_telegram_chats", { token }) : Promise.resolve([]);
+export const testTelegram = (chatId: string) =>
+  native ? invoke<void>("test_telegram", { chatId }) : Promise.resolve();
+export const saveDiscordWebhook = (url: string | null) =>
+  native
+    ? invoke<Snapshot>("save_discord_webhook", { url })
+    : Promise.reject(new Error("Disponible dans l’application Windows"));
+export const testDiscord = () =>
+  native ? invoke<void>("test_discord") : Promise.resolve();

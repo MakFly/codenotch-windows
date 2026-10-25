@@ -1,12 +1,15 @@
+mod alerts;
 mod claude;
 mod codex;
 mod dashboard;
+mod discord;
 mod gemini;
 mod grok;
 mod login;
 mod model;
 mod opencode;
 mod providers;
+mod telegram;
 mod updater;
 mod widget;
 
@@ -22,6 +25,9 @@ struct Data {
     readings: HashMap<String, Reading>,
     revision: u64,
     storage_error: Option<String>,
+    tracker: alerts::Tracker,
+    telegram_saved: bool,
+    discord_saved: bool,
 }
 struct Backend {
     data: Mutex<Data>,
@@ -103,6 +109,8 @@ fn snapshot(data: &Data, refreshing: bool) -> Snapshot {
         readings: data.readings.values().cloned().collect(),
         refreshing,
         storage_error: data.storage_error.clone(),
+        telegram_token_saved: data.telegram_saved,
+        discord_webhook_saved: data.discord_saved,
     }
 }
 
@@ -185,12 +193,67 @@ fn discover() -> Vec<Account> {
     profiles
 }
 
+/// Sends alerts as Windows notifications and, when configured, to Telegram and Discord.
+/// Those are meant for when the user is away, so full screen and game mode never hold them back.
+fn deliver(
+    app: &tauri::AppHandle,
+    settings: &Settings,
+    alerts: Vec<alerts::Alert>,
+    telegram_saved: bool,
+    discord_saved: bool,
+    now: i64,
+) {
+    if alerts.is_empty() {
+        return;
+    }
+    let french = settings.language == "fr";
+    let suppressed = suppress_widget(app, settings);
+    for alert in &alerts {
+        if settings.notifications
+            && (!suppressed || (alert.urgent() && settings.critical_in_fullscreen))
+        {
+            let (title, body) = alerts::desktop_text(alert, french, now);
+            let _ = app.notification().builder().title(title).body(body).show();
+        }
+    }
+    if telegram::AVAILABLE
+        && telegram_saved
+        && settings.telegram_enabled
+        && !settings.telegram_chat_id.is_empty()
+    {
+        let chat = settings.telegram_chat_id.clone();
+        let messages: Vec<_> = alerts
+            .iter()
+            .map(|a| telegram::message(a, french, now))
+            .collect();
+        tauri::async_runtime::spawn(async move {
+            let Some(token) = telegram::saved_token() else {
+                return;
+            };
+            for message in messages {
+                let _ = telegram::send(&token, &chat, message).await;
+            }
+        });
+    }
+    if discord_saved && settings.discord_enabled {
+        let messages: Vec<_> = alerts.iter().map(|a| discord::message(a, french)).collect();
+        tauri::async_runtime::spawn(async move {
+            let Some(webhook) = discord::saved_webhook() else {
+                return;
+            };
+            for message in messages {
+                let _ = discord::send(&webhook, message).await;
+            }
+        });
+    }
+}
+
 async fn poll(app: &tauri::AppHandle, state: &Shared, force: bool) {
     let Ok(_guard) = state.polling.try_lock() else {
         return;
     };
     let now = chrono::Utc::now().timestamp();
-    let (accounts, revision, settings) = {
+    let (accounts, revision) = {
         let data = state.data.lock().await;
         let accounts: Vec<_> = data
             .config
@@ -208,8 +271,11 @@ async fn poll(app: &tauri::AppHandle, state: &Shared, force: bool) {
                             return false;
                         }
                         let floor = if a.provider == "claude" { 120 } else { 10 };
+                        // Near a limit, read as often as the provider allows.
                         let interval = if force {
                             floor
+                        } else if alerts::Tracker::near_limit(r, &data.config.settings, now) {
+                            floor.max(30)
                         } else {
                             data.config.settings.poll_seconds.max(floor)
                         } as i64;
@@ -223,7 +289,7 @@ async fn poll(app: &tauri::AppHandle, state: &Shared, force: bool) {
             return;
         }
         let _ = app.emit("snapshot", snapshot(&data, true));
-        (accounts, data.revision, data.config.settings.clone())
+        (accounts, data.revision)
     };
     let mut jobs = tokio::task::JoinSet::new();
     for account in accounts {
@@ -244,51 +310,19 @@ async fn poll(app: &tauri::AppHandle, state: &Shared, force: bool) {
                 r.account_id = account.id.clone();
                 r.status = "ok".into();
                 r.updated_at = Some(at);
-                if settings.notifications && !suppress_widget(app, &data.config.settings) {
-                    if let Some(old) = previous.as_ref().filter(|old| old.updated_at.is_some()) {
-                        for w in &r.windows {
-                            if let Some(before) = old
-                                .windows
-                                .iter()
-                                .find(|old| old.label == w.label && old.resets_at == w.resets_at)
-                            {
-                                let threshold = f64::from(settings.alert_percent);
-                                if before.used_percent < threshold && w.used_percent >= threshold {
-                                    let _ = app
-                                        .notification()
-                                        .builder()
-                                        .title(if data.config.settings.language == "fr" {
-                                            format!(
-                                                "{} · quota à {:.0} %",
-                                                account.name, w.used_percent
-                                            )
-                                        } else {
-                                            format!(
-                                                "{} · quota at {:.0}%",
-                                                account.name, w.used_percent
-                                            )
-                                        })
-                                        .body(if data.config.settings.language == "fr" {
-                                            format!(
-                                                "{} : seuil de {} % atteint.",
-                                                w.label, settings.alert_percent
-                                            )
-                                        } else {
-                                            format!(
-                                                "{}: {}% threshold reached.",
-                                                w.label.replace("jours", "days").replace(
-                                                    "Requêtes premium",
-                                                    "Premium requests"
-                                                ),
-                                                settings.alert_percent
-                                            )
-                                        })
-                                        .show();
-                                }
-                            }
-                        }
-                    }
-                }
+                let current = &mut *data;
+                let alerts =
+                    current
+                        .tracker
+                        .observe(&account, &mut r, &current.config.settings, at);
+                deliver(
+                    app,
+                    &current.config.settings,
+                    alerts,
+                    current.telegram_saved,
+                    current.discord_saved,
+                    at,
+                );
                 r
             }
             Err(f) => {
@@ -808,8 +842,15 @@ async fn save_settings(
         || !["en", "fr"].contains(&settings.language.as_str())
         || !(50..=100).contains(&settings.alert_percent)
         || !["top", "bottom", "left", "right"].contains(&settings.widget_position.as_str())
+        || !(50..=100).contains(&settings.critical_percent)
+        || ![15, 30, 60].contains(&settings.forecast_minutes)
     {
         return Err("Paramètres invalides.".into());
+    }
+    settings.telegram_chat_id = settings.telegram_chat_id.trim().to_owned();
+    if !settings.telegram_chat_id.is_empty() && !telegram::valid_chat_id(&settings.telegram_chat_id)
+    {
+        return Err("Identifiant de chat Telegram invalide : un nombre (ex. 123456789 ou -100…) ou @nom_du_canal.".into());
     }
     let mut data = state.data.lock().await;
     ensure_writable(&data)?;
@@ -856,6 +897,83 @@ fn minimize_dashboard(app: tauri::AppHandle) -> Result<(), String> {
     dashboard::apply(&app, dashboard::Action::Minimize)
 }
 
+/// Stores or clears the Telegram bot token in Windows Credential Manager.
+#[tauri::command]
+async fn save_telegram_token(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, Shared>,
+    token: Option<String>,
+) -> Result<Snapshot, String> {
+    match token.filter(|t| !t.trim().is_empty()) {
+        Some(token) => telegram::save_token(&token)?,
+        None => telegram::clear_token()?,
+    }
+    let mut data = state.data.lock().await;
+    data.telegram_saved = telegram::saved_token().is_some();
+    let result = snapshot(&data, false);
+    let _ = app.emit("snapshot", &result);
+    Ok(result)
+}
+
+/// Lists chats that wrote to the bot, using the token being entered or the saved one.
+#[tauri::command]
+async fn detect_telegram_chats(token: Option<String>) -> Result<Vec<telegram::Chat>, String> {
+    let token = token
+        .map(|t| t.trim().to_owned())
+        .filter(|t| !t.is_empty())
+        .or_else(telegram::saved_token)
+        .ok_or("Enregistre d’abord le jeton du bot.")?;
+    telegram::detect_chats(&token).await
+}
+
+#[tauri::command]
+async fn test_telegram(state: tauri::State<'_, Shared>, chat_id: String) -> Result<(), String> {
+    if !telegram::AVAILABLE {
+        return Err("Les alertes Telegram arrivent bientôt.".into());
+    }
+    let chat = chat_id.trim();
+    if !telegram::valid_chat_id(chat) {
+        return Err("Identifiant de chat Telegram invalide : un nombre (ex. 123456789 ou -100…) ou @nom_du_canal.".into());
+    }
+    let token = telegram::saved_token().ok_or("Enregistre d’abord le jeton du bot.")?;
+    let french = state.data.lock().await.config.settings.language == "fr";
+    telegram::send(
+        &token,
+        chat,
+        telegram::test_message(french, chrono::Utc::now().timestamp()),
+    )
+    .await
+}
+
+/// Stores or clears the Discord webhook URL in Windows Credential Manager.
+#[tauri::command]
+async fn save_discord_webhook(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, Shared>,
+    url: Option<String>,
+) -> Result<Snapshot, String> {
+    match url.filter(|u| !u.trim().is_empty()) {
+        Some(url) => discord::save_webhook(&url)?,
+        None => discord::clear_webhook()?,
+    }
+    let mut data = state.data.lock().await;
+    data.discord_saved = discord::saved_webhook().is_some();
+    let result = snapshot(&data, false);
+    let _ = app.emit("snapshot", &result);
+    Ok(result)
+}
+
+#[tauri::command]
+async fn test_discord(state: tauri::State<'_, Shared>) -> Result<(), String> {
+    let webhook = discord::saved_webhook().ok_or("Enregistre d’abord le webhook Discord.")?;
+    let french = state.data.lock().await.config.settings.language == "fr";
+    discord::send(
+        &webhook,
+        discord::test_message(french, chrono::Utc::now().timestamp()),
+    )
+    .await
+}
+
 #[tauri::command]
 async fn check_update(app: tauri::AppHandle) -> Result<Option<updater::UpdateInfo>, String> {
     updater::check(&app).await
@@ -891,6 +1009,11 @@ pub fn run() {
             set_notch_mode,
             drag_notch,
             check_update,
+            save_telegram_token,
+            detect_telegram_chats,
+            test_telegram,
+            save_discord_webhook,
+            test_discord,
             install_update
         ])
         .setup(|app| {
@@ -946,6 +1069,9 @@ pub fn run() {
                     readings: HashMap::new(),
                     revision: 0,
                     storage_error,
+                    tracker: alerts::Tracker::default(),
+                    telegram_saved: telegram::saved_token().is_some(),
+                    discord_saved: discord::saved_webhook().is_some(),
                 }),
                 polling: Mutex::new(()),
                 path,

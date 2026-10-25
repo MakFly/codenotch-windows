@@ -35,6 +35,38 @@ pub struct Settings {
     /// existed; startup then decides from whether any account is configured.
     #[serde(default)]
     pub onboarding_done: Option<bool>,
+    /// Second, louder level after `alert_percent`.
+    #[serde(default = "default_critical")]
+    pub critical_percent: u8,
+    /// Warn when the recent pace reaches 100 % before the quota resets.
+    #[serde(default = "default_true")]
+    pub forecast_alerts: bool,
+    /// How far ahead a forecast alert looks, in minutes.
+    #[serde(default = "default_forecast_minutes")]
+    pub forecast_minutes: u16,
+    /// Announce when a window drops back under the warning level.
+    #[serde(default = "default_true")]
+    pub reset_alerts: bool,
+    /// Let forecast, critical and limit alerts through in full screen and game mode.
+    #[serde(default = "default_true")]
+    pub critical_in_fullscreen: bool,
+    #[serde(default)]
+    pub telegram_enabled: bool,
+    /// Telegram chat that receives alerts; the bot token stays in Windows Credential Manager.
+    #[serde(default)]
+    pub telegram_chat_id: String,
+    /// Post alerts to a Discord channel; the webhook URL stays in Windows Credential Manager.
+    #[serde(default)]
+    pub discord_enabled: bool,
+}
+fn default_critical() -> u8 {
+    95
+}
+fn default_true() -> bool {
+    true
+}
+fn default_forecast_minutes() -> u16 {
+    30
 }
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -63,6 +95,14 @@ impl Default for Settings {
             game_mode: false,
             widget_placement: None,
             onboarding_done: Some(false),
+            critical_percent: default_critical(),
+            forecast_alerts: true,
+            forecast_minutes: default_forecast_minutes(),
+            reset_alerts: true,
+            critical_in_fullscreen: true,
+            telegram_enabled: false,
+            telegram_chat_id: String::new(),
+            discord_enabled: false,
         }
     }
 }
@@ -104,6 +144,9 @@ pub struct Reading {
     pub models: Vec<String>,
     pub updated_at: Option<i64>,
     pub retry_at: Option<i64>,
+    /// Estimated time each window reaches 100 % at the recent pace, when before its reset.
+    #[serde(default)]
+    pub exhausts_at: std::collections::BTreeMap<String, i64>,
 }
 
 #[derive(Clone, Serialize)]
@@ -113,6 +156,9 @@ pub struct Snapshot {
     pub readings: Vec<Reading>,
     pub refreshing: bool,
     pub storage_error: Option<String>,
+    /// A Telegram bot token is stored in Windows Credential Manager (never sent to the UI).
+    pub telegram_token_saved: bool,
+    pub discord_webhook_saved: bool,
 }
 
 pub fn validate_account(a: &Account) -> Result<(), String> {

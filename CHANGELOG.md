@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.2 — 2026-10-25
+
+- **Alerts before the limit**: pace forecast (“limit in ~25 min”, only when it lands before the reset), graded warning / critical / limit-reached alerts, “quota available again” after a reset, urgent alerts in full screen, faster readings near a limit, and an alert at launch when a window is already past a threshold.
+- **Discord alerts** through a channel webhook: coloured embeds with gauge, expected limit and reset times, mentions disabled, webhook URL kept in Windows Credential Manager.
+- Settings: **Appearance** and **Alerts** are now separate pages made of collapsible sections (one open at a time, remembered), with shadcn inputs; a green “Update x.y.z” button appears at the bottom of the menu when an update is available; opening the settings (tray, notch, relaunch, first run) brings the window to the front.
+- **Telegram alerts** (built but switched off until validated; shown as “coming soon”) through your own bot: token stored in Windows Credential Manager, chat detection after `/start`, test message, and alert cards with gauge, forecast, reset time and a link to the provider usage page.
+
 ## 0.1.1 — 2026-10-25
 
 - **Built-in updates**: CodeNotch checks GitHub Releases at launch and twice a day, notifies once per version, and installs the signed installer in one click (Tauri updater, signature and signed version verified).

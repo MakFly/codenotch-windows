@@ -45,7 +45,7 @@ try {
     await expect(page.getByRole('heading', { name: 'Comptes', exact: true })).toBeVisible();
     expect(await page.evaluate(() => (window as any).saved.at(-1).onboardingDone)).toBe(true);
     // The welcome screen can be shown again from the preferences.
-    await page.getByRole('button', { name: 'Apparence et alertes', exact: true }).click();
+    await page.getByRole('button', { name: 'Apparence', exact: true }).click();
     await page.getByRole('button', { name: 'Revoir l’écran d’accueil', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Connecte tes abonnements IA' })).toBeVisible();
     expect(errors).toEqual([]);

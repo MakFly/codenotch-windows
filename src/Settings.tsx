@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import {
   Download,
+  Send,
+  Timer,
+  Languages,
+  Webhook,
   LogIn,
   Plus,
   X,
@@ -29,9 +33,13 @@ import {
 } from "./lib/types";
 import { Mark, Toggle, Choice, SelectItem } from "./components/Controls";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "./components/ui/dialog";
+import { Input } from "./components/ui/input";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger, useOpenSection } from "./components/ui/accordion";
 import * as api from "./lib/bridge";
 import { useLocale } from "./lib/Locale";
 const provider = (id: string) => providers.find((p) => p.id === id)!;
+// Telegram alerts stay switched off until validated end to end (mirrors telegram::AVAILABLE).
+const telegramAvailable = false;
 type Run = <T>(fn: () => Promise<T>, message?: string) => Promise<void>;
 type Notice = {
   kind: "info" | "success" | "error";
@@ -654,18 +662,185 @@ export function Accounts({
   );
 }
 
+/**
+ * Telegram alerts: the bot token goes straight to Windows Credential Manager and is never
+ * read back; the chat is found from the bot's recent messages so nobody hunts for an id.
+ */
+function TelegramSettings({
+  settings,
+  saved,
+  busy,
+  run,
+  onSaved,
+  update,
+}: {
+  settings: Settings;
+  saved: boolean;
+  busy: boolean;
+  run: Run;
+  onSaved: (s: Snapshot) => void;
+  update: (patch: Partial<Settings>) => Promise<void>;
+}) {
+  const { t } = useLocale();
+  const [token, setToken] = useState("");
+  const [chat, setChat] = useState(settings.telegramChatId ?? "");
+  const [chats, setChats] = useState<api.TelegramChat[]>([]);
+  useEffect(() => setChat(settings.telegramChatId ?? ""), [settings.telegramChatId]);
+  const chooseChat = (id: string) => {
+    setChats([]);
+    setChat(id);
+    return update({ telegramChatId: id });
+  };
+  return (
+    <>
+      <div className="setting-row">
+        <div>
+          <strong>{t("Alertes Telegram")}</strong>
+          <p>{t("Reçois les alertes sur ton téléphone via ton propre bot, même loin du PC. Les messages partent directement de ce PC vers Telegram.")}</p>
+        </div>
+        <Toggle checked={settings.telegramEnabled ?? false} onChange={(telegramEnabled) => update({ telegramEnabled })}
+          label={t("Alertes Telegram")} disabled={busy || !api.native} />
+      </div>
+      <div className="channel-setup">
+        <ol className="channel-steps">
+          <li>{t("Dans Telegram, ouvre @BotFather, envoie /newbot et copie le jeton du bot.")}</li>
+          <li>{t("Ouvre ton bot et envoie-lui /start (ou ajoute-le à un groupe).")}</li>
+          <li>{t("Détecte le chat, puis envoie un message de test.")}</li>
+        </ol>
+        <div className="field">
+          <label htmlFor="telegram-token">{t("Jeton du bot")}{" "}
+            <span>{saved ? t("déjà enregistré") : t("requis")}</span></label>
+          <div className="inline-field">
+            <Input id="telegram-token" type="password" autoComplete="off" disabled={busy || !api.native}
+              placeholder={saved ? t("Laisser vide pour conserver le jeton") : "123456789:AA…"}
+              value={token} onChange={(e) => setToken(e.target.value)} />
+            <button className="button secondary" disabled={busy || !token.trim()}
+              onClick={() => run(async () => { onSaved(await api.saveTelegramToken(token)); setToken(""); }, t("Jeton Telegram enregistré dans le Gestionnaire d’identification Windows."))}>
+              {t("Enregistrer")}</button>
+            {saved && (
+              <button className="button ghost danger-text" disabled={busy} aria-label={t("Effacer le jeton Telegram")}
+                onClick={() => run(async () => onSaved(await api.saveTelegramToken(null)), t("Jeton Telegram effacé."))}>
+                <Trash2 size={14} /></button>
+            )}
+          </div>
+        </div>
+        <div className="field">
+          <label htmlFor="telegram-chat">{t("Chat qui reçoit les alertes")}</label>
+          <div className="inline-field">
+            <Input id="telegram-chat" disabled={busy || !api.native} placeholder="123456789"
+              value={chat} onChange={(e) => setChat(e.target.value)}
+              onBlur={() => { if (chat.trim() !== (settings.telegramChatId ?? "")) void update({ telegramChatId: chat.trim() }); }} />
+            <button className="button secondary" disabled={busy || (!saved && !token.trim())}
+              onClick={() => run(async () => {
+                const found = await api.detectTelegramChats(token.trim() || null);
+                if (found.length === 1) await chooseChat(found[0].id);
+                else setChats(found);
+              })}>
+              <Search size={15} />{t("Détecter")}</button>
+          </div>
+          {chats.length > 1 && (
+            <div className="channel-choices" role="group" aria-label={t("Chats trouvés")}>
+              {chats.map((c) => (
+                <button key={c.id} className="button secondary" disabled={busy} onClick={() => run(() => chooseChat(c.id))}>
+                  {c.name} <code>{c.id}</code></button>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="channel-actions">
+          <button className="button primary" disabled={busy || !saved || !chat.trim()}
+            onClick={() => run(() => api.testTelegram(chat.trim()), t("Message de test envoyé. Regarde Telegram."))}>
+            <Send size={15} />{t("Envoyer un test")}</button>
+          <p className="field-help">{t("Le jeton reste dans le Gestionnaire d’identification Windows ; seul le message d’alerte est envoyé à Telegram.")}</p>
+        </div>
+      </div>
+    </>
+  );
+}
+
+/** Discord alerts through a channel webhook, kept in Windows Credential Manager. */
+function DiscordSettings({
+  settings,
+  saved,
+  busy,
+  run,
+  onSaved,
+  update,
+}: {
+  settings: Settings;
+  saved: boolean;
+  busy: boolean;
+  run: Run;
+  onSaved: (s: Snapshot) => void;
+  update: (patch: Partial<Settings>) => Promise<void>;
+}) {
+  const { t } = useLocale();
+  const [webhook, setWebhook] = useState("");
+  return (
+    <>
+      <div className="setting-row">
+        <div>
+          <strong>{t("Alertes Discord")}</strong>
+          <p>{t("Publie les alertes dans un salon Discord sous forme de carte, pour toi ou ton équipe.")}</p>
+        </div>
+        <Toggle checked={settings.discordEnabled ?? false} onChange={(discordEnabled) => update({ discordEnabled })}
+          label={t("Alertes Discord")} disabled={busy || !api.native} />
+      </div>
+      <div className="channel-setup">
+        <ol className="channel-steps">
+          <li>{t("Dans Discord, ouvre les paramètres du salon → Intégrations → Webhooks.")}</li>
+          <li>{t("Crée un webhook, puis copie son URL.")}</li>
+          <li>{t("Colle l’URL ici, enregistre, puis envoie un test.")}</li>
+        </ol>
+        <div className="field">
+          <label htmlFor="discord-webhook">{t("URL du webhook")}{" "}
+            <span>{saved ? t("déjà enregistré") : t("requis")}</span></label>
+          <div className="inline-field">
+            <Input id="discord-webhook" type="password" autoComplete="off" disabled={busy || !api.native}
+              placeholder={saved ? t("Laisser vide pour conserver le webhook") : "https://discord.com/api/webhooks/…"}
+              value={webhook} onChange={(e) => setWebhook(e.target.value)} />
+            <button className="button secondary" disabled={busy || !webhook.trim()}
+              onClick={() => run(async () => { onSaved(await api.saveDiscordWebhook(webhook)); setWebhook(""); }, t("Webhook Discord enregistré dans le Gestionnaire d’identification Windows."))}>
+              {t("Enregistrer")}</button>
+            {saved && (
+              <button className="button ghost danger-text" disabled={busy} aria-label={t("Effacer le webhook Discord")}
+                onClick={() => run(async () => onSaved(await api.saveDiscordWebhook(null)), t("Webhook Discord effacé."))}>
+                <Trash2 size={14} /></button>
+            )}
+          </div>
+        </div>
+        <div className="channel-actions">
+          <button className="button primary" disabled={busy || !saved}
+            onClick={() => run(api.testDiscord, t("Message de test envoyé. Regarde Discord."))}>
+            <Send size={15} />{t("Envoyer un test")}</button>
+          <p className="field-help">{t("L’URL reste dans le Gestionnaire d’identification Windows ; seul le message d’alerte est envoyé à Discord.")}</p>
+        </div>
+      </div>
+    </>
+  );
+}
+
+/** Small status chip shown on each collapsed section. */
+function ChannelBadge({ on, ready }: { on: boolean; ready: boolean }) {
+  const { t } = useLocale();
+  const [label, tone] = on && ready ? ["Actif", "on"] : ready ? ["Configuré", "ready"] : ["Non configuré", "off"];
+  return <span className={`channel-badge ${tone}`}>{t(label)}</span>;
+}
+
+
 /** Announces a signed release found by the updater and installs it on request. */
 export function UpdateBanner({
   update,
   busy,
-  run,
+  installing,
+  onInstall,
 }: {
   update: api.UpdateInfo;
   busy: boolean;
-  run: Run;
+  installing: boolean;
+  onInstall: () => void;
 }) {
   const { t } = useLocale();
-  const [installing, setInstalling] = useState(false);
   return (
     <div className="message info update-banner" role="status">
       <Download size={16} />
@@ -675,17 +850,20 @@ export function UpdateBanner({
           ? t("Téléchargement et vérification de la signature… CodeNotch redémarrera tout seul.")
           : t("Version actuelle : {current}. La mise à jour est signée et s’installe en un clic.", { current: update.current })}</span>
       </div>
-      <button className="button primary" disabled={busy || installing}
-        onClick={() => {
-          setInstalling(true);
-          void run(api.installUpdate).finally(() => setInstalling(false));
-        }}>
+      <button className="button primary" disabled={busy || installing} onClick={onInstall}>
         {installing ? <LoaderCircle className="spin" size={15} /> : <Download size={15} />}
         {installing ? t("Mise à jour…") : t("Mettre à jour")}
       </button>
     </div>
   );
 }
+
+const positionLabel: Record<Settings["widgetPosition"], string> = {
+  right: "À droite",
+  left: "À gauche",
+  top: "En haut",
+  bottom: "En bas",
+};
 
 export function Preferences({
   settings,
@@ -705,17 +883,27 @@ export function Preferences({
   const { t } = useLocale();
   const update = (patch: Partial<Settings>) =>
     run(async () => onSaved(await api.saveSettings({ ...settings, ...patch })));
+  const [section, setSection] = useOpenSection("appearance", "general");
+  const intervalLabel = (n: number) =>
+    n < 60
+      ? t("{count} secondes", { count: n })
+      : t(n === 60 ? "{count} minute" : "{count} minutes", { count: n / 60 });
   return (
     <>
       <div className="page-heading">
         <div>
-          <h1>{t("Apparence et alertes")}</h1>
-          <p>{t("Position, fréquence des relevés et notifications.")}</p>
+          <h1>{t("Apparence")}</h1>
+          <p>{t("Langue, encoche, fréquence des relevés et mises à jour.")}</p>
         </div>
       </div>
-      <div className="settings-layout">
-        <section className="settings-panel">
-          <h2>{t("Langue")}</h2>
+      <Accordion type="single" collapsible value={section} onValueChange={setSection} className="settings-accordion">
+        <AccordionItem value="general">
+          <AccordionTrigger>
+            <Languages size={18} />
+            <span className="accordion-title">{t("Langue et accueil")}</span>
+            <span className="accordion-summary">{settings.language === "fr" ? "Français" : "English"}</span>
+          </AccordionTrigger>
+          <AccordionContent>
           <div className="setting-row">
             <div>
               <label htmlFor="interface-language">{t("Langue de l’interface")}</label>
@@ -734,6 +922,15 @@ export function Preferences({
             <button className="button secondary" disabled={busy} onClick={() => update({ onboardingDone: false })}>
               {t("Revoir l’écran d’accueil")}</button>
           </div>
+          </AccordionContent>
+        </AccordionItem>
+        <AccordionItem value="updates">
+          <AccordionTrigger>
+            <Download size={18} />
+            <span className="accordion-title">{t("Mises à jour")}</span>
+            <span className="accordion-summary">{version ? `v${version}` : ""}</span>
+          </AccordionTrigger>
+          <AccordionContent>
           <div className="setting-row">
             <div>
               <strong>{t("Mises à jour")}</strong>
@@ -742,8 +939,15 @@ export function Preferences({
             <button className="button secondary" disabled={busy || !api.native} onClick={onCheckUpdate}>
               <RefreshCw size={15} />{t("Vérifier")}</button>
           </div>
-          <h2>
-            <Monitor size={20} />{t("Encoche")}</h2>
+          </AccordionContent>
+        </AccordionItem>
+        <AccordionItem value="notch">
+          <AccordionTrigger>
+            <Monitor size={18} />
+            <span className="accordion-title">{t("Encoche")}</span>
+            <span className="accordion-summary">{t(positionLabel[settings.widgetPosition])}</span>
+          </AccordionTrigger>
+          <AccordionContent>
           <div className="setting-row">
             <div>
               <strong>{t("Afficher l’encoche")}</strong>
@@ -796,8 +1000,15 @@ export function Preferences({
             </div>
             <Toggle checked={settings.gameMode} onChange={(gameMode) => update({ gameMode })} label={t("Mode jeu")} disabled={busy} />
           </div>
-          <h2>
-            <RefreshCw size={20} />{t("Actualisation")}</h2>
+          </AccordionContent>
+        </AccordionItem>
+        <AccordionItem value="refresh">
+          <AccordionTrigger>
+            <RefreshCw size={18} />
+            <span className="accordion-title">{t("Actualisation")}</span>
+            <span className="accordion-summary">{intervalLabel(settings.pollSeconds)}</span>
+          </AccordionTrigger>
+          <AccordionContent>
           <div className="setting-row">
             <div>
               <label htmlFor="poll-interval">{t("Fréquence des relevés")}</label>
@@ -811,56 +1022,163 @@ export function Preferences({
             >
               {[30, 60, 120, 300].map((n) => (
                 <SelectItem key={n} value={String(n)}>
-                  {n < 60
-                    ? t("{count} secondes", { count: n })
-                    : t(n === 60 ? "{count} minute" : "{count} minutes", { count: n / 60 })}
+                  {intervalLabel(n)}
                 </SelectItem>
               ))}
             </Choice>
           </div>
-          <h2>
-            <Bell size={20} />{t("Alertes")}</h2>
-          <div className="setting-row">
-            <div>
-              <strong>{t("Notifications de quota")}</strong>
-              <p>{t("Une notification au franchissement du seuil, sans répétition tant qu’il reste dépassé.")}</p>
-            </div>
-            <Toggle
-              checked={settings.notifications}
-              onChange={(notifications) => update({ notifications })}
-              label={t("Notifications de quota")}
-              disabled={busy}
-            />
-          </div>
-          <div className="setting-row">
-            <div>
-              <label htmlFor="alert-percent">{t("Me prévenir à")}</label>
-              <p>{t("Pourcentage consommé d’une fenêtre de quota.")}</p>
-            </div>
-            <Choice
-              disabled={busy}
-              id="alert-percent"
-              value={String(settings.alertPercent)}
-              onChange={(v) => update({ alertPercent: Number(v) })}
-            >
-              {[50, 70, 80, 90, 95, 100].map((n) => (
-                <SelectItem key={n} value={String(n)}>
-                  {n} %
-                </SelectItem>
-              ))}
-            </Choice>
-          </div>
-        </section>
-        <aside className="settings-aside">
-          <h3>{t("En arrière-plan")}</h3>
-          <p>{t("Fermer la fenêtre laisse le suivi actif. Pour arrêter complètement CodeNotch, choisis « Quitter » depuis l’icône près de l’horloge.")}</p>
-          <span>
-            <ShieldCheck size={16} />{t("Préférences enregistrées localement")}</span>
-        </aside>
-      </div>
+          </AccordionContent>
+        </AccordionItem>
+      </Accordion>
     </>
   );
 }
+
+export function Alerts({
+  settings,
+  busy,
+  run,
+  onSaved,
+  telegramSaved,
+  discordSaved,
+}: {
+  settings: Settings;
+  busy: boolean;
+  run: Run;
+  onSaved: (s: Snapshot) => void;
+  telegramSaved: boolean;
+  discordSaved: boolean;
+}) {
+  const { t } = useLocale();
+  const update = (patch: Partial<Settings>) =>
+    run(async () => onSaved(await api.saveSettings({ ...settings, ...patch })));
+  const [saved, setSection] = useOpenSection("alerts", "discord");
+  // A section remembered from before Telegram was switched off must not stay open.
+  const section = !telegramAvailable && saved === "telegram" ? "discord" : saved;
+  return (
+    <>
+      <div className="page-heading">
+        <div>
+          <h1>{t("Alertes")}</h1>
+          <p>{t("Discord, seuils et prévision du plafond, pour surveiller les agents qui tournent en fond.")}</p>
+        </div>
+      </div>
+      <Accordion type="single" collapsible value={section} onValueChange={setSection} className="alerts-accordion">
+        <AccordionItem value="discord">
+          <AccordionTrigger>
+            <Webhook size={18} />
+            <span className="accordion-title">{t("Discord")}</span>
+            <ChannelBadge on={settings.discordEnabled ?? false} ready={discordSaved} />
+          </AccordionTrigger>
+          <AccordionContent>
+            <DiscordSettings settings={settings} saved={discordSaved} busy={busy} run={run} onSaved={onSaved} update={update} />
+          </AccordionContent>
+        </AccordionItem>
+        <AccordionItem value="telegram" disabled={!telegramAvailable}>
+          <AccordionTrigger>
+            <Send size={18} />
+            <span className="accordion-title">{t("Telegram")}</span>
+            {telegramAvailable
+              ? <ChannelBadge on={settings.telegramEnabled ?? false} ready={telegramSaved && !!settings.telegramChatId} />
+              : <span className="channel-badge">{t("Bientôt disponible")}</span>}
+          </AccordionTrigger>
+          <AccordionContent>
+            <TelegramSettings settings={settings} saved={telegramSaved} busy={busy} run={run} onSaved={onSaved} update={update} />
+          </AccordionContent>
+        </AccordionItem>
+        <AccordionItem value="thresholds">
+          <AccordionTrigger>
+            <Bell size={18} />
+            <span className="accordion-title">{t("Seuils et notifications Windows")}</span>
+            <span className="accordion-summary">{settings.alertPercent} % · {settings.criticalPercent ?? 95} %</span>
+          </AccordionTrigger>
+          <AccordionContent>
+            <div className="setting-row">
+              <div>
+                <strong>{t("Notifications de quota")}</strong>
+                <p>{t("Une notification Windows à chaque niveau franchi, sans répétition tant qu’il reste dépassé.")}</p>
+              </div>
+              <Toggle checked={settings.notifications} onChange={(notifications) => update({ notifications })}
+                label={t("Notifications de quota")} disabled={busy} />
+            </div>
+            <div className="setting-row">
+              <div>
+                <label htmlFor="alert-percent">{t("Me prévenir à")}</label>
+                <p>{t("Pourcentage consommé d’une fenêtre de quota.")}</p>
+              </div>
+              <Choice disabled={busy} id="alert-percent" value={String(settings.alertPercent)}
+                onChange={(v) => update({ alertPercent: Number(v) })}>
+                {[50, 70, 80, 90, 95, 100].map((n) => (
+                  <SelectItem key={n} value={String(n)}>{n} %</SelectItem>
+                ))}
+              </Choice>
+            </div>
+            <div className="setting-row">
+              <div>
+                <label htmlFor="critical-percent">{t("Seuil critique")}</label>
+                <p>{t("Une seconde alerte, plus urgente. Le plafond atteint est toujours signalé.")}</p>
+              </div>
+              <Choice disabled={busy} id="critical-percent" value={String(settings.criticalPercent ?? 95)}
+                onChange={(v) => update({ criticalPercent: Number(v) })}>
+                {[80, 90, 95, 99].map((n) => (
+                  <SelectItem key={n} value={String(n)}>{n} %</SelectItem>
+                ))}
+              </Choice>
+            </div>
+            <div className="setting-row">
+              <div>
+                <strong>{t("Alertes urgentes en plein écran")}</strong>
+                <p>{t("La prévision, le seuil critique et le plafond s’affichent même pendant un jeu ou en mode jeu.")}</p>
+              </div>
+              <Toggle checked={settings.criticalInFullscreen ?? true} onChange={(criticalInFullscreen) => update({ criticalInFullscreen })}
+                label={t("Alertes urgentes en plein écran")} disabled={busy} />
+            </div>
+          </AccordionContent>
+        </AccordionItem>
+        <AccordionItem value="forecast">
+          <AccordionTrigger>
+            <Timer size={18} />
+            <span className="accordion-title">{t("Prévision du plafond")}</span>
+            <span className="accordion-summary">
+              {settings.forecastAlerts ?? true ? t("{count} minutes", { count: settings.forecastMinutes ?? 30 }) : t("Désactivée")}
+            </span>
+          </AccordionTrigger>
+          <AccordionContent>
+            <div className="setting-row">
+              <div>
+                <strong>{t("Prévenir avant le plafond")}</strong>
+                <p>{t("Mesure le rythme de consommation et prévient quand le plafond arrive avant la réinitialisation. Idéal pour les agents qui tournent en fond.")}</p>
+              </div>
+              <Toggle checked={settings.forecastAlerts ?? true} onChange={(forecastAlerts) => update({ forecastAlerts })}
+                label={t("Prévenir avant le plafond")} disabled={busy} />
+            </div>
+            <div className="setting-row">
+              <div>
+                <label htmlFor="forecast-minutes">{t("Anticipation")}</label>
+                <p>{t("Délai avant le plafond estimé à partir duquel l’alerte part.")}</p>
+              </div>
+              <Choice disabled={busy || !(settings.forecastAlerts ?? true)} id="forecast-minutes"
+                value={String(settings.forecastMinutes ?? 30)} onChange={(v) => update({ forecastMinutes: Number(v) })}>
+                {[15, 30, 60].map((n) => (
+                  <SelectItem key={n} value={String(n)}>{t("{count} minutes", { count: n })}</SelectItem>
+                ))}
+              </Choice>
+            </div>
+            <div className="setting-row">
+              <div>
+                <strong>{t("Prévenir quand le quota est rétabli")}</strong>
+                <p>{t("Après une réinitialisation, pour relancer les agents mis en pause.")}</p>
+              </div>
+              <Toggle checked={settings.resetAlerts ?? true} onChange={(resetAlerts) => update({ resetAlerts })}
+                label={t("Prévenir quand le quota est rétabli")} disabled={busy} />
+            </div>
+          </AccordionContent>
+        </AccordionItem>
+      </Accordion>
+    </>
+  );
+}
+
 
 export function Help() {
   const { t } = useLocale();

@@ -19,7 +19,7 @@ try {
   const bottom = Math.min(850, Math.ceil(Math.max(...boxes.map(box => box!.y + box!.height)) + 18));
   await page.screenshot({ path: 'docs/images/notch.png', clip: { x: left, y: top, width: right-left, height: bottom-top } });
   await page.locator('.preview-caption button').click();
-  await page.getByRole('button', { name: 'Appearance and alerts', exact: true }).click();
+  await page.getByRole('button', { name: 'Appearance', exact: true }).click();
   await page.locator('.settings-window').screenshot({ path: 'docs/images/settings.png' });
   console.log('Saved demo-only README screenshots.');
 } finally { await browser.close(); }

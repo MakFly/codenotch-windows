@@ -11,8 +11,11 @@ import {
   AlertCircle,
   Check,
   ChevronsRight,
+  Bell,
+  Download,
+  LoaderCircle,
 } from "lucide-react";
-import { Accounts, Preferences, Help, Welcome, UpdateBanner } from "./Settings";
+import { Accounts, Preferences, Alerts, Help, Welcome, UpdateBanner } from "./Settings";
 import { Mark } from "./components/Controls";
 import {
   emptySnapshot,
@@ -153,6 +156,11 @@ function UsagePopover({
               <p>
                 {percentage(w.usedPercent, language)} <span>{t("utilisés")}</span>
               </p>
+              {reading.exhaustsAt?.[w.label] != null && (
+                <p className="window-forecast">
+                  {t("Plafond estimé {time} au rythme actuel", { time: resetTime(reading.exhaustsAt[w.label], Date.now(), language) })}
+                </p>
+              )}
             </div>
           ))
         ) : (
@@ -218,7 +226,7 @@ export default function NotchApp() {
   const [settingsOpen, setSettingsOpen] = useState(
     api.native && new URLSearchParams(location.search).get("widget") !== "1",
   );
-  const [page, setPage] = useState<"accounts" | "appearance" | "help">(
+  const [page, setPage] = useState<"accounts" | "appearance" | "alerts" | "help">(
     "accounts",
   );
   const [error, setError] = useState("");
@@ -226,6 +234,7 @@ export default function NotchApp() {
   const [busy, setBusy] = useState(false);
   const [update, setUpdate] = useState<api.UpdateInfo | null>(null);
   const [version, setVersion] = useState("");
+  const [installing, setInstalling] = useState(false);
   const [, setTime] = useState(0);
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const foldTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -332,10 +341,15 @@ export default function NotchApp() {
   useEffect(() => {
     let disposed = false;
     let stop: (() => void) | undefined;
-    api.appVersion().then((v) => { if (!disposed) setVersion(v); }).catch(() => {});
+    api.appVersion().then((v) => { if (!disposed) setVersion(v || ""); }).catch(() => {});
     void api.subscribeUpdate((u) => { if (!disposed) setUpdate(u); }).then((fn) => { if (disposed) fn(); else stop = fn; });
     return () => { disposed = true; stop?.(); };
   }, []);
+  function installUpdate() {
+    setInstalling(true);
+    // On success the app restarts into the new version; only a failure comes back here.
+    void run(api.installUpdate).finally(() => setInstalling(false));
+  }
   async function checkForUpdate() {
     setError("");
     setNotice("");
@@ -668,7 +682,15 @@ export default function NotchApp() {
                     setNotice("");
                   }}
                 >
-                  <Settings2 size={17} />{t("Apparence et alertes")}</button>
+                  <Settings2 size={17} />{t("Apparence")}</button>
+                <button
+                  className={page === "alerts" ? "active" : ""}
+                  onClick={() => {
+                    setPage("alerts");
+                    setNotice("");
+                  }}
+                >
+                  <Bell size={17} />{t("Alertes")}</button>
                 <button
                   className={page === "help" ? "active" : ""}
                   onClick={() => {
@@ -679,7 +701,14 @@ export default function NotchApp() {
                   <Info size={17} />{t("À propos")}</button>
                 <div className="settings-nav-footer">
                   <span>{t("Adaptation Windows")}</span>
-                  <span>{t("v{version} · locale", { version })}</span>
+                  {version && <span>{t("v{version} · locale", { version })}</span>}
+                  {update && (
+                    <button className="update-pill" disabled={busy || installing} onClick={installUpdate}
+                      title={t("Installer CodeNotch {version}", { version: update.version })}>
+                      {installing ? <LoaderCircle className="spin" size={13} /> : <Download size={13} />}
+                      {installing ? t("Mise à jour…") : t("Mise à jour {version}", { version: update.version })}
+                    </button>
+                  )}
                 </div>
               </nav>
               <div className="settings-body">
@@ -689,7 +718,7 @@ export default function NotchApp() {
                     <span>{t(error || snapshot.storageError || "")}</span>
                   </div>
                 )}
-                {update && <UpdateBanner update={update} busy={busy} run={run} />}
+                {update && <UpdateBanner update={update} busy={busy} installing={installing} onInstall={installUpdate} />}
                 {notice && (
                   <div className="message success" role="status">
                     <Check size={16} />
@@ -713,6 +742,15 @@ export default function NotchApp() {
                     onSaved={setSnapshot}
                     version={version}
                     onCheckUpdate={checkForUpdate}
+                  />
+                ) : page === "alerts" ? (
+                  <Alerts
+                    settings={snapshot.config.settings}
+                    busy={busy}
+                    run={run}
+                    onSaved={setSnapshot}
+                    telegramSaved={snapshot.telegramTokenSaved ?? false}
+                    discordSaved={snapshot.discordWebhookSaved ?? false}
                   />
                 ) : (
                   <Help />

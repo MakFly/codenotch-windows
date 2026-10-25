@@ -91,6 +91,8 @@ try {
   // A signed release found by the updater is announced and installed on request.
   await page.evaluate(() => (window as any).emitTauri('update-available', { version: '0.1.2', current: '0.1.1', notes: null }));
   await expect(page.getByText('CodeNotch 0.1.2 est disponible')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Mise à jour 0.1.2' })).toBeVisible();
+  await page.screenshot({ path: 'test-results/update-available.png' });
   await page.getByRole('button', { name: 'Mettre à jour', exact: true }).click();
   await expect.poll(() => page.evaluate(() => (window as any).calls.some(([c]: [string]) => c === 'install_update'))).toBe(true);
 

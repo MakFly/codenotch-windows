@@ -12,7 +12,7 @@ An independent Windows adaptation inspired by
 [CodeNotch by Vinz](https://github.com/vinzdg/codenotch), built with Tauri 2,
 Rust, React and TypeScript. This is not an official OpenAI, Anthropic or GitHub app.
 
-[Download v0.1.1](https://github.com/MakFly/codenotch-windows/releases/tag/v0.1.1)
+[Download v0.1.2](https://github.com/MakFly/codenotch-windows/releases/tag/v0.1.2)
 · [Français](docs/README.fr.md) · [Changelog](CHANGELOG.md)
 
 ![Quota details on hover, with sample data](docs/images/notch.png)
@@ -33,7 +33,7 @@ Rust, React and TypeScript. This is not an official OpenAI, Anthropic or GitHub 
 ## Download and run
 
 1. Open [Releases](https://github.com/MakFly/codenotch-windows/releases/latest).
-2. Download and run `CodeNotch-0.1.1-windows-x64-setup.exe`.
+2. Download and run `CodeNotch-0.1.2-windows-x64-setup.exe`.
 3. Launch CodeNotch from the Start menu. Hover over the small tab on the right edge of the screen.
 4. Open the settings wheel to configure accounts.
 
@@ -41,7 +41,7 @@ The installer installs for your Windows account, creates shortcuts and adds an
 entry to Windows Installed apps for removal. If WebView2 is missing, it downloads
 Microsoft's runtime installer; an internet connection is needed for that step.
 
-For portable use, download and extract `CodeNotch-0.1.1-windows-x64.zip`, then run
+For portable use, download and extract `CodeNotch-0.1.2-windows-x64.zip`, then run
 `CodeNotch.exe`. The ZIP includes the license, third-party notices and a
 getting-started guide. A standalone executable is also available.
 
@@ -51,18 +51,18 @@ The installer and portable executable are unsigned. Windows may display a
 SmartScreen warning or block unsigned applications under Smart App Control;
 installation is not guaranteed on every security configuration. See
 [Microsoft's explanation](https://learn.microsoft.com/windows/apps/package-and-deploy/smartscreen-reputation).
-There is no automatic startup. Updates are built in: CodeNotch checks GitHub Releases at launch and twice a day, verifies the signature of the new installer, and installs it in one click from **Settings** (or **Appearance and alerts → Updates**).
+There is no automatic startup. Updates are built in: CodeNotch checks GitHub Releases at launch and twice a day, verifies the signature of the new installer, and installs it in one click from **Settings** (or **Appearance → Updates**).
 
 Verify downloads against `SHA256SUMS.txt` using PowerShell:
 
 ```powershell
-Get-FileHash .\CodeNotch-0.1.1-windows-x64.zip -Algorithm SHA256
+Get-FileHash .\CodeNotch-0.1.2-windows-x64.zip -Algorithm SHA256
 ```
 
 ## Connect your accounts
 
 On first launch, CodeNotch opens a welcome screen to connect your subscriptions
-(you can show it again from **Appearance and alerts**). Afterwards, open
+(you can show it again from **Appearance**). Afterwards, open
 **Settings → Accounts → Quick connect** and click **Sign in** next to
 Codex / ChatGPT, Claude, Gemini, Grok or OpenCode, then finish in your browser:
 
@@ -109,7 +109,7 @@ This app does not provide native connectors for every AI service.
 
 ![English settings](docs/images/settings.png)
 
-- **Appearance and alerts → Interface language** switches English / Français.
+- **Appearance → Interface language** switches English / Français.
 - Drag the grip to save position and monitor. Choosing another edge resets placement.
 - **Auto-collapse** controls the idle tab. Details close when the pointer leaves.
 - **Hide in full screen** suppresses the notch and alerts during full-screen apps.
@@ -125,9 +125,30 @@ with zero.
 
 Refresh intervals are 30, 60, 120 or 300 seconds. Claude enforces a minimum of
 120 seconds, including manual refresh. HTTP 429 responses respect retry delays.
-Notifications occur when a comparable quota crosses a threshold, without
-repeating while it remains above it. Readings stay in memory for the session;
-any history comes from the provider.
+Readings stay in memory for the session; any history comes from the provider.
+
+## Alerts (for agents running in the background)
+
+- **Graded alerts**: warning threshold (80 % by default), critical threshold
+  (95 %), and limit reached. Each level fires once per window and period; jumping
+  straight to the limit sends a single alert.
+- **Forecast**: CodeNotch measures the recent pace (at least 3 readings over 10
+  minutes) and warns when the limit will arrive **before** the reset, within the
+  chosen lead time (15, 30 or 60 minutes). The usage details show “Limit expected
+  in …”. Near a limit, readings switch to the fastest allowed pace.
+- **Quota available again** after a reset, so paused agents can resume.
+- **Full screen**: forecasts, critical and limit alerts still show during games
+  and in game mode (can be turned off).
+- **Telegram** (coming soon, switched off in this version): create a bot with @BotFather, send it `/start`, paste its token in
+  **Alerts → Telegram**, detect the chat and send a test. Alerts
+  arrive as cards with a gauge, the expected limit, the reset time and a link to
+  the provider's usage page. The token stays in Windows Credential Manager and is
+  never shown again; only the alert text goes to Telegram.
+- **Discord**: in the channel settings, open **Integrations → Webhooks**, create a
+  webhook and paste its URL in **Alerts → Discord**. Alerts arrive as coloured
+  embeds with a gauge and timestamps shown in each reader's timezone; mentions are
+  disabled. Only `discord.com` webhook URLs are accepted, and the URL is kept in
+  Windows Credential Manager.
 
 ## Privacy and storage
 

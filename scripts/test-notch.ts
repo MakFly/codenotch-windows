@@ -47,7 +47,8 @@ try {
  await page.getByRole('button',{name:'Compte de test Codex / ChatGPT'}).click();
  await page.getByRole('button',{name:'Retirer ce compte'}).click();
  await page.getByRole('button',{name:'Confirmer le retrait'}).click();
- await page.getByRole('button',{name:'Apparence et alertes',exact:true}).click();
+ await page.getByRole('button',{name:'Apparence',exact:true}).click();
+ await page.locator('.accordion-trigger',{hasText:'Encoche'}).click();
  await expect(page.getByRole('switch',{name:'Masquer en plein écran',exact:true})).toHaveAttribute('aria-checked','true');
  await page.getByRole('switch',{name:'Mode jeu',exact:true}).click();
  await expect(page.getByRole('switch',{name:'Mode jeu',exact:true})).toHaveAttribute('aria-checked','true');

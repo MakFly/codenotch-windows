@@ -1,6 +1,6 @@
 [package]
 name = "smashtoken"
-version = "0.1.1"
+version = "0.1.2"
 description = "A Windows desktop notch for AI account quotas and usage"
 authors = ["Kev"]
 license = "MIT"

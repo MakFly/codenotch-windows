@@ -35,6 +35,14 @@ export interface Settings {
   widgetPosition: "top" | "bottom" | "left" | "right";
   /** False until the first-run welcome screen is finished or skipped. */
   onboardingDone?: boolean | null;
+  criticalPercent: number;
+  forecastAlerts: boolean;
+  forecastMinutes: number;
+  resetAlerts: boolean;
+  criticalInFullscreen: boolean;
+  telegramEnabled: boolean;
+  telegramChatId: string;
+  discordEnabled: boolean;
 }
 export interface LimitWindow {
   label: string;
@@ -54,12 +62,16 @@ export interface Reading {
   models: string[];
   updatedAt: number | null;
   retryAt: number | null;
+  /** Estimated time each window reaches 100 % at the recent pace, keyed by label. */
+  exhaustsAt?: Record<string, number>;
 }
 export interface Snapshot {
   config: { accounts: Account[]; settings: Settings };
   readings: Reading[];
   refreshing: boolean;
   storageError: string | null;
+  telegramTokenSaved?: boolean;
+  discordWebhookSaved?: boolean;
 }
 export const providers: {
   id: Provider;
@@ -140,12 +152,22 @@ export const defaultSettings: Settings = {
   widgetPosition: "right",
   // The native app decides first-run state; previews open on the settings.
   onboardingDone: true,
+  criticalPercent: 95,
+  forecastAlerts: true,
+  forecastMinutes: 30,
+  resetAlerts: true,
+  criticalInFullscreen: true,
+  telegramEnabled: false,
+  telegramChatId: "",
+  discordEnabled: false,
 };
 export const emptySnapshot: Snapshot = {
   config: { accounts: [], settings: defaultSettings },
   readings: [],
   refreshing: false,
   storageError: null,
+  telegramTokenSaved: false,
+  discordWebhookSaved: false,
 };
 export const blankAccount = (): Account => ({
   id: "",

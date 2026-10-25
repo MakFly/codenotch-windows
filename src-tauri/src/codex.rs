@@ -60,7 +60,7 @@ impl Session {
         Ok(serde_json::from_str(&line).unwrap_or(Value::Null))
     }
     async fn initialize(&mut self) -> Result<(), String> {
-        self.send(json!({"id":1,"method":"initialize","params":{"clientInfo":{"name":"smashtoken","title":"SmashToken","version":"0.1.1"},"capabilities":{"experimentalApi":true}}})).await?;
+        self.send(json!({"id":1,"method":"initialize","params":{"clientInfo":{"name":"smashtoken","title":"SmashToken","version":"0.1.2"},"capabilities":{"experimentalApi":true}}})).await?;
         loop {
             let value = self.next().await?;
             if value["id"] == 1 {
@@ -147,7 +147,7 @@ pub async fn fetch(account: &Account) -> Result<Reading, String> {
     let mut session = Session::spawn(&account.profile_path)?;
     let (stdin, lines) = (&mut session.stdin, &mut session.lines);
     let result = tokio::time::timeout(Duration::from_secs(25), async {
-        stdin.write_all(format!("{}\n", json!({"id":1,"method":"initialize","params":{"clientInfo":{"name":"smashtoken","title":"SmashToken","version":"0.1.1"},"capabilities":{"experimentalApi":true}}})).as_bytes()).await.map_err(|_| "Connexion Codex interrompue.")?;
+        stdin.write_all(format!("{}\n", json!({"id":1,"method":"initialize","params":{"clientInfo":{"name":"smashtoken","title":"SmashToken","version":"0.1.2"},"capabilities":{"experimentalApi":true}}})).as_bytes()).await.map_err(|_| "Connexion Codex interrompue.")?;
         loop {
             let line = lines.next_line().await.map_err(|_| "Réponse Codex illisible.")?.ok_or("Codex s’est arrêté.")?;
             let value: Value = serde_json::from_str(&line).unwrap_or(Value::Null);
