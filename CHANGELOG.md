@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.2.0 — 2026-10-26
+
+- **Native rewrite with GPUI**: CodeNotch is now a native Rust app (GPUI, the UI framework behind Zed) instead of Tauri + WebView2. Same notch, settings and connectors, without a browser engine: WebView2 is no longer required.
+- **Updates from 0.1.x**: the built-in updater offers 0.2.0 and installs it over the Tauri version (same install folder, shortcuts and uninstall entry). Accounts and settings carry over: 0.2.0 starts from the previous `config.json`, which it leaves untouched.
+- **Signed updates, as before**: checks at launch and twice a day, a Windows notification once per version, an update banner and a button at the bottom of the settings menu, a manual **Check** in Appearance → Updates, and the installer’s signature and signed version verified before it runs.
+- **Home page** in the settings: each account’s main window and reset time, plus shortcuts to connect an account, move the notch and tune alerts.
+- **Redesigned welcome screen and quick connect**: a three-step guide, providers grouped by state (in the notch, to connect, available to install) with their install command, and other installed AI CLIs listed from the Orca catalog.
+- The settings header shows the computer’s live CPU, RAM and GPU use.
+- Translation fixes: quick connect and the Home page reset windows are now fully in English when English is selected.
+- **Not ported yet** from 0.1.x: alert delivery (threshold, forecast and limit alerts are computed but not sent as Windows notifications or to Discord), and moving the notch by dragging its grip (the screen edge is still set in Appearance → Notch).
+
 ## 0.1.3 — 2026-10-25
 
 - Maintenance release to exercise the built-in updater from 0.1.2: the update banner, the green “Update” button in the settings menu, the signed install and the restart. No functional change.

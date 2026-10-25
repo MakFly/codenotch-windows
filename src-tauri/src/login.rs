@@ -205,6 +205,26 @@ pub fn executable(provider: &str) -> Option<PathBuf> {
     candidates(provider).into_iter().find(|p| is_cli(p))
 }
 
+/// Finds any CLI by its command names, in PATH (live and saved), the package managers'
+/// global folders and ~/.local/bin. Used for the CLI catalog in data/cli-agents.json.
+#[allow(dead_code)]
+pub fn find_command<S: AsRef<str>>(names: &[S]) -> Option<PathBuf> {
+    let mut folders: Vec<PathBuf> = std::env::var_os("PATH")
+        .map(|p| std::env::split_paths(&p).collect())
+        .unwrap_or_default();
+    folders.extend(registry_path());
+    folders.extend(package_manager_dirs());
+    folders.extend(dirs::home_dir().map(|h| h.join(".local/bin")));
+    folders.into_iter().find_map(|folder| {
+        names.iter().find_map(|name| {
+            ["exe", "cmd", "bat"]
+                .iter()
+                .map(|ext| folder.join(format!("{}.{ext}", name.as_ref())))
+                .find(|path| is_cli(path))
+        })
+    })
+}
+
 /// Profile folder used by the CLI when no explicit path is configured.
 pub fn default_profile(provider: &str) -> PathBuf {
     let home = dirs::home_dir().unwrap_or_default();

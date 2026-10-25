@@ -1,6 +1,6 @@
 {
   "name": "smashtoken",
-  "version": "0.1.3",
+  "version": "0.2.0",
   "description": "A Windows desktop notch for local AI account quotas and usage.",
   "license": "MIT",
   "author": "Kev (MakFly)",
@@ -17,6 +17,7 @@
     "desktop": "tauri dev",
     "desktop:build": "tauri build",
     "release:package": "bun scripts/package-release.ts",
+    "sync:agents": "bun scripts/sync-cli-agents.ts",
     "check": "tsc -b",
     "test": "bun test tests",
     "test:native": "cargo test --manifest-path src-tauri/Cargo.toml",
