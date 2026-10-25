@@ -2,7 +2,7 @@
 //! `.accordion-*`, `.setting-row`, `.button` in notch.css). Texts are the Tauri source
 //! strings, translated through its own table.
 use crate::assets::icon_path;
-use crate::model::{Account, Settings};
+use crate::model::Settings;
 use crate::store::Store;
 use crate::ui::{provider_icon, t};
 use gpui::{
@@ -21,12 +21,11 @@ pub(crate) const TEXT: u32 = 0xf5f5f5;
 pub(crate) const ACCENT: u32 = 0x5c9bf5;
 pub(crate) const DANGER: u32 = 0xf1a1a1;
 
-/// The three parts of the Accounts page, shown one at a time.
+/// The two parts of the Accounts page, shown one at a time; adding goes through « Ajouter ».
 #[derive(Clone, Copy, PartialEq)]
 enum AccountsTab {
     Configured,
     Quick,
-    Catalog,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -626,7 +625,6 @@ impl SettingsView {
         let tabs = [
             (AccountsTab::Configured, "Comptes configurés", Some(count)),
             (AccountsTab::Quick, "Connexion rapide", None),
-            (AccountsTab::Catalog, "Ajouter un fournisseur", None),
         ];
         div()
             .flex()
@@ -796,71 +794,7 @@ impl SettingsView {
                 )))
                 .into_any_element(),
         );
-        if tab == AccountsTab::Configured {
-            out.push(div().flex().flex_col().children(list).into_any_element());
-            return out;
-        }
-
-        // `.connectors-catalog`
-        let mut catalog: Vec<AnyElement> = vec![
-            div()
-                .mt(px(7.))
-                .mb(px(10.))
-                .text_size(px(11.))
-                .text_color(rgb(MUTED))
-                .child(t(french, "Plusieurs comptes du même fournisseur ? Ajoute simplement un profil pour chacun."))
-                .into_any_element(),
-        ];
-        for provider in crate::account_form::PROVIDERS {
-            catalog.push(
-                div()
-                    .id(SharedString::from(format!("catalog-{provider}")))
-                    .flex()
-                    .items_center()
-                    .gap(px(12.))
-                    .py(px(13.))
-                    .border_b_1()
-                    .border_color(rgba(LINE))
-                    .cursor_pointer()
-                    .child(div().mx(px(4.)).child(provider_icon(provider, 23.)))
-                    .child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .gap(px(4.))
-                            .flex_1()
-                            .min_w_0()
-                            .child(div().text_size(px(12.)).font_weight(FontWeight::MEDIUM).child(t(french, &crate::account_form::name(provider, true))))
-                            .child(
-                                div()
-                                    .text_size(px(11.))
-                                    .line_height(px(16.))
-                                    .text_color(rgb(0x9999a2))
-                                    .child(crate::account_form::description(provider, french)),
-                            ),
-                    )
-                    .child(icon("plus", 17., 0x888888))
-                    .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
-                        let account = Account {
-                            id: String::new(),
-                            name: String::new(),
-                            provider: provider.into(),
-                            enabled: true,
-                            profile_path: String::new(),
-                            endpoint: if provider == "ollama" {
-                                "http://127.0.0.1:11434/api/ps".into()
-                            } else {
-                                String::new()
-                            },
-                            secret_env: String::new(),
-                            has_secret: false,
-                        };
-                        this.open_editor(Some(account), window, cx)
-                    }))
-                    .into_any_element(),
-            );
-        }
-        out.push(div().flex().flex_col().children(catalog).into_any_element());
+        out.push(div().flex().flex_col().children(list).into_any_element());
         out
     }
 
