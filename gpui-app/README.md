@@ -16,16 +16,22 @@ Add `-- --settings` to open the settings window at launch.
 - Notch rail on any edge of the primary display (clear of the taskbar), one usage ring per enabled account,
   with the provider's logo.
 - Hover or click a ring to open the usage popover (windows, reset countdown, forecast, refresh).
+- Notch drawn to notch.css (rail, flares, rings, tools, fold tab, popover with its tail),
+  flush against the screen edge; it slides in and fades on reveal and plays it backward on
+  fold, the popover fades in per account, the hovered ring brightens.
 - Auto-hide: folded to a peek tab, revealed on hover, folded again 240 ms after the pointer
   leaves both the rail and the popover; » folds it by hand.
 - Hidden in game mode and, when the setting asks for it, while an app is full screen.
 - Tray icon (`tray-icon` crate): Settings, game mode toggle and Quit, in the chosen language.
 - Text fields (`input.rs`, from GPUI's input example): IME, clipboard, selection, masked mode.
-- Settings window with a Cursor-style frameless header (logo, context pill, caption buttons):
+- Settings window matched to the Tauri one (frameless header with the mini notch, sidebar
+  with icons, page headers, accordions, menus, toggles, account dialog):
   - Accounts: add or edit (provider, name, profile folder, JSON URL, token kept in Windows
     Credential Manager, environment variable), sign in through the official CLI, enable or
     disable, remove (with confirmation), detect local CLI profiles.
-  - Notch: show, fold automatically, edge, hide in full screen, game mode, poll interval.
+  - Appearance: language and welcome, updates (version only), notch (show, fold, edge, full
+    screen, game mode), poll interval.
+  - About: what each reading means, as in the Tauri app.
   - Language: French or English, applied at once to the notch, the window and the tray menu;
     the welcome screen can be shown again from here.
 - Welcome screen on first launch (no account yet, as in the Tauri app): CLI install and
@@ -42,5 +48,5 @@ Add `-- --settings` to open the settings window at launch.
 ## Not yet ported
 
 Alert delivery (Windows,
-Telegram, Discord); fold animation, Escape to fold, drag to move; updater. Text fields have
+Telegram, Discord); Escape to fold, drag to move (the grip is drawn only); updater. Text fields have
 no Tab navigation or undo yet.

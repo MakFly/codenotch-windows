@@ -1,27 +1,32 @@
-use crate::model::Settings;
-use crate::assets::app_icon;
+//! The settings window, drawn to the Tauri app's settings (`.settings-*`, `.page-heading`,
+//! `.accordion-*`, `.setting-row`, `.button` in notch.css). Texts are the Tauri source
+//! strings, translated through its own table.
+use crate::assets::icon_path;
+use crate::model::{Account, Settings};
 use crate::store::Store;
-use crate::ui::{provider_icon, tr};
+use crate::ui::{provider_icon, t};
 use gpui::{
-    div, img, prelude::*, px, rgb, rgba, size, AnyElement, App, Bounds, ClickEvent, Context, Entity,
-    FontWeight, Rgba, SharedString, TitlebarOptions, Window, WindowBounds, WindowHandle,
-    WindowControlArea, WindowKind, WindowOptions,
+    anchored, canvas, deferred, div, point, prelude::*, px, rgb, rgba, size, svg, AnyElement, App,
+    Bounds, ClickEvent, Context, Entity, FontWeight, PathBuilder, SharedString,
+    TitlebarOptions, Window, WindowBounds, WindowControlArea, WindowHandle, WindowKind,
+    WindowOptions,
 };
+use std::f32::consts::{FRAC_PI_2, TAU};
 
-const SURFACE: u32 = 0x0e0e10;
+pub(crate) const SURFACE: u32 = 0x0e0e10;
 const SIDEBAR: u32 = 0x161618;
-const CARD: u32 = 0x151517;
+const LINE: u32 = 0xffffff12;
 pub(crate) const MUTED: u32 = 0xa3a3a8;
 pub(crate) const TEXT: u32 = 0xf5f5f5;
 pub(crate) const ACCENT: u32 = 0x5c9bf5;
-pub(crate) const DANGER: u32 = 0xff6b5a;
+pub(crate) const DANGER: u32 = 0xf1a1a1;
 
 #[derive(Clone, Copy, PartialEq)]
 enum Section {
     Accounts,
-    Notch,
-    Language,
+    Appearance,
     Alerts,
+    About,
 }
 
 pub(crate) type Click = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
@@ -40,11 +45,11 @@ pub fn open(store: Entity<Store>, cx: &mut App) {
     let options = WindowOptions {
         window_bounds: Some(WindowBounds::Windowed(Bounds::centered(
             None,
-            size(px(820.), px(620.)),
+            size(px(860.), px(690.)),
             cx,
         ))),
-        // The header is drawn by the app, Cursor style; the title still names the window
-        // in the taskbar and Alt+Tab.
+        // The header is drawn by the app, as in Tauri; the title still names the window in
+        // the taskbar and Alt+Tab.
         titlebar: Some(TitlebarOptions {
             title: Some(title(french).into()),
             appears_transparent: true,
@@ -66,7 +71,7 @@ pub fn open(store: Entity<Store>, cx: &mut App) {
 }
 
 fn title(french: bool) -> String {
-    tr(french, "CodeNotch — Réglages", "CodeNotch — Settings")
+    t(french, "CodeNotch — Réglages")
 }
 
 pub struct SettingsView {
@@ -74,14 +79,18 @@ pub struct SettingsView {
     section: Section,
     /// Result of the last action: (success, text).
     pub(crate) message: Option<(bool, String)>,
-    confirm_remove: Option<String>,
-    /// The account being added or edited.
+    /// The account being added or edited, shown as a dialog.
     pub(crate) editor: Option<crate::account_form::Editor>,
     /// A CLI sign-in in progress.
     pub(crate) login: Option<crate::account_form::Login>,
     pub(crate) channels: crate::channels::Channels,
-    /// CLI install and sign-in state per login provider, for the welcome screen.
+    /// CLI install and sign-in state per login provider, for quick connect.
     pub(crate) statuses: Vec<crate::login::ProviderStatus>,
+    /// The open dropdown, by id.
+    open_select: Option<&'static str>,
+    /// The open accordion item of the Appearance and Alerts pages.
+    appearance_open: Option<&'static str>,
+    alerts_open: Option<&'static str>,
 }
 
 impl SettingsView {
@@ -102,11 +111,13 @@ impl SettingsView {
             store,
             section: Section::Accounts,
             message: None,
-            confirm_remove: None,
             editor: None,
             login: None,
             channels,
             statuses: crate::welcome::statuses(),
+            open_select: None,
+            appearance_open: Some("language"),
+            alerts_open: Some("discord"),
         }
     }
 
@@ -151,286 +162,512 @@ impl SettingsView {
     }
 }
 
-pub(crate) fn toggle(id: impl Into<SharedString>, checked: bool, on_click: Click) -> AnyElement {
-    div()
-        .id(id.into())
-        .w(px(38.))
-        .h(px(22.))
+// ---- Shared controls ----------------------------------------------------------------
+
+pub(crate) fn icon(name: &str, size: f32, color: u32) -> gpui::Svg {
+    svg()
+        .path(icon_path(name))
+        .size(px(size))
         .flex_none()
-        .p(px(3.))
-        .rounded_full()
-        .cursor_pointer()
-        .bg(if checked { rgb(ACCENT) } else { rgb(0x3a3a3c) })
-        .flex()
-        .when(checked, |d| d.justify_end())
-        .child(div().size(px(16.)).rounded_full().bg(rgb(0xffffff)))
-        .on_click(on_click)
-        .into_any_element()
+        .text_color(rgb(color))
 }
 
-pub(crate) fn button(id: impl Into<SharedString>, label: String, color: Rgba, on_click: Click) -> AnyElement {
+#[derive(Clone, Copy, PartialEq)]
+pub(crate) enum Kind {
+    Primary,
+    Secondary,
+    Ghost,
+    Danger,
+}
+
+/// `.button` with its `.primary`, `.secondary`, `.ghost` and `.danger` variants.
+pub(crate) fn button(
+    id: impl Into<SharedString>,
+    kind: Kind,
+    leading: Option<&str>,
+    label: String,
+    on_click: Option<Click>,
+) -> AnyElement {
+    let (bg, hover, fg, border) = match kind {
+        Kind::Primary => (0xe7e7eb, 0xffffff, 0x17171a, None),
+        Kind::Secondary => (0x262629, 0x323236, 0xf5f5f5, Some(0x3b3b3f)),
+        Kind::Ghost => (0x00000000, 0xffffff0d, 0xf5f5f5, None),
+        Kind::Danger => (0x4c2424, 0x5a2a2a, DANGER, None),
+    };
+    let enabled = on_click.is_some();
+    let rgba_of = |c: u32| if c > 0xffffff { rgba(c) } else { rgb(c) };
+    let mut el = div()
+        .id(id.into())
+        .flex()
+        .flex_none()
+        .items_center()
+        .justify_center()
+        .gap(px(6.))
+        .px(px(12.))
+        .min_h(px(34.))
+        .rounded(px(6.))
+        .text_size(px(12.))
+        .font_weight(FontWeight::MEDIUM)
+        .when(kind != Kind::Ghost, |d| d.bg(rgba_of(bg)))
+        .text_color(rgb(fg))
+        .when_some(border, |d, b| d.border_1().border_color(rgb(b)))
+        .when(kind == Kind::Ghost, |d| d.border_1().border_color(rgba(0x00000000)))
+        .when_some(leading, |d, name| d.child(icon(name, 15., fg)))
+        .child(label);
+    if let Some(on_click) = on_click {
+        el = el
+            .cursor_pointer()
+            .hover(move |d| {
+                let d = d.bg(rgba_of(hover));
+                if kind == Kind::Ghost { d.border_color(rgb(0x3b3b3f)) } else { d }
+            })
+            .on_click(on_click);
+    }
+    el.when(!enabled, |d| d.opacity(0.45)).into_any_element()
+}
+
+/// `.text-button`: small blue link-style action.
+pub(crate) fn text_button(id: impl Into<SharedString>, leading: &str, label: String, on_click: Click) -> AnyElement {
     div()
         .id(id.into())
-        .px_3()
-        .py_1()
-        .rounded_md()
-        .border_1()
-        .border_color(rgba(0xffffff1f))
+        .flex()
+        .flex_none()
+        .items_center()
+        .gap(px(6.))
+        .min_h(px(32.))
+        .text_size(px(11.))
+        .text_color(rgb(0xb8cbe6))
         .cursor_pointer()
-        .text_sm()
-        .text_color(color)
-        .hover(|d| d.bg(rgba(0xffffff12)))
+        .child(icon(leading, 15., 0xb8cbe6))
         .child(label)
         .on_click(on_click)
         .into_any_element()
 }
 
-pub(crate) fn segmented(choices: Vec<(SharedString, String, bool, Click)>) -> AnyElement {
+/// `.toggle`: 32 × 19 switch.
+pub(crate) fn toggle(id: impl Into<SharedString>, checked: bool, on_click: Click) -> AnyElement {
     div()
-        .flex()
+        .id(id.into())
+        .w(px(32.))
+        .h(px(19.))
         .flex_none()
-        .p(px(3.))
-        .gap(px(2.))
-        .rounded_lg()
-        .bg(rgb(0x1f1f22))
-        .children(choices.into_iter().map(|(id, label, active, on_click)| {
-            div()
-                .id(id)
-                .px_3()
-                .py_1()
-                .rounded_md()
-                .cursor_pointer()
-                .text_sm()
-                .when(active, |d| d.bg(rgb(0x355d8b)).text_color(rgb(TEXT)))
-                .when(!active, |d| {
-                    d.text_color(rgb(MUTED)).hover(|d| d.text_color(rgb(TEXT)))
-                })
-                .child(label)
-                .on_click(on_click)
-        }))
-        .into_any_element()
-}
-
-fn stepper(id: &str, value: String, minus: Option<Click>, plus: Option<Click>) -> AnyElement {
-    let side = |key: &str, glyph: &'static str, handler: Option<Click>| {
-        let enabled = handler.is_some();
-        let mut d = div()
-            .id(SharedString::from(format!("{id}-{key}")))
-            .size(px(28.))
-            .flex()
-            .items_center()
-            .justify_center()
-            .rounded_md()
-            .child(glyph);
-        if let Some(handler) = handler {
-            d = d
-                .cursor_pointer()
-                .hover(|d| d.bg(rgba(0xffffff14)))
-                .on_click(handler);
-        }
-        d.text_color(if enabled { rgb(TEXT) } else { rgb(0x555555) })
-    };
-    div()
+        .p(px(2.))
+        .rounded(px(15.))
+        .cursor_pointer()
+        .bg(if checked { rgb(0x4c83c6) } else { rgb(0x3d3d42) })
         .flex()
-        .flex_none()
-        .items_center()
-        .gap_1()
-        .p(px(3.))
-        .rounded_lg()
-        .bg(rgb(0x1f1f22))
-        .child(side("minus", "−", minus))
+        .when(checked, |d| d.justify_end())
         .child(
             div()
-                .w(px(56.))
-                .flex()
-                .justify_center()
-                .text_sm()
-                .font_weight(FontWeight::BOLD)
-                .child(value),
+                .size(px(15.))
+                .rounded_full()
+                .bg(if checked { rgb(0xffffff) } else { rgb(0xd6d6dc) }),
         )
-        .child(side("plus", "+", plus))
+        .on_click(on_click)
         .into_any_element()
 }
 
-/// A labelled setting: title and help on the left, its control on the right.
-pub(crate) fn row(title: String, help: String, control: AnyElement) -> AnyElement {
+/// `.setting-row`: title and help on the left, its control on the right.
+pub(crate) fn setting_row(title: String, help: Option<String>, control: AnyElement) -> AnyElement {
     div()
         .flex()
         .items_center()
         .justify_between()
-        .gap_6()
-        .py_3()
+        .gap(px(25.))
+        .py(px(17.))
+        .border_b_1()
+        .border_color(rgba(LINE))
         .child(
             div()
                 .flex()
                 .flex_col()
-                .gap_1()
+                .gap(px(4.))
                 .flex_1()
                 .min_w_0()
-                .child(div().font_weight(FontWeight::BOLD).child(title))
-                .child(div().text_sm().text_color(rgb(MUTED)).child(help)),
+                .child(div().text_size(px(12.)).font_weight(FontWeight::MEDIUM).child(title))
+                .when_some(help, |d, help| {
+                    d.child(div().text_size(px(11.)).line_height(px(17.)).text_color(rgb(MUTED)).child(help))
+                }),
         )
         .child(control)
         .into_any_element()
 }
 
-pub(crate) fn card(title: String, rows: Vec<AnyElement>) -> AnyElement {
+/// `.list-header`: a muted section title with an action on the right.
+pub(crate) fn list_header(title: String, action: Option<AnyElement>) -> AnyElement {
     div()
         .flex()
-        .flex_col()
-        .px_5()
-        .py_3()
-        .rounded_xl()
-        .bg(rgb(CARD))
-        .border_1()
-        .border_color(rgba(0xffffff12))
+        .items_center()
+        .justify_between()
+        .mb(px(6.))
         .child(
             div()
-                .pb_2()
-                .text_xs()
-                .font_weight(FontWeight::BOLD)
-                .text_color(rgb(MUTED))
-                .child(title.to_uppercase()),
+                .text_size(px(12.))
+                .font_weight(FontWeight::MEDIUM)
+                .text_color(rgb(0xa8a8b0))
+                .child(title),
         )
-        .children(rows)
+        .children(action)
         .into_any_element()
 }
 
-pub(crate) fn note(text: String) -> AnyElement {
+/// `.message.success` / `.message.error`.
+pub(crate) fn message(ok: bool, text: String) -> AnyElement {
     div()
-        .px_4()
-        .py_3()
-        .rounded_lg()
-        .bg(rgba(0x5c9bf514))
-        .border_1()
-        .border_color(rgba(0x5c9bf533))
-        .text_sm()
-        .text_color(rgb(0xc0c6cf))
+        .flex()
+        .items_center()
+        .gap(px(8.))
+        .p(px(12.))
+        .mb(px(18.))
+        .rounded(px(6.))
+        .text_size(px(12.))
+        .line_height(px(18.))
+        .bg(if ok { rgb(0x26382c) } else { rgb(0x442b2c) })
+        .text_color(if ok { rgb(0xb9d9c0) } else { rgb(0xf2b0ac) })
+        .child(icon(if ok { "check" } else { "circle-alert" }, 16., if ok { 0xb9d9c0 } else { 0xf2b0ac }))
+        .child(div().flex_1().min_w_0().child(text))
+        .into_any_element()
+}
+
+/// `.mini-notch-icon`: the small black notch with an open ring, drawn in the header.
+fn mini_notch() -> impl IntoElement {
+    div()
+        .w(px(12.))
+        .h(px(17.))
+        .flex_none()
+        .rounded_l(px(7.))
+        .bg(rgb(0x000000))
+        .child(
+            canvas(|_, _, _| {}, |bounds, _, window, _| {
+                let center = point(bounds.origin.x + px(6.), bounds.origin.y + px(6.));
+                let mut b = PathBuilder::stroke(px(1.5));
+                for i in 0..=36 {
+                    // Three quarters of a ring, open on the right like the CSS border.
+                    let a = FRAC_PI_2 * 0.5 + (TAU * 0.75) * i as f32 / 36.;
+                    let p = point(center.x + px(3. * a.cos()), center.y + px(3. * a.sin()));
+                    if i == 0 { b.move_to(p) } else { b.line_to(p) }
+                }
+                if let Ok(path) = b.build() {
+                    window.paint_path(path, rgb(0xe5e5e5));
+                }
+            })
+            .size_full(),
+        )
+}
+
+impl SettingsView {
+    /// `.select-trigger` with its `.select-content` menu.
+    pub(crate) fn select(
+        &self,
+        id: &'static str,
+        current: String,
+        options: Vec<(String, bool, Click)>,
+        width: f32,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let open = self.open_select == Some(id);
+        let view = cx.entity().downgrade();
+        let trigger = div()
+            .id(SharedString::from(format!("{id}-trigger")))
+            .w(px(width))
+            .min_h(px(36.))
+            .flex()
+            .items_center()
+            .justify_between()
+            .gap(px(8.))
+            .px(px(10.))
+            .rounded(px(6.))
+            .border_1()
+            .border_color(rgb(0x414147))
+            .bg(rgb(0x252528))
+            .text_size(px(12.))
+            .cursor_pointer()
+            .child(current)
+            .child(icon("chevron-down", 16., 0xc3c3c8))
+            .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
+                this.open_select = if this.open_select == Some(id) { None } else { Some(id) };
+                cx.notify();
+            }));
+        let menu = open.then(|| {
+            let items: Vec<AnyElement> = options
+                .into_iter()
+                .enumerate()
+                .map(|(i, (label, selected, on_click))| {
+                    let view = view.clone();
+                    div()
+                        .id(SharedString::from(format!("{id}-{i}")))
+                        .flex()
+                        .items_center()
+                        .justify_between()
+                        .gap(px(10.))
+                        .min_h(px(34.))
+                        .px(px(10.))
+                        .rounded(px(4.))
+                        .text_size(px(12.))
+                        .cursor_pointer()
+                        .hover(|d| d.bg(rgb(0x3c526d)))
+                        .child(label)
+                        .when(selected, |d| d.child(icon("check", 14., 0xf5f5f5)))
+                        .on_click(move |e, w, cx| {
+                            on_click(e, w, cx);
+                            let _ = view.update(cx, |v, cx| {
+                                v.open_select = None;
+                                cx.notify();
+                            });
+                        })
+                        .into_any_element()
+                })
+                .collect();
+            deferred(
+                anchored().snap_to_window_with_margin(px(8.)).child(
+                    div()
+                        .id(SharedString::from(format!("{id}-menu")))
+                        .mt(px(4.))
+                        .w(px(width))
+                        .p(px(4.))
+                        .rounded(px(7.))
+                        .border_1()
+                        .border_color(rgb(0x44444a))
+                        .bg(rgb(0x242427))
+                        .shadow_lg()
+                        .text_color(rgb(TEXT))
+                        .children(items)
+                        .on_mouse_down_out(cx.listener(|this, _, _, cx| {
+                            this.open_select = None;
+                            cx.notify();
+                        })),
+                ),
+            )
+            .with_priority(1)
+        });
+        div()
+            .flex()
+            .flex_col()
+            .flex_none()
+            .child(trigger)
+            .children(menu)
+            .into_any_element()
+    }
+
+    /// `.accordion-item`: icon, title, summary and chevron; one item open per page.
+    fn accordion(
+        &self,
+        page: Section,
+        key: &'static str,
+        leading: &str,
+        title: String,
+        summary: AnyElement,
+        disabled: bool,
+        body: Vec<AnyElement>,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let current = match page {
+            Section::Alerts => self.alerts_open,
+            _ => self.appearance_open,
+        };
+        let open = !disabled && current == Some(key);
+        div()
+            .flex()
+            .flex_col()
+            .rounded(px(10.))
+            .border_1()
+            .border_color(if open { rgba(0xffffff1f) } else { rgba(LINE) })
+            .bg(rgba(0xffffff04))
+            .overflow_hidden()
+            .when(disabled, |d| d.opacity(0.55))
+            .child(
+                div()
+                    .id(SharedString::from(format!("acc-{key}")))
+                    .flex()
+                    .items_center()
+                    .gap(px(10.))
+                    .px(px(16.))
+                    .py(px(13.))
+                    .text_size(px(13.))
+                    .font_weight(FontWeight::MEDIUM)
+                    .when(!disabled, |d| d.cursor_pointer().hover(|d| d.bg(rgba(0xffffff08))))
+                    .child(icon(leading, 18., 0xf5f5f5))
+                    .child(div().flex_1().child(title))
+                    .child(summary)
+                    .child(
+                        icon(if open { "chevron-up" } else { "chevron-down" }, 16., 0x8f8f96),
+                    )
+                    .when(!disabled, |d| {
+                        d.on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
+                            let slot = match page {
+                                Section::Alerts => &mut this.alerts_open,
+                                _ => &mut this.appearance_open,
+                            };
+                            *slot = if *slot == Some(key) { None } else { Some(key) };
+                            cx.notify();
+                        }))
+                    }),
+            )
+            .when(open, |d| {
+                d.child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .px(px(16.))
+                        .pb(px(12.))
+                        .border_t_1()
+                        .border_color(rgba(LINE))
+                        .children(body),
+                )
+            })
+            .into_any_element()
+    }
+}
+
+fn summary(text: String) -> AnyElement {
+    div()
+        .text_size(px(11.))
+        .font_weight(FontWeight::NORMAL)
+        .text_color(rgb(0x8f8f96))
         .child(text)
         .into_any_element()
 }
 
+/// `.channel-badge`: Active / Configured / Not configured, or Coming soon.
+pub(crate) fn channel_badge(label: String, tone: &str) -> AnyElement {
+    let (fg, bg, border) = match tone {
+        "on" => (0x0f1a12, Some(0x7fd69b), None),
+        "ready" => (0xb8cbe6, None, Some(0x3c5370)),
+        _ => (0x9a9aa3, None, Some(0x414147)),
+    };
+    div()
+        .px(px(8.))
+        .py(px(2.))
+        .rounded_full()
+        .text_size(px(10.5))
+        .font_weight(FontWeight::MEDIUM)
+        .text_color(rgb(fg))
+        .when_some(bg, |d, bg| d.bg(rgb(bg)))
+        .when_some(border, |d, b| d.border_1().border_color(rgb(b)))
+        .child(label)
+        .into_any_element()
+}
+
+/// A sentence with an inline `<code>` part, kept in one flowing paragraph.
+fn inline_code(before: &str, code: Option<&str>, after: &str) -> gpui::StyledText {
+    let Some(code) = code else {
+        return gpui::StyledText::new(format!("{before}{after}"));
+    };
+    let start = before.len() + 1;
+    let joiner = if after.starts_with([',', '.']) { "" } else { " " };
+    let text = format!("{before} {code}{joiner}{after}");
+    gpui::StyledText::new(text).with_highlights(vec![(
+        start..start + code.len(),
+        gpui::HighlightStyle {
+            color: Some(rgb(0xc8d9ee).into()),
+            ..Default::default()
+        },
+    )])
+}
+
+fn interval_label(n: u64, french: bool) -> String {
+    if n < 60 {
+        t(french, "{count} secondes").replace("{count}", &n.to_string())
+    } else if n == 60 {
+        t(french, "{count} minute").replace("{count}", "1")
+    } else {
+        t(french, "{count} minutes").replace("{count}", &(n / 60).to_string())
+    }
+}
+
+fn position_label(edge: &str) -> &'static str {
+    match edge {
+        "left" => "À gauche",
+        "top" => "En haut",
+        "bottom" => "En bas",
+        _ => "À droite",
+    }
+}
+
+// ---- Pages --------------------------------------------------------------------------
+
 impl SettingsView {
-    fn accounts(&mut self, french: bool, cx: &mut Context<Self>) -> Vec<AnyElement> {
-        if self.editor.is_some() {
-            return self.account_editor(french, cx);
-        }
+    fn accounts_page(&mut self, french: bool, cx: &mut Context<Self>) -> Vec<AnyElement> {
         let accounts = self.store.read(cx).config.accounts.clone();
-        let add = button(
-            "add-account",
-            tr(french, "+ Ajouter", "+ Add"),
-            rgb(TEXT),
-            Box::new(cx.listener(|this, _: &ClickEvent, window, cx| {
-                this.open_editor(None, window, cx)
-            })),
-        );
-        let detect = button(
+        let mut out = vec![self.quick_connect(french, "Connexion rapide", true, cx)];
+
+        let detect = text_button(
             "detect",
-            tr(french, "Détecter", "Detect"),
-            rgb(TEXT),
+            "search",
+            t(french, "Détecter"),
             Box::new(cx.listener(move |this, _: &ClickEvent, _, cx| {
                 this.run(cx, |s| {
-                    s.add_discovered().map(|added| {
-                        Some(match added {
-                            0 => tr(
-                                french,
-                                "Aucun nouveau profil trouvé sur ce PC.",
-                                "No new profile found on this PC.",
-                            ),
-                            n => tr(
-                                french,
-                                &format!("{n} profil(s) ajouté(s)."),
-                                &format!("{n} profile(s) added."),
-                            ),
-                        })
+                    s.add_discovered().map(|_| {
+                        Some(t(french, "Recherche terminée. Les profils locaux disponibles ont été ajoutés."))
                     })
                 })
             })),
         );
-        let mut rows: Vec<AnyElement> = vec![div()
-            .flex()
-            .items_center()
-            .justify_between()
-            .pb_2()
-            .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .text_sm()
-                    .text_color(rgb(MUTED))
-                    .child(tr(
-                        french,
-                        "Détecte les profils Codex, Claude, Gemini, Grok et OpenCode déjà connectés sur ce PC.",
-                        "Finds the Codex, Claude, Gemini, Grok and OpenCode profiles already signed in on this PC.",
-                    )),
-            )
-            .child(div().flex().flex_none().gap_2().child(detect).child(add))
-            .into_any_element()];
-
+        let mut list: Vec<AnyElement> = vec![list_header(t(french, "Comptes configurés"), Some(detect))];
         if accounts.is_empty() {
-            rows.push(
+            list.push(
                 div()
-                    .py_6()
+                    .py(px(28.))
+                    .px(px(15.))
                     .flex()
-                    .justify_center()
-                    .text_color(rgb(MUTED))
-                    .child(tr(french, "Aucun compte configuré", "No account configured"))
+                    .flex_col()
+                    .items_center()
+                    .gap(px(10.))
+                    .text_color(rgb(0xaaaaaa))
+                    .child(icon("users-round", 28., 0xaaaaaa))
+                    .child(div().text_size(px(14.)).font_weight(FontWeight::SEMIBOLD).text_color(rgb(0xdddddd)).child(t(french, "Aucun compte configuré")))
+                    .child(div().max_w(px(350.)).text_size(px(12.)).text_center().child(t(
+                        french,
+                        "Connecte-toi avec « Connexion rapide », ou détecte les profils Codex, Claude, Gemini, Grok et OpenCode déjà connectés sur ce PC.",
+                    )))
                     .into_any_element(),
             );
         }
         for account in accounts {
             let id = account.id.clone();
-            let confirming = self.confirm_remove.as_deref() == Some(id.as_str());
             let enabled = account.enabled;
+            let edited = account.clone();
             let toggle_id = id.clone();
-            let actions = if confirming {
-                let (remove_id, keep_id) = (id.clone(), id.clone());
-                div()
-                    .flex()
-                    .gap_2()
-                    .child(button(
-                        format!("confirm-{keep_id}"),
-                        tr(french, "Confirmer le retrait", "Confirm removal"),
-                        rgb(DANGER),
-                        Box::new(cx.listener(move |this, _: &ClickEvent, _, cx| {
-                            this.confirm_remove = None;
-                            let id = remove_id.clone();
-                            this.run(cx, move |s| {
-                                s.remove_account(&id).map(|_| {
-                                    Some(tr(
-                                        french,
-                                        "Compte retiré de CodeNotch.",
-                                        "Account removed from CodeNotch.",
-                                    ))
-                                })
-                            })
-                        })),
-                    ))
-                    .child(button(
-                        format!("keep-{keep_id}"),
-                        tr(french, "Garder", "Keep"),
-                        rgb(TEXT),
-                        Box::new(cx.listener(|this, _: &ClickEvent, _, cx| {
-                            this.confirm_remove = None;
-                            cx.notify();
-                        })),
-                    ))
-                    .into_any_element()
-            } else {
-                let ask_id = id.clone();
+            list.push(
                 div()
                     .flex()
                     .items_center()
-                    .gap_3()
-                    .child(button(
-                        format!("remove-{id}"),
-                        tr(french, "Retirer", "Remove"),
-                        rgb(MUTED),
-                        Box::new(cx.listener(move |this, _: &ClickEvent, _, cx| {
-                            this.confirm_remove = Some(ask_id.clone());
-                            cx.notify();
-                        })),
-                    ))
+                    .gap(px(14.))
+                    .py(px(8.))
+                    .border_b_1()
+                    .border_color(rgba(LINE))
+                    .hover(|d| d.bg(rgba(0xffffff04)))
+                    .child(
+                        div()
+                            .id(SharedString::from(format!("edit-{id}")))
+                            .flex()
+                            .items_center()
+                            .gap(px(12.))
+                            .flex_1()
+                            .min_w_0()
+                            .py(px(8.))
+                            .cursor_pointer()
+                            .child(div().mx(px(3.)).child(provider_icon(&account.provider, 25.)))
+                            .child(
+                                div()
+                                    .flex()
+                                    .flex_col()
+                                    .gap(px(4.))
+                                    .flex_1()
+                                    .min_w_0()
+                                    .child(div().text_size(px(13.)).font_weight(FontWeight::MEDIUM).child(account.name.clone()))
+                                    .child(
+                                        div()
+                                            .text_size(px(11.))
+                                            .text_color(rgb(0x92929b))
+                                            .child(t(french, &crate::account_form::name(&account.provider, true))),
+                                    ),
+                            )
+                            .child(icon("chevron-right", 16., 0x777777))
+                            .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+                                this.open_editor(Some(edited.clone()), window, cx)
+                            })),
+                    )
                     .child(toggle(
                         format!("enabled-{id}"),
                         enabled,
@@ -439,613 +676,677 @@ impl SettingsView {
                             this.run(cx, move |s| s.set_enabled(&id, !enabled).map(|_| None))
                         })),
                     ))
-                    .into_any_element()
-            };
-            let path = if account.profile_path.is_empty() {
-                account.endpoint.clone()
-            } else {
-                account.profile_path.clone()
-            };
-            let edited = account.clone();
-            rows.push(
+                    .into_any_element(),
+            );
+        }
+        list.push(
+            div()
+                .flex()
+                .items_start()
+                .gap(px(9.))
+                .pt(px(15.))
+                .child(icon("shield-check", 18., 0x777777))
+                .child(div().text_size(px(11.)).line_height(px(17.)).text_color(rgb(0x9898a2)).child(t(
+                    french,
+                    "Les sessions existantes restent dans leur outil d’origine. Les secrets ajoutés ici sont conservés dans le Gestionnaire d’identification Windows.",
+                )))
+                .into_any_element(),
+        );
+        out.push(div().flex().flex_col().children(list).into_any_element());
+
+        // `.connectors-catalog`
+        let mut catalog: Vec<AnyElement> = vec![
+            div().text_size(px(13.)).font_weight(FontWeight::SEMIBOLD).child(t(french, "Ajouter un fournisseur")).into_any_element(),
+            div()
+                .mt(px(7.))
+                .mb(px(10.))
+                .text_size(px(11.))
+                .text_color(rgb(MUTED))
+                .child(t(french, "Plusieurs comptes du même fournisseur ? Ajoute simplement un profil pour chacun."))
+                .into_any_element(),
+        ];
+        for provider in crate::account_form::PROVIDERS {
+            catalog.push(
                 div()
+                    .id(SharedString::from(format!("catalog-{provider}")))
                     .flex()
                     .items_center()
-                    .gap_3()
-                    .py_3()
-                    .border_t_1()
-                    .border_color(rgba(0xffffff0d))
-                    .child(
-                        div()
-                            .id(SharedString::from(format!("edit-{id}")))
-                            .flex()
-                            .items_center()
-                            .gap_3()
-                            .flex_1()
-                            .min_w_0()
-                            .p_1()
-                            .rounded_lg()
-                            .cursor_pointer()
-                            .hover(|d| d.bg(rgba(0xffffff08)))
-                            .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
-                                this.open_editor(Some(edited.clone()), window, cx)
-                            }))
-                            .child(
-                        div()
-                            .size(px(36.))
-                            .flex_none()
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .rounded_full()
-                            .bg(rgb(0x1f1f22))
-                            .border_1()
-                            .border_color(rgba(0xffffff14))
-                            .child(provider_icon(&account.provider, 20.)),
-                    )
+                    .gap(px(12.))
+                    .py(px(13.))
+                    .border_b_1()
+                    .border_color(rgba(LINE))
+                    .cursor_pointer()
+                    .child(div().mx(px(4.)).child(provider_icon(provider, 23.)))
                     .child(
                         div()
                             .flex()
                             .flex_col()
+                            .gap(px(4.))
                             .flex_1()
                             .min_w_0()
-                            .child(div().font_weight(FontWeight::BOLD).child(account.name.clone()))
+                            .child(div().text_size(px(12.)).font_weight(FontWeight::MEDIUM).child(t(french, &crate::account_form::name(provider, true))))
                             .child(
                                 div()
-                                    .text_xs()
-                                    .text_color(rgb(MUTED))
-                                    .truncate()
-                                    .child(format!(
-                                        "{} · {}",
-                                        crate::account_form::name(&account.provider, french),
-                                        path
-                                    )),
+                                    .text_size(px(11.))
+                                    .line_height(px(16.))
+                                    .text_color(rgb(0x9999a2))
+                                    .child(crate::account_form::description(provider, french)),
                             ),
-                    ))
-                    .child(actions)
+                    )
+                    .child(icon("plus", 17., 0x888888))
+                    .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+                        let account = Account {
+                            id: String::new(),
+                            name: String::new(),
+                            provider: provider.into(),
+                            enabled: true,
+                            profile_path: String::new(),
+                            endpoint: if provider == "ollama" {
+                                "http://127.0.0.1:11434/api/ps".into()
+                            } else {
+                                String::new()
+                            },
+                            secret_env: String::new(),
+                            has_secret: false,
+                        };
+                        this.open_editor(Some(account), window, cx)
+                    }))
                     .into_any_element(),
             );
         }
-        vec![
-            card(tr(french, "Comptes configurés", "Configured accounts"), rows),
-            note(tr(
-                french,
-                "Les sessions existantes restent dans leur outil d’origine. Les secrets ajoutés ici sont conservés dans le Gestionnaire d’identification Windows.",
-                "Existing sessions stay in their own tool. Secrets added here are kept in Windows Credential Manager.",
-            )),
-        ]
+        out.push(div().flex().flex_col().children(catalog).into_any_element());
+        out
     }
 
-    fn language(&mut self, french: bool, cx: &mut Context<Self>) -> Vec<AnyElement> {
-        let choices = [("fr", "Français"), ("en", "English")]
-            .into_iter()
-            .map(|(code, label)| {
-                (
-                    SharedString::from(format!("lang-{code}")),
-                    label.to_owned(),
-                    (code == "fr") == french,
-                    self.setting(cx, move |s| s.language = code.into()),
-                )
-            })
-            .collect();
+    fn appearance_page(&mut self, french: bool, cx: &mut Context<Self>) -> Vec<AnyElement> {
+        let s = self.store.read(cx).config.settings.clone();
+        let page = Section::Appearance;
+
+        let language = self.select(
+            "language",
+            if french { "Français".into() } else { "English".into() },
+            [("en", "English"), ("fr", "Français")]
+                .into_iter()
+                .map(|(code, label)| {
+                    (label.to_owned(), (code == "fr") == french, self.setting(cx, move |s| s.language = code.into()))
+                })
+                .collect(),
+            130.,
+            cx,
+        );
         let replay = button(
             "replay-welcome",
-            tr(french, "Revoir l’écran d’accueil", "Show the welcome screen"),
-            rgb(TEXT),
-            Box::new(cx.listener(|this, _: &ClickEvent, _, cx| {
+            Kind::Secondary,
+            None,
+            t(french, "Revoir l’écran d’accueil"),
+            Some(Box::new(cx.listener(|this, _: &ClickEvent, _, cx| {
                 this.load_statuses();
                 this.update_settings(cx, |s| s.onboarding_done = Some(false));
-            })),
+            }))),
         );
-        vec![card(
-            tr(french, "Langue et accueil", "Language and welcome"),
+        let language_item = self.accordion(
+            page,
+            "language",
+            "languages",
+            t(french, "Langue et accueil"),
+            summary(if french { "Français".into() } else { "English".into() }),
+            false,
             vec![
-                row(
-                    tr(french, "Langue de l’interface", "Interface language"),
-                    tr(
-                        french,
-                        "S’applique immédiatement à l’encoche, à ce panneau et au menu de l’icône.",
-                        "Applies right away to the notch, this window and the tray menu.",
-                    ),
-                    segmented(choices),
+                setting_row(
+                    t(french, "Langue de l’interface"),
+                    Some(t(french, "S’applique immédiatement et reste enregistrée sur ce PC.")),
+                    language,
                 ),
-                row(
-                    tr(french, "Écran d’accueil", "Welcome screen"),
-                    tr(
-                        french,
-                        "Reprends la connexion de tes abonnements IA pas à pas.",
-                        "Go through connecting your AI subscriptions again, step by step.",
-                    ),
+                setting_row(
+                    t(french, "Écran d’accueil"),
+                    Some(t(french, "Reprends la connexion de tes abonnements IA pas à pas.")),
                     replay,
                 ),
             ],
-        )]
+            cx,
+        );
+
+        let version = env!("CARGO_PKG_VERSION");
+        let updates_item = self.accordion(
+            page,
+            "updates",
+            "download",
+            t(french, "Mises à jour"),
+            summary(format!("v{version}")),
+            false,
+            vec![setting_row(
+                t(french, "Mises à jour"),
+                Some(
+                    t(french, "Version {version}. CodeNotch vérifie au démarrage puis deux fois par jour ; chaque mise à jour est signée avant d’être installée.")
+                        .replace("{version}", version),
+                ),
+                // The signed updater is not ported to the prototype yet.
+                button("check-update", Kind::Secondary, Some("refresh-cw"), t(french, "Vérifier"), None),
+            )],
+            cx,
+        );
+
+        let position = self.select(
+            "position",
+            t(french, position_label(&s.widget_position)),
+            ["right", "left", "top", "bottom"]
+                .into_iter()
+                .map(|edge| {
+                    (
+                        t(french, position_label(edge)),
+                        s.widget_position == edge,
+                        self.setting(cx, move |s| s.widget_position = edge.into()),
+                    )
+                })
+                .collect(),
+            130.,
+            cx,
+        );
+        let notch_item = self.accordion(
+            page,
+            "notch",
+            "monitor",
+            t(french, "Encoche"),
+            summary(t(french, position_label(&s.widget_position))),
+            false,
+            vec![
+                setting_row(
+                    t(french, "Afficher l’encoche"),
+                    Some(t(french, "Les quotas restent visibles au bord de l’écran. Survolez un anneau pour afficher les détails.")),
+                    toggle("widget", s.widget, self.setting(cx, |s| s.widget = !s.widget)),
+                ),
+                setting_row(
+                    t(french, "Replier automatiquement"),
+                    Some(t(french, "Une languette discrète au repos. Survolez-la pour déplier les comptes ; éloignez la souris pour les masquer.")),
+                    toggle("auto-hide", s.auto_hide, self.setting(cx, |s| s.auto_hide = !s.auto_hide)),
+                ),
+                setting_row(
+                    t(french, "Position de départ"),
+                    Some(t(french, "La poignée mémorise ta position et ton écran. Choisir un autre bord réinitialise ce placement.")),
+                    position,
+                ),
+                setting_row(
+                    t(french, "Masquer en plein écran"),
+                    Some(t(french, "Masque l’encoche et ses alertes pendant un jeu ou une vidéo en plein écran, même sans bordure. Retour automatique après Alt+Tab.")),
+                    toggle("hide-fullscreen", s.hide_in_fullscreen, self.setting(cx, |s| s.hide_in_fullscreen = !s.hide_in_fullscreen)),
+                ),
+                setting_row(
+                    t(french, "Mode jeu"),
+                    Some(t(french, "Masque l’encoche et ses alertes jusqu’à désactivation. Pour les jeux en fenêtre, active-le depuis l’icône près de l’horloge.")),
+                    toggle("game-mode", s.game_mode, self.setting(cx, |s| s.game_mode = !s.game_mode)),
+                ),
+            ],
+            cx,
+        );
+
+        let poll = self.select(
+            "poll",
+            interval_label(s.poll_seconds, french),
+            [30u64, 60, 120, 300]
+                .into_iter()
+                .map(|n| (interval_label(n, french), s.poll_seconds == n, self.setting(cx, move |s| s.poll_seconds = n)))
+                .collect(),
+            130.,
+            cx,
+        );
+        let refresh_item = self.accordion(
+            page,
+            "refresh",
+            "refresh-cw",
+            t(french, "Actualisation"),
+            summary(interval_label(s.poll_seconds, french)),
+            false,
+            vec![setting_row(
+                t(french, "Fréquence des relevés"),
+                Some(t(french, "Claude respecte un minimum de 2 minutes. Les délais imposés par les fournisseurs sont prioritaires.")),
+                poll,
+            )],
+            cx,
+        );
+        vec![div()
+            .flex()
+            .flex_col()
+            .gap(px(10.))
+            .pt(px(6.))
+            .child(language_item)
+            .child(updates_item)
+            .child(notch_item)
+            .child(refresh_item)
+            .into_any_element()]
     }
 
-    fn notch(&mut self, french: bool, cx: &mut Context<Self>) -> Vec<AnyElement> {
-        let s = self.store.read(cx).config.settings.clone();
-        let positions = [
-            ("right", tr(french, "À droite", "Right")),
-            ("left", tr(french, "À gauche", "Left")),
-            ("top", tr(french, "En haut", "Top")),
-            ("bottom", tr(french, "En bas", "Bottom")),
-        ]
-        .into_iter()
-        .map(|(edge, label)| {
-            (
-                SharedString::from(format!("edge-{edge}")),
-                label,
-                s.widget_position == edge,
-                self.setting(cx, move |s| s.widget_position = edge.into()),
-            )
-        })
-        .collect();
-        let intervals = [(30u64, "30 s"), (60, "1 min"), (120, "2 min"), (300, "5 min")]
-            .into_iter()
-            .map(|(n, label)| {
-                (
-                    SharedString::from(format!("poll-{n}")),
-                    label.to_owned(),
-                    s.poll_seconds == n,
-                    self.setting(cx, move |s| s.poll_seconds = n),
-                )
-            })
-            .collect();
-        vec![
-            card(
-                tr(french, "Encoche", "Notch"),
-                vec![
-                    row(
-                        tr(french, "Afficher l’encoche", "Show the notch"),
-                        tr(
-                            french,
-                            "Les quotas restent visibles au bord de l’écran. Survolez un anneau pour afficher les détails.",
-                            "Quotas stay visible at the screen edge. Hover a ring to see the details.",
-                        ),
-                        toggle("widget", s.widget, self.setting(cx, |s| s.widget = !s.widget)),
-                    ),
-                    row(
-                        tr(french, "Replier automatiquement", "Fold automatically"),
-                        tr(
-                            french,
-                            "Une languette discrète au repos. Survolez-la pour déplier les comptes ; éloignez la souris pour les masquer.",
-                            "A discreet tab at rest. Hover it to unfold the accounts; move the pointer away to hide them.",
-                        ),
-                        toggle("auto-hide", s.auto_hide, self.setting(cx, |s| s.auto_hide = !s.auto_hide)),
-                    ),
-                    row(
-                        tr(french, "Position", "Position"),
-                        tr(
-                            french,
-                            "Bord de l’écran principal où s’affiche l’encoche, hors barre des tâches.",
-                            "Edge of the main display where the notch sits, clear of the taskbar.",
-                        ),
-                        segmented(positions),
-                    ),
-                    row(
-                        tr(french, "Masquer en plein écran", "Hide in full screen"),
-                        tr(
-                            french,
-                            "Masque l’encoche et ses alertes pendant un jeu ou une vidéo en plein écran, même sans bordure. Retour automatique après Alt+Tab.",
-                            "Hides the notch and its alerts during a full-screen game or video, borderless included. Back automatically after Alt+Tab.",
-                        ),
-                        toggle(
-                            "hide-fullscreen",
-                            s.hide_in_fullscreen,
-                            self.setting(cx, |s| s.hide_in_fullscreen = !s.hide_in_fullscreen),
-                        ),
-                    ),
-                    row(
-                        tr(french, "Mode jeu", "Game mode"),
-                        tr(
-                            french,
-                            "Masque l’encoche et ses alertes jusqu’à désactivation. Pour les jeux en fenêtre, active-le depuis l’icône près de l’horloge.",
-                            "Hides the notch and its alerts until turned off. For windowed games, switch it from the icon near the clock.",
-                        ),
-                        toggle("game-mode", s.game_mode, self.setting(cx, |s| s.game_mode = !s.game_mode)),
-                    ),
-                ],
-            ),
-            card(
-                tr(french, "Actualisation", "Refresh"),
-                vec![row(
-                    tr(french, "Fréquence des relevés", "Reading frequency"),
-                    tr(
-                        french,
-                        "Claude respecte un minimum de 2 minutes. Les délais imposés par les fournisseurs sont prioritaires.",
-                        "Claude keeps a 2-minute minimum. Delays set by the providers always come first.",
-                    ),
-                    segmented(intervals),
-                )],
-            ),
-        ]
-    }
-
-    fn alerts(&mut self, french: bool, cx: &mut Context<Self>) -> Vec<AnyElement> {
-        let s = self.store.read(cx).config.settings.clone();
-        let percent_stepper = |this: &Self,
-                               cx: &mut Context<Self>,
-                               id: &str,
-                               value: u8,
-                               set: fn(&mut Settings, u8)| {
-            let minus = (value > 50).then(|| this.setting(cx, move |s| set(s, value - 5)));
-            let plus = (value < 100).then(|| this.setting(cx, move |s| set(s, value + 5)));
-            stepper(id, format!("{value} %"), minus, plus)
+    fn alerts_page(&mut self, french: bool, cx: &mut Context<Self>) -> Vec<AnyElement> {
+        let store = self.store.read(cx);
+        let s = store.config.settings.clone();
+        let (discord_saved, telegram_saved) = (store.discord_saved, store.telegram_saved);
+        let page = Section::Alerts;
+        let badge = |on: bool, ready: bool| {
+            let (label, tone) = if on && ready {
+                ("Actif", "on")
+            } else if ready {
+                ("Configuré", "ready")
+            } else {
+                ("Non configuré", "off")
+            };
+            channel_badge(t(french, label), tone)
         };
-        let alert = percent_stepper(self, cx, "alert", s.alert_percent, |s, v| {
-            s.alert_percent = v
-        });
-        let critical = percent_stepper(self, cx, "critical", s.critical_percent, |s, v| {
-            s.critical_percent = v
-        });
-        let minutes = [15u16, 30, 60]
-            .into_iter()
-            .map(|n| {
-                (
-                    SharedString::from(format!("forecast-{n}")),
-                    format!("{n} min"),
-                    s.forecast_minutes == n,
-                    self.setting(cx, move |s| s.forecast_minutes = n),
+
+        let discord_body = self.discord_body(french, cx);
+        let discord = self.accordion(
+            page,
+            "discord",
+            "webhook",
+            t(french, "Discord"),
+            badge(s.discord_enabled, discord_saved),
+            false,
+            discord_body,
+            cx,
+        );
+        let telegram_available = crate::telegram::AVAILABLE;
+        let telegram_body = if telegram_available { self.telegram_body(french, cx) } else { vec![] };
+        let telegram = self.accordion(
+            page,
+            "telegram",
+            "send",
+            t(french, "Telegram"),
+            if telegram_available {
+                badge(s.telegram_enabled, telegram_saved)
+            } else {
+                channel_badge(t(french, "Bientôt disponible"), "off")
+            },
+            !telegram_available,
+            telegram_body,
+            cx,
+        );
+
+        let percent_select = |this: &Self, cx: &mut Context<Self>, id: &'static str, value: u8, choices: &[u8], set: fn(&mut Settings, u8)| {
+            this.select(
+                id,
+                format!("{value} %"),
+                choices
+                    .iter()
+                    .map(|&n| (format!("{n} %"), value == n, this.setting(cx, move |s| set(s, n))))
+                    .collect(),
+                130.,
+                cx,
+            )
+        };
+        let alert = percent_select(self, cx, "alert-percent", s.alert_percent, &[50, 70, 80, 90, 95, 100], |s, v| s.alert_percent = v);
+        let critical = percent_select(self, cx, "critical-percent", s.critical_percent, &[80, 90, 95, 99], |s, v| s.critical_percent = v);
+        let thresholds = self.accordion(
+            page,
+            "thresholds",
+            "bell",
+            t(french, "Seuils et notifications Windows"),
+            summary(format!("{} % · {} %", s.alert_percent, s.critical_percent)),
+            false,
+            vec![
+                setting_row(
+                    t(french, "Notifications de quota"),
+                    Some(t(french, "Une notification Windows à chaque niveau franchi, sans répétition tant qu’il reste dépassé.")),
+                    toggle("notifications", s.notifications, self.setting(cx, |s| s.notifications = !s.notifications)),
+                ),
+                setting_row(t(french, "Me prévenir à"), Some(t(french, "Pourcentage consommé d’une fenêtre de quota.")), alert),
+                setting_row(
+                    t(french, "Seuil critique"),
+                    Some(t(french, "Une seconde alerte, plus urgente. Le plafond atteint est toujours signalé.")),
+                    critical,
+                ),
+                setting_row(
+                    t(french, "Alertes urgentes en plein écran"),
+                    Some(t(french, "La prévision, le seuil critique et le plafond s’affichent même pendant un jeu ou en mode jeu.")),
+                    toggle("critical-fullscreen", s.critical_in_fullscreen, self.setting(cx, |s| s.critical_in_fullscreen = !s.critical_in_fullscreen)),
+                ),
+            ],
+            cx,
+        );
+
+        let minutes = |n: u16| t(french, "{count} minutes").replace("{count}", &n.to_string());
+        let lead = self.select(
+            "forecast-minutes",
+            minutes(s.forecast_minutes),
+            [15u16, 30, 60]
+                .into_iter()
+                .map(|n| (minutes(n), s.forecast_minutes == n, self.setting(cx, move |s| s.forecast_minutes = n)))
+                .collect(),
+            130.,
+            cx,
+        );
+        let forecast = self.accordion(
+            page,
+            "forecast",
+            "timer",
+            t(french, "Prévision du plafond"),
+            summary(if s.forecast_alerts { minutes(s.forecast_minutes) } else { t(french, "Désactivée") }),
+            false,
+            vec![
+                setting_row(
+                    t(french, "Prévenir avant le plafond"),
+                    Some(t(french, "Mesure le rythme de consommation et prévient quand le plafond arrive avant la réinitialisation. Idéal pour les agents qui tournent en fond.")),
+                    toggle("forecast", s.forecast_alerts, self.setting(cx, |s| s.forecast_alerts = !s.forecast_alerts)),
+                ),
+                setting_row(t(french, "Anticipation"), Some(t(french, "Délai avant le plafond estimé à partir duquel l’alerte part.")), lead),
+                setting_row(
+                    t(french, "Prévenir quand le quota est rétabli"),
+                    Some(t(french, "Après une réinitialisation, pour relancer les agents mis en pause.")),
+                    toggle("reset", s.reset_alerts, self.setting(cx, |s| s.reset_alerts = !s.reset_alerts)),
+                ),
+            ],
+            cx,
+        );
+        vec![div()
+            .flex()
+            .flex_col()
+            .gap(px(10.))
+            .pt(px(6.))
+            .child(discord)
+            .child(telegram)
+            .child(thresholds)
+            .child(forecast)
+            .into_any_element()]
+    }
+
+    fn about_page(&mut self, french: bool) -> Vec<AnyElement> {
+        let para = |text: String| {
+            div().mt(px(9.)).text_size(px(12.)).line_height(px(19.)).text_color(rgb(MUTED)).child(text)
+        };
+        let section = |first: bool, title: String, body: Vec<AnyElement>| {
+            div()
+                .py(px(20.))
+                .when(first, |d| d.pt_0())
+                .when(!first, |d| d.border_t_1().border_color(rgba(LINE)))
+                .child(div().text_size(px(14.)).font_weight(FontWeight::SEMIBOLD).child(title))
+                .children(body)
+                .into_any_element()
+        };
+        let provider = |name: &str, before: &str, file: Option<&str>, after: &str| {
+            div()
+                .mt(px(16.))
+                .child(div().text_size(px(12.)).font_weight(FontWeight::SEMIBOLD).child(name.to_owned()))
+                .child(
+                    div()
+                        .mt(px(6.))
+                        .text_size(px(11.))
+                        .line_height(px(18.))
+                        .text_color(rgb(MUTED))
+                        .child(inline_code(&t(french, before), file, &t(french, after))),
                 )
-            })
-            .collect();
-        vec![
-            note(tr(
-                french,
-                "Prototype : les alertes ne sont pas encore envoyées. Ces réglages sont enregistrés et serviront dès leur portage.",
-                "Prototype: alerts are not sent yet. These settings are saved and will apply once alerts are ported.",
-            )),
-            card(
-                tr(french, "Seuils et notifications Windows", "Thresholds and Windows notifications"),
-                vec![
-                    row(
-                        tr(french, "Notifications de quota", "Quota notifications"),
-                        tr(
-                            french,
-                            "Une notification Windows à chaque niveau franchi, sans répétition tant qu’il reste dépassé.",
-                            "One Windows notification per level crossed, not repeated while it stays exceeded.",
-                        ),
-                        toggle("notifications", s.notifications, self.setting(cx, |s| s.notifications = !s.notifications)),
-                    ),
-                    row(
-                        tr(french, "Me prévenir à", "Warn me at"),
-                        tr(french, "Pourcentage consommé d’une fenêtre de quota.", "Share of a quota window used."),
-                        alert,
-                    ),
-                    row(
-                        tr(french, "Seuil critique", "Critical level"),
-                        tr(
-                            french,
-                            "Une seconde alerte, plus urgente. Le plafond atteint est toujours signalé.",
-                            "A second, more urgent alert. Reaching the limit is always reported.",
-                        ),
-                        critical,
-                    ),
-                    row(
-                        tr(french, "Alertes urgentes en plein écran", "Urgent alerts in full screen"),
-                        tr(
-                            french,
-                            "La prévision, le seuil critique et le plafond s’affichent même pendant un jeu ou en mode jeu.",
-                            "Forecast, critical and limit alerts show even during a game or in game mode.",
-                        ),
-                        toggle(
-                            "critical-fullscreen",
-                            s.critical_in_fullscreen,
-                            self.setting(cx, |s| s.critical_in_fullscreen = !s.critical_in_fullscreen),
-                        ),
-                    ),
-                ],
-            ),
-            card(
-                tr(french, "Prévision du plafond", "Limit forecast"),
-                vec![
-                    row(
-                        tr(french, "Prévenir avant le plafond", "Warn before the limit"),
-                        tr(
-                            french,
-                            "Mesure le rythme de consommation et prévient quand le plafond arrive avant la réinitialisation.",
-                            "Measures the pace of use and warns when the limit comes before the reset.",
-                        ),
-                        toggle("forecast", s.forecast_alerts, self.setting(cx, |s| s.forecast_alerts = !s.forecast_alerts)),
-                    ),
-                    row(
-                        tr(french, "Anticipation", "Lead time"),
-                        tr(
-                            french,
-                            "Délai avant le plafond estimé à partir duquel l’alerte part.",
-                            "How long before the estimated limit the alert goes out.",
-                        ),
-                        segmented(minutes),
-                    ),
-                    row(
-                        tr(french, "Prévenir quand le quota est rétabli", "Tell me when the quota is back"),
-                        tr(
-                            french,
-                            "Après une réinitialisation, pour relancer les agents mis en pause.",
-                            "After a reset, to restart paused agents.",
-                        ),
-                        toggle("reset", s.reset_alerts, self.setting(cx, |s| s.reset_alerts = !s.reset_alerts)),
-                    ),
-                ],
-            ),
-            self.discord_card(french, cx),
-            self.telegram_card(french, cx),
-        ]
+                .into_any_element()
+        };
+        let sample = format!(
+            "{{\n  \"plan\": \"{}\",\n  \"windows\": [\n    {{\n      \"label\": \"{}\",\n      \"usedPercent\": 42,\n      \"resetsAt\": \"2026-11-01T00:00:00Z\"\n    }}\n  ],\n  \"tokensToday\": 12345,\n  \"lifetimeTokens\": 250000,\n  \"daily\": [{{ \"date\": \"2026-10-24\", \"tokens\": 12345 }}]\n}}",
+            t(french, "Mon abonnement"),
+            t(french, "Quota mensuel")
+        );
+        vec![div()
+            .max_w(px(560.))
+            .child(section(true, t(french, "Quota et tokens : deux repères différents."), vec![para(t(french, "Un quota à 40 % signifie que le fournisseur indique 40 % de consommation sur une période donnée. Il ne permet pas de déduire un nombre de tokens restants. Les tokens s’affichent uniquement quand la source communique ce nombre.")).into_any_element()]))
+            .child(section(false, t(french, "Connecter tes outils"), vec![
+                provider("Codex / ChatGPT", "Clique « Se connecter » dans Comptes → Connexion rapide, ou connecte-toi avec Codex CLI ou l’application Codex. CodeNotch lit les quotas via", Some("codex app-server"), ", ainsi que l’activité en tokens si ta version la prend en charge. Une clé API seule ne donne pas accès aux quotas de l’abonnement ChatGPT. Les jours d’activité sont affichés en UTC."),
+                provider("Claude", "Connecte Claude Code sur Windows. Le connecteur lit le fichier", Some(".claude/.credentials.json"), "ou le jeton OAuth configuré. Les sessions expirées sont renouvelées par le CLI Claude Code installé, sans envoyer de prompt. Si le renouvellement échoue, utilise « Se connecter » dans Comptes ou « claude auth login ». L’endpoint de quota est interne et peut changer."),
+                provider("Gemini", "Installe Gemini CLI, puis utilise « Se connecter » et choisis « Login with Google ». Le connecteur lit", Some(".gemini/oauth_creds.json"), "et interroge l’endpoint interne de quota Code Assist, qui peut changer. Une clé API Gemini ne donne pas accès à ces quotas. CodeNotch ne renouvelle pas la session lui-même : quand elle expire, relance Gemini CLI."),
+                provider("Grok", "Installe Grok Build CLI, puis utilise « Se connecter » (« grok login »). Le connecteur lit", Some(".grok/auth.json"), "et affiche le pourcentage de crédits de la période en cours, via un endpoint interne qui peut changer. Une clé API xAI n’a pas de quota d’abonnement."),
+                provider("OpenCode", "Utilise « Se connecter » (« opencode auth login ») et choisis « OpenCode Go ». Le connecteur lit", Some(".local/share/opencode/auth.json"), "ou OPENCODE_API_KEY, et affiche les fenêtres 5 h, 7 jours et mensuelle de l’abonnement Go. Les autres fournisseurs connectés dans OpenCode n’ont pas de quota OpenCode."),
+                provider("GitHub Copilot", "Configure un jeton GitHub disposant de l’accès Copilot, ou la variable", Some("GH_TOKEN"), ". Le connecteur utilise l’endpoint interne de quota des éditeurs. Tous les jetons GitHub ne sont pas autorisés à le lire."),
+                provider("Ollama", "Le serveur doit être lancé. L’URL par défaut est", Some("http://127.0.0.1:11434/api/ps"), ". Le relevé indique les modèles chargés, pas une consommation de tokens."),
+            ]))
+            .child(section(false, t(french, "Tout autre fournisseur : un endpoint JSON"), vec![
+                para(t(french, "Ajoute « Endpoint personnalisé » pour OpenRouter, un proxy interne ou un autre outil. L’URL doit retourner le format ci-dessous. Ce n’est pas un connecteur natif universel : une API de chat standard ne fournit pas ces données automatiquement.")).into_any_element(),
+                div().my(px(15.)).p(px(14.)).rounded(px(7.)).bg(rgb(0x1c1c20)).font_family("Consolas").text_size(px(11.)).line_height(px(20.)).text_color(rgb(0xd4d4db)).child(sample).into_any_element(),
+                para(t(french, "Exemple illustratif. Les mesures inconnues doivent être omises ou nulles.")).into_any_element(),
+            ]))
+            .child(section(false, t(french, "Local, lisible, sans surprises."), vec![
+                para(t(french, "Pas de serveur CodeNotch, pas de télémétrie, pas d’inférence générée pour mesurer l’usage. La configuration est enregistrée dans le dossier de configuration de l’application. Les secrets ajoutés sont stockés dans le Gestionnaire d’identification Windows. Les relevés sont conservés en mémoire pendant la session ; les dates permettent de repérer une valeur ancienne.")).into_any_element(),
+                para(t(french, "Les quotas sont interrogés périodiquement : il peut donc y avoir un décalage avec le fournisseur. L’activité n’est jamais présentée comme une donnée en direct quand elle ne l’est pas.")).into_any_element(),
+            ]))
+            .child(section(false, t(french, "Référence"), vec![
+                para(format!("CodeNotch {}", t(french, "est la référence visuelle et fonctionnelle. Cette adaptation Windows est un projet indépendant, développé avec Tauri."))).into_any_element(),
+            ]))
+            .into_any_element()]
     }
 }
 
+// ---- Window ---------------------------------------------------------------------------
+
 impl Render for SettingsView {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let french = self.store.read(cx).french();
+        let dialog = self.account_dialog(french, cx);
+        let root = div()
+            .size_full()
+            .relative()
+            .flex()
+            .flex_col()
+            .bg(rgb(SURFACE))
+            .text_color(rgb(TEXT))
+            .font_family("Segoe UI")
+            .text_size(px(13.))
+            .child(titlebar());
+
         if self.store.read(cx).config.settings.onboarding_done == Some(false) {
             let welcome = self.welcome(french, cx);
-            return div()
-                .size_full()
-                .flex()
-                .flex_col()
-                .bg(rgb(SURFACE))
-                .text_color(rgb(TEXT))
-                .child(titlebar(french, &tr(french, "Bienvenue", "Welcome"), window.is_maximized()))
-                .child(welcome);
+            return root.child(welcome).children(dialog);
         }
-        let (heading, intro, content) = match self.section {
+
+        let (heading, intro, action, content) = match self.section {
             Section::Accounts => (
-                tr(french, "Comptes", "Accounts"),
-                tr(french, "Choisissez les comptes affichés dans l’encoche.", "Choose the accounts shown in the notch."),
-                self.accounts(french, cx),
+                t(french, "Comptes"),
+                t(french, "Choisissez les comptes affichés dans l’encoche."),
+                Some(button(
+                    "add-account",
+                    Kind::Primary,
+                    Some("plus"),
+                    t(french, "Ajouter"),
+                    Some(Box::new(cx.listener(|this, _: &ClickEvent, window, cx| {
+                        this.open_editor(None, window, cx)
+                    }))),
+                )),
+                self.accounts_page(french, cx),
             ),
-            Section::Notch => (
-                tr(french, "Encoche", "Notch"),
-                tr(french, "Position, repli, plein écran et fréquence des relevés.", "Position, folding, full screen and reading frequency."),
-                self.notch(french, cx),
-            ),
-            Section::Language => (
-                tr(french, "Langue", "Language"),
-                tr(french, "Langue de l’encoche et des réglages.", "Language of the notch and settings."),
-                self.language(french, cx),
+            Section::Appearance => (
+                t(french, "Apparence"),
+                t(french, "Langue, encoche, fréquence des relevés et mises à jour."),
+                None,
+                self.appearance_page(french, cx),
             ),
             Section::Alerts => (
-                tr(french, "Alertes", "Alerts"),
-                tr(
-                    french,
-                    "Seuils et prévision du plafond, pour surveiller les agents qui tournent en fond.",
-                    "Thresholds and limit forecast, to watch agents running in the background.",
-                ),
-                self.alerts(french, cx),
+                t(french, "Alertes"),
+                t(french, "Discord, seuils et prévision du plafond, pour surveiller les agents qui tournent en fond."),
+                None,
+                self.alerts_page(french, cx),
+            ),
+            Section::About => (
+                t(french, "À propos des relevés"),
+                t(french, "Ce que CodeNotch lit, et ce que chaque mesure raconte."),
+                None,
+                self.about_page(french),
             ),
         };
 
+        let count = self.store.read(cx).enabled().len();
         let nav = [
-            (Section::Accounts, tr(french, "Comptes", "Accounts")),
-            (Section::Notch, tr(french, "Encoche", "Notch")),
-            (Section::Language, tr(french, "Langue", "Language")),
-            (Section::Alerts, tr(french, "Alertes", "Alerts")),
+            (Section::Accounts, "users-round", "Comptes"),
+            (Section::Appearance, "settings-2", "Apparence"),
+            (Section::Alerts, "bell", "Alertes"),
+            (Section::About, "info", "À propos"),
         ]
         .into_iter()
-        .enumerate()
-        .map(|(i, (section, label))| {
+        .map(|(section, leading, label)| {
             let active = self.section == section;
             div()
-                .id(("nav", i))
-                .px_3()
-                .py_2()
-                .rounded_md()
+                .id(SharedString::from(format!("nav-{label}")))
+                .flex()
+                .items_center()
+                .gap(px(9.))
+                .px(px(10.))
+                .min_h(px(38.))
+                .rounded(px(7.))
                 .cursor_pointer()
-                .text_sm()
-                .when(active, |d| d.bg(rgba(0xffffff14)).text_color(rgb(TEXT)))
-                .when(!active, |d| {
-                    d.text_color(rgb(MUTED)).hover(|d| d.text_color(rgb(TEXT)))
+                .text_size(px(12.))
+                .when(active, |d| d.bg(rgba(0xffffff18)).text_color(rgb(0xffffff)))
+                .when(!active, |d| d.text_color(rgb(0xc3c3c8)).hover(|d| d.bg(rgba(0xffffff0c))))
+                .child(icon(leading, 17., if active { 0xffffff } else { 0xc3c3c8 }))
+                .child(div().flex_1().child(t(french, label)))
+                .when(section == Section::Accounts, |d| {
+                    d.child(div().text_size(px(11.)).text_color(rgb(0x999999)).child(count.to_string()))
                 })
-                .child(label)
                 .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
                     this.section = section;
                     this.message = None;
-                    this.confirm_remove = None;
+                    this.open_select = None;
                     cx.notify();
                 }))
         });
 
-        let storage_error = self.store.read(cx).storage_error.clone();
-        let message = self.message.clone();
-        let section_label = heading.clone();
-
-        let main = div()
-            .flex_1()
-            .min_h_0()
-            .w_full()
+        let sidebar = div()
+            .w(px(184.))
+            .h_full()
+            .flex_none()
             .flex()
-            .relative()
+            .flex_col()
+            .gap(px(4.))
+            .pt(px(18.))
+            .px(px(10.))
+            .pb(px(15.))
+            .bg(rgb(SIDEBAR))
+            .border_r_1()
+            .border_color(rgba(LINE))
+            .children(nav)
+            .child(div().flex_1())
             .child(
                 div()
-                    .w(px(200.))
-                    .h_full()
-                    .flex_none()
                     .flex()
                     .flex_col()
-                    .gap_1()
-                    .p_3()
-                    .bg(rgb(SIDEBAR))
-                    .border_r_1()
-                    .border_color(rgba(0xffffff12))
-                    .child(
-                        div()
-                            .px_3()
-                            .pt_1()
-                            .pb_2()
-                            .text_xs()
-                            .font_weight(FontWeight::BOLD)
-                            .text_color(rgb(0x6b6b70))
-                            .child(tr(french, "RÉGLAGES", "SETTINGS")),
-                    )
-                    .children(nav)
-                    .child(div().flex_1())
-                    .child(
-                        div()
-                            .px_3()
-                            .text_xs()
-                            .text_color(rgb(0x6b6b70))
-                            .child(format!("GPUI · {}", env!("CARGO_PKG_VERSION"))),
-                    ),
+                    .gap(px(5.))
+                    .pt(px(15.))
+                    .px(px(10.))
+                    .text_size(px(10.))
+                    .text_color(rgb(0x94949b))
+                    .child(t(french, "Adaptation Windows"))
+                    .child(t(french, "v{version} · locale").replace("{version}", env!("CARGO_PKG_VERSION"))),
+            );
+
+        let page_heading = div()
+            .flex()
+            .flex_none()
+            .items_center()
+            .justify_between()
+            .gap(px(12.))
+            .pt(px(26.))
+            .pb(px(20.))
+            .px(px(30.))
+            .border_b_1()
+            .border_color(rgba(LINE))
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(px(6.))
+                    .child(div().text_size(px(22.)).font_weight(FontWeight::SEMIBOLD).child(heading))
+                    .child(div().max_w(px(400.)).text_size(px(12.)).line_height(px(19.)).text_color(rgb(MUTED)).child(intro)),
             )
+            .children(action);
+
+        let storage_error = self.store.read(cx).storage_error.clone();
+        let banner = self
+            .message
+            .clone()
+            .map(|(ok, text)| message(ok, text))
+            .or(storage_error.map(|e| message(false, e)));
+        let body = div()
+            .flex_1()
+            .min_w_0()
+            .h_full()
+            .flex()
+            .flex_col()
+            .child(page_heading)
             .child(
                 div()
                     .id("settings-body")
                     .flex_1()
-                    .min_w_0()
-                    .h_full()
+                    .min_h_0()
                     .overflow_y_scroll()
                     .child(
                         div()
                             .w_full()
                             .flex()
                             .flex_col()
-                            .gap_4()
-                            .px_8()
-                            .py_6()
-                            .child(
-                                div()
-                                    .flex()
-                                    .flex_col()
-                                    .gap_1()
-                                    .child(div().text_2xl().font_weight(FontWeight::BOLD).child(heading))
-                                    .child(div().text_sm().text_color(rgb(MUTED)).child(intro)),
-                            )
-                            .when_some(storage_error, |d, error| {
-                                d.child(div().text_sm().text_color(rgb(DANGER)).child(error))
-                            })
-                            .children(content)
-                            // Room for the toast below the last card.
-                            .child(div().h(px(48.))),
+                            .gap(px(24.))
+                            .px(px(30.))
+                            .pt(px(12.))
+                            .pb(px(28.))
+                            .children(banner)
+                            .children(content),
                     ),
-            )
-            // Results float at the bottom so they stay visible however far the page scrolls.
-            .when_some(message, |d, (ok, text)| {
-                d.child(
-                    div()
-                        .absolute()
-                        .bottom(px(16.))
-                        .left(px(224.))
-                        .right(px(24.))
-                        .flex()
-                        .justify_center()
-                        .child(
-                            div()
-                                .id("toast")
-                                .max_w(px(560.))
-                                .px_4()
-                                .py_2()
-                                .rounded_lg()
-                                .border_1()
-                                .text_sm()
-                                .cursor_pointer()
-                                .bg(if ok { rgb(0x10261a) } else { rgb(0x2a1412) })
-                                .border_color(if ok { rgba(0x28e07b55) } else { rgba(0xff6b5a55) })
-                                .text_color(if ok { rgb(0x7ee2a8) } else { rgb(DANGER) })
-                                .child(text)
-                                .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
-                                    this.message = None;
-                                    cx.notify();
-                                })),
-                        ),
-                )
-            });
+            );
 
-        div()
-            .size_full()
-            .flex()
-            .flex_col()
-            .bg(rgb(SURFACE))
-            .text_color(rgb(TEXT))
-            .child(titlebar(french, &section_label, window.is_maximized()))
-            .child(main)
+        root.child(
+            div()
+                .flex_1()
+                .min_h_0()
+                .w_full()
+                .flex()
+                .child(sidebar)
+                .child(body),
+        )
+        .children(dialog)
     }
 }
 
-/// A frameless, Cursor-like header: logo and name, a context pill in the middle, and flat
-/// Windows caption buttons. The bar is a caption hit-test area, so Windows drags and snaps
-/// the window from it.
-fn titlebar(french: bool, section: &str, maximized: bool) -> AnyElement {
-    // Plain buttons rather than caption hit-test areas: occluding the drag area under them
-    // keeps them from starting a window drag, and a click always reaches them.
+/// `.settings-titlebar`: the mini notch, the name, and minimize / close.
+fn titlebar() -> AnyElement {
     let caption = |id: &'static str, glyph: &'static str, close: bool, action: fn(&mut Window)| {
         div()
             .id(id)
             .occlude()
-            .w(px(46.))
+            .w(px(42.))
             .h_full()
             .flex()
             .items_center()
             .justify_center()
-            .font_family("Segoe Fluent Icons")
-            .text_size(px(10.))
-            .text_color(rgb(0xc8c8cc))
-            .when(close, |d| d.hover(|d| d.bg(rgb(0xc42b1c)).text_color(rgb(0xffffff))))
+            .cursor_pointer()
+            .when(close, |d| d.hover(|d| d.bg(rgb(0xb72c32))))
             .when(!close, |d| d.hover(|d| d.bg(rgba(0xffffff12))))
-            .child(glyph)
+            .child(icon(glyph, if close { 17. } else { 15. }, 0xaaaaaa))
             .on_click(move |_, window, _| action(window))
     };
     div()
         .id("titlebar")
-        .h(px(40.))
+        .h(px(44.))
         .w_full()
         .flex_none()
         .flex()
         .items_center()
-        .bg(rgb(0x0a0a0c))
+        .justify_between()
+        .pl(px(17.))
+        .bg(rgb(0x121214))
         .border_b_1()
-        .border_color(rgba(0xffffff12))
+        .border_color(rgba(LINE))
         .window_control_area(WindowControlArea::Drag)
         .child(
             div()
-                .w(px(200.))
-                .flex_none()
                 .flex()
                 .items_center()
-                .gap_2()
-                .pl_3()
-                .child(img(app_icon()).size(px(20.)).rounded_md())
-                .child(div().text_sm().font_weight(FontWeight::BOLD).child("CodeNotch"))
-                .child(div().text_xs().text_color(rgb(MUTED)).child("Windows")),
-        )
-        .child(
-            div().flex_1().min_w_0().flex().justify_center().child(
-                div()
-                    .w(px(380.))
-                    .h(px(26.))
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .gap_2()
-                    .rounded_md()
-                    .bg(rgb(0x18181b))
-                    .border_1()
-                    .border_color(rgba(0xffffff14))
-                    .text_xs()
-                    .text_color(rgb(MUTED))
-                    .child(
-                        div()
-                            .font_family("Segoe Fluent Icons")
-                            .text_size(px(10.))
-                            .child("\u{E721}"),
-                    )
-                    .child(format!("{} › {}", tr(french, "Réglages", "Settings"), section)),
-            ),
+                .gap(px(9.))
+                .text_size(px(12.))
+                .font_weight(FontWeight::SEMIBOLD)
+                .child(mini_notch())
+                .child("CodeNotch")
+                .child(
+                    div()
+                        .ml(px(2.))
+                        .text_size(px(11.))
+                        .font_weight(FontWeight::NORMAL)
+                        .text_color(rgb(0x8f8f96))
+                        .child("Windows"),
+                ),
         )
         .child(
             div()
-                .w(px(200.))
                 .h_full()
-                .flex_none()
                 .flex()
-                .justify_end()
-                .child(caption("min", "\u{E921}", false, |w| w.minimize_window()))
-                .child(caption(
-                    "max",
-                    if maximized { "\u{E923}" } else { "\u{E922}" },
-                    false,
-                    |w| w.zoom_window(),
-                ))
-                .child(caption("close", "\u{E8BB}", true, |w| w.remove_window())),
+                .child(caption("min", "minus", false, |w| w.minimize_window()))
+                .child(caption("close", "x", true, |w| w.remove_window())),
         )
         .into_any_element()
 }

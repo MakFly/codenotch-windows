@@ -5,7 +5,8 @@ use crate::desktop;
 use crate::model::{Reading, Window as Quota};
 use crate::store::{self, Store};
 use gpui::{
-    canvas, div, point, prelude::*, px, relative, rgb, rgba, svg, AnyElement, App, Bounds,
+    canvas, div, point, prelude::*, px, relative, rgb, rgba, svg, Animation, AnimationExt,
+    AnyElement, App, Bounds,
     Context, DisplayId, Entity, FontWeight, PathBuilder, Pixels, Point, Rgba, SharedString, Size,
     Window, WindowBackgroundAppearance, WindowBounds, WindowKind, WindowOptions,
 };
@@ -43,6 +44,38 @@ const POPOVER_WIDTH: f32 = 310.;
 const POPOVER_SIDE_OFFSET: f32 = 97.;
 const POPOVER_END_OFFSET: f32 = 110.;
 const TAIL: f32 = 21.;
+// `.notch-rail` transition: 220 ms, cubic-bezier(.22, 1, .36, 1); the popover fades in 180 ms.
+const REVEAL: Duration = Duration::from_millis(220);
+const RETRACT: Duration = Duration::from_millis(200);
+const POPOVER_IN: Duration = Duration::from_millis(180);
+
+/// `cubic-bezier(.22, 1, .36, 1)`, solved for x by bisection.
+fn ease_out_expo_like(x: f32) -> f32 {
+    let bezier = |t: f32, a: f32, b: f32| {
+        let u = 1. - t;
+        3. * u * u * t * a + 3. * u * t * t * b + t * t * t
+    };
+    let (mut lo, mut hi) = (0f32, 1f32);
+    for _ in 0..24 {
+        let mid = (lo + hi) / 2.;
+        if bezier(mid, 0.22, 0.36) < x {
+            lo = mid;
+        } else {
+            hi = mid;
+        }
+    }
+    bezier((lo + hi) / 2., 1., 1.)
+}
+
+/// Brightens a color like `filter: brightness(1.17)` on a hovered ring.
+fn brighten(color: Rgba, by: f32) -> Rgba {
+    Rgba {
+        r: (color.r * by).min(1.),
+        g: (color.g * by).min(1.),
+        b: (color.b * by).min(1.),
+        a: color.a,
+    }
+}
 
 const BLACK: u32 = 0x000000;
 
@@ -56,11 +89,14 @@ fn english() -> &'static HashMap<String, String> {
 
 /// Translates a source string the way the Tauri app's `t()` does.
 pub(crate) fn t(french: bool, key: &str) -> String {
-    if french {
+    let text = if french {
         key.to_owned()
     } else {
         english().get(key).cloned().unwrap_or_else(|| key.to_owned())
-    }
+    };
+    // GPUI breaks lines after U+2019; the modifier apostrophe looks the same and keeps
+    // "l’écran" together.
+    text.replace('\u{2019}', "\u{2bc}")
 }
 
 pub fn provider_title(provider: &str) -> &'static str {
@@ -370,8 +406,10 @@ pub fn set_hover(store: &Entity<Store>, which: usize, hovered: bool, cx: &mut Ap
     let pending = store.update(cx, |s, cx| {
         s.hover[which] = hovered;
         s.fold_generation += 1;
-        if hovered && s.collapsed {
+        if hovered && (s.collapsed || s.folding) {
+            // Coming back during the exit animation reverses it.
             s.collapsed = false;
+            s.folding = false;
             cx.notify();
         }
         (!s.hover.contains(&true)).then_some(s.fold_generation)
@@ -393,12 +431,33 @@ pub fn set_hover(store: &Entity<Store>, which: usize, hovered: bool, cx: &mut Ap
     .detach();
 }
 
+/// Closes the popover and, with auto-hide, plays the rail's exit before folding to the tab,
+/// like `.is-retracted` in notch.css.
 pub fn fold(store: &Entity<Store>, cx: &mut App) {
     close_popover(store, cx);
-    store.update(cx, |s, cx| {
-        s.collapsed = s.config.settings.auto_hide;
+    let generation = store.update(cx, |s, cx| {
+        if !s.config.settings.auto_hide || s.collapsed {
+            return None;
+        }
+        s.folding = true;
         cx.notify();
+        Some(s.fold_generation)
     });
+    let Some(generation) = generation else {
+        return;
+    };
+    let store = store.clone();
+    cx.spawn(async move |cx| {
+        cx.background_executor().timer(RETRACT).await;
+        let _ = store.update(cx, |s, cx| {
+            if s.folding && s.fold_generation == generation {
+                s.folding = false;
+                s.collapsed = true;
+                cx.notify();
+            }
+        });
+    })
+    .detach();
 }
 
 /// Strokes an arc of a circle, from 12 o'clock clockwise over `to` of a full turn.
@@ -439,8 +498,11 @@ pub(crate) fn provider_icon(provider: &str, size: f32) -> AnyElement {
 }
 
 /// `.quota-ring`: a 44 px ring (viewBox 48, r 20) with a 5.5 track and a 3 px value arc.
-fn ring(value: Option<f64>, provider: &str, stale: bool) -> impl IntoElement {
-    let color = usage_color(value);
+fn ring(value: Option<f64>, provider: &str, stale: bool, bright: bool) -> impl IntoElement {
+    // `.provider-cell:hover .quota-ring { filter: brightness(1.17) }`.
+    let lift = if bright { 1.17 } else { 1. };
+    let color = brighten(usage_color(value), lift);
+    let track = brighten(rgb(0x333333), lift);
     let scale = RING / 48.;
     div()
         .relative()
@@ -455,7 +517,7 @@ fn ring(value: Option<f64>, provider: &str, stale: bool) -> impl IntoElement {
                 |_, _, _| {},
                 move |bounds, _, window, _| {
                     let center = bounds.center();
-                    paint_arc(window, center, 20. * scale, 5.5 * scale, 1., rgb(0x333333));
+                    paint_arc(window, center, 20. * scale, 5.5 * scale, 1., track);
                     if let Some(v) = value {
                         let share = (v / 100.).clamp(0., 1.) as f32;
                         paint_arc(window, center, 20. * scale, 3. * scale, share, color);
@@ -517,6 +579,13 @@ pub struct Rail {
     hovered: bool,
     /// Last (bounds, visible) given to Windows, to skip redundant calls.
     applied: Option<(Bounds<Pixels>, bool)>,
+    /// Counts reveals and folds so each one replays its animation.
+    reveals: usize,
+    folds: usize,
+    was_open: bool,
+    was_folding: bool,
+    /// The ring under the pointer, drawn brighter.
+    hovered_cell: Option<String>,
 }
 
 impl Rail {
@@ -537,6 +606,11 @@ impl Rail {
             screen: desktop::work_area(window.scale_factor()).unwrap_or(screen),
             hovered: false,
             applied: None,
+            reveals: 0,
+            folds: 0,
+            was_open: false,
+            was_folding: false,
+            hovered_cell: None,
         };
         rail.apply(window, cx);
         rail
@@ -574,6 +648,8 @@ impl Render for Rail {
         let edge = Edge::of(s);
         let vertical = edge.vertical();
         if s.collapsed {
+            self.was_open = false;
+            self.was_folding = false;
             // `.peek-indicator`: 10 × 64, open on the edge side, inside a 24 × 96 hit area.
             let store = self.store.clone();
             let indicator = edge
@@ -612,14 +688,18 @@ impl Render for Rail {
         let area = self.screen;
         let rail_bounds = layout.rail;
         let accounts = s.enabled();
+        let view = cx.entity().downgrade();
         let cells: Vec<AnyElement> = accounts
             .iter()
             .map(|account| {
                 let reading = s.readings.get(&account.id);
                 let value = headline(reading).map(|w| w.used_percent);
                 let stale = reading.is_some() && !is_fresh(reading, interval, now);
+                let bright = self.hovered_cell.as_deref() == Some(account.id.as_str())
+                    || s.selected.as_deref() == Some(account.id.as_str());
                 let store = self.store.clone();
                 let id = account.id.clone();
+                let view = view.clone();
                 div()
                     .id(SharedString::from(account.id.clone()))
                     .flex_none()
@@ -630,7 +710,7 @@ impl Render for Rail {
                     .items_center()
                     .gap(px(9.))
                     .cursor_pointer()
-                    .child(ring(value, &account.provider, stale))
+                    .child(ring(value, &account.provider, stale, bright))
                     .child(
                         div()
                             .text_size(px(15.))
@@ -643,6 +723,16 @@ impl Render for Rail {
                     .on_hover({
                         let (store, id) = (store.clone(), id.clone());
                         move |hovered, window, cx| {
+                            let cell = id.clone();
+                            let hovered_now = *hovered;
+                            let _ = view.update(cx, |rail, cx| {
+                                if hovered_now {
+                                    rail.hovered_cell = Some(cell);
+                                } else if rail.hovered_cell.as_deref() == Some(cell.as_str()) {
+                                    rail.hovered_cell = None;
+                                }
+                                cx.notify();
+                            });
                             if *hovered {
                                 open_popover(&store, id.clone(), window.bounds(), rail_bounds, area, cx)
                             }
@@ -767,12 +857,34 @@ impl Render for Rail {
                     .child(icon("grip-vertical", 14., rgb(0xd0d0d0))),
             );
 
-        div()
-            .id("notch")
+        // Reveal slides the rail in from its edge and fades it in; folding plays it backward
+        // (`--retreat-x/y` and `.is-retracted` in notch.css). Each one gets a fresh id so the
+        // animation replays.
+        let folding = s.folding;
+        if !self.was_open {
+            self.reveals += 1;
+        }
+        if folding && !self.was_folding {
+            self.folds += 1;
+        }
+        self.was_open = true;
+        self.was_folding = folding;
+        let (dx, dy) = match edge {
+            Edge::Right => (68., 0.),
+            Edge::Left => (-68., 0.),
+            Edge::Top => (0., -80.),
+            Edge::Bottom => (0., 80.),
+        };
+        let (key, duration) = if folding {
+            (SharedString::from(format!("fold-{}", self.folds)), RETRACT)
+        } else {
+            (SharedString::from(format!("reveal-{}", self.reveals)), REVEAL)
+        };
+        let stage = div()
+            .absolute()
+            .top_0()
+            .left_0()
             .size_full()
-            .relative()
-            .text_color(rgb(0xf9f9f9))
-            .font_family("Segoe UI")
             .when(vertical, |d| {
                 d.child(
                     canvas(|_, _, _| {}, move |bounds, _, window, _| {
@@ -784,6 +896,26 @@ impl Render for Rail {
             })
             .child(rail)
             .child(tools)
+            .with_animation(
+                key,
+                Animation::new(duration).with_easing(ease_out_expo_like),
+                move |stage, delta| {
+                    let shown = if folding { 1. - delta } else { delta };
+                    stage
+                        .opacity(shown)
+                        .left(px(dx * (1. - shown)))
+                        .top(px(dy * (1. - shown)))
+                },
+            );
+
+        div()
+            .id("notch")
+            .size_full()
+            .relative()
+            .overflow_hidden()
+            .text_color(rgb(0xf9f9f9))
+            .font_family("Segoe UI")
+            .child(stage)
             .into_any_element()
     }
 }
@@ -1320,7 +1452,14 @@ impl Render for Popover {
 
         // The window holds the box plus a strip on the rail side for the tail.
         let tail_space = div().flex_none().size(px(TAIL));
-        let body = body.when(!edge.vertical(), |d| d.flex_1().min_h_0());
+        // `.usage-popover` fades in; keyed by account, so moving to another ring replays it.
+        let body = body
+            .when(!edge.vertical(), |d| d.flex_1().min_h_0())
+            .with_animation(
+                SharedString::from(format!("popover-{}", self.account_id)),
+                Animation::new(POPOVER_IN).with_easing(ease_out_expo_like),
+                |body, delta| body.opacity(delta),
+            );
         div()
             .size_full()
             .flex()

@@ -88,8 +88,12 @@ impl TextInput {
     }
 
     pub fn set_placeholder(&mut self, placeholder: impl Into<SharedString>, cx: &mut Context<Self>) {
-        self.placeholder = placeholder.into();
-        cx.notify();
+        let placeholder = placeholder.into();
+        // Called while rendering the parent: only notify on a real change, or it loops.
+        if placeholder != self.placeholder {
+            self.placeholder = placeholder;
+            cx.notify();
+        }
     }
 
     fn left(&mut self, _: &Left, _: &mut Window, cx: &mut Context<Self>) {
@@ -622,13 +626,21 @@ impl Render for TextInput {
             .on_mouse_up(MouseButton::Left, cx.listener(Self::on_mouse_up))
             .on_mouse_up_out(MouseButton::Left, cx.listener(Self::on_mouse_up))
             .on_mouse_move(cx.listener(Self::on_mouse_move))
-            .px_3()
-            .py(px(7.))
-            .rounded_md()
-            .bg(rgb(0x0b0b0d))
+            // `.ui-input`: 36 px, #414147 border, blue ring when focused.
+            .h(px(36.))
+            .items_center()
+            .px(px(11.))
+            .rounded(px(6.))
+            .bg(rgb(0x1c1c1f))
             .border_1()
-            .border_color(if focused { rgb(0x5c9bf5) } else { rgb(0x2c2c30) })
-            .text_sm()
+            .border_color(if focused { rgb(0x8dbbff) } else { rgb(0x414147) })
+            .when(focused, |d| d.shadow(vec![gpui::BoxShadow {
+                color: gpui::rgba(0x8dbbff33).into(),
+                offset: gpui::point(px(0.), px(0.)),
+                blur_radius: px(0.),
+                spread_radius: px(3.),
+            }]))
+            .text_size(px(12.5))
             .line_height(px(20.))
             .overflow_hidden()
             .child(TextElement { input: cx.entity() })

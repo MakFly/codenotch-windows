@@ -1,9 +1,10 @@
-//! Telegram and Discord alert channels: secrets go to Windows Credential Manager, only the
-//! chat id and the on/off switches are saved in the configuration.
+//! Telegram and Discord alert channels, as the accordion bodies of the Tauri Alerts page:
+//! secrets go to Windows Credential Manager, only the chat id and the switches are saved in
+//! the configuration.
 use crate::input::TextInput;
-use crate::settings::{button, toggle, SettingsView, DANGER, MUTED, TEXT};
+use crate::settings::{button, icon, setting_row, toggle, Kind, SettingsView, MUTED};
 use crate::store::{Store, RUNTIME};
-use crate::ui::tr;
+use crate::ui::t;
 use crate::{discord, telegram};
 use gpui::{
     div, prelude::*, px, rgb, rgba, AnyElement, ClickEvent, Context, Entity, FontWeight,
@@ -24,8 +25,7 @@ impl Channels {
         Self {
             telegram_token: cx.new(|cx| TextInput::new("123456789:AA…", cx).masked()),
             telegram_chat: cx.new(|cx| {
-                let mut input =
-                    TextInput::new(tr(french, "123456789 ou @mon_canal", "123456789 or @my_channel"), cx);
+                let mut input = TextInput::new(t(french, "123456789 ou @mon_canal"), cx);
                 input.set_text(chat, cx);
                 input
             }),
@@ -38,85 +38,59 @@ impl Channels {
     }
 }
 
+/// `.channel-steps`: the numbered setup steps.
 fn steps(items: [String; 3]) -> AnyElement {
     div()
+        .mb(px(4.))
+        .pl(px(6.))
         .flex()
         .flex_col()
-        .gap_1()
-        .py_2()
-        .text_sm()
-        .text_color(rgb(0xc0c6cf))
-        .children(items.into_iter().enumerate().map(|(i, text)| {
-            div()
-                .flex()
-                .gap_2()
-                .child(
-                    div()
-                        .size(px(18.))
-                        .flex_none()
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .rounded_full()
-                        .bg(rgb(0x1f1f22))
-                        .text_xs()
-                        .child(format!("{}", i + 1)),
-                )
-                .child(div().flex_1().min_w_0().child(text))
-        }))
+        .text_size(px(11.5))
+        .line_height(px(19.5))
+        .text_color(rgb(0xa8a8b0))
+        .children(items.into_iter().enumerate().map(|(i, text)| format!("{}. {text}", i + 1)))
         .into_any_element()
 }
 
+/// `.field > label` with its muted hint.
 fn label(text: String, hint: String) -> AnyElement {
     div()
         .flex()
-        .gap_2()
-        .pt_2()
-        .text_sm()
-        .child(div().font_weight(FontWeight::BOLD).child(text))
-        .child(div().text_color(rgb(MUTED)).child(hint))
+        .gap_1()
+        .text_size(px(12.))
+        .font_weight(FontWeight::MEDIUM)
+        .child(text)
+        .child(div().font_weight(FontWeight::NORMAL).text_color(rgb(0x8f8f96)).child(hint))
         .into_any_element()
 }
 
 fn help(text: String) -> AnyElement {
     div()
-        .pt_1()
-        .text_xs()
+        .flex_1()
+        .min_w_0()
+        .text_size(px(12.))
+        .line_height(px(18.))
         .text_color(rgb(MUTED))
         .child(text)
         .into_any_element()
 }
 
-/// A channel card: title, description and switch on top, then the setup.
-fn channel_card(title: String, description: String, control: AnyElement, body: Vec<AnyElement>) -> AnyElement {
+/// The trash `.button.ghost.danger-text` next to a saved secret.
+fn erase(id: &'static str, on_click: crate::settings::Click) -> AnyElement {
     div()
+        .id(id)
+        .size(px(36.))
+        .flex_none()
+        .rounded(px(6.))
         .flex()
-        .flex_col()
-        .px_5()
-        .py_4()
-        .rounded_xl()
-        .bg(rgb(0x151517))
+        .items_center()
+        .justify_center()
+        .cursor_pointer()
         .border_1()
-        .border_color(rgba(0xffffff12))
-        .child(
-            div()
-                .flex()
-                .items_start()
-                .justify_between()
-                .gap_6()
-                .child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .gap_1()
-                        .flex_1()
-                        .min_w_0()
-                        .child(div().font_weight(FontWeight::BOLD).child(title))
-                        .child(div().text_sm().text_color(rgb(MUTED)).child(description)),
-                )
-                .child(control),
-        )
-        .children(body)
+        .border_color(rgba(0x00000000))
+        .hover(|d| d.bg(rgba(0xffffff0d)).border_color(rgb(0x3b3b3f)))
+        .child(icon("trash-2", 16., 0xf1a1a1))
+        .on_click(on_click)
         .into_any_element()
 }
 
@@ -145,6 +119,7 @@ impl SettingsView {
         cx.notify();
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn save_secret(
         &mut self,
         cx: &mut Context<Self>,
@@ -171,18 +146,29 @@ impl SettingsView {
         }
     }
 
-    pub(crate) fn discord_card(&mut self, french: bool, cx: &mut Context<Self>) -> AnyElement {
+    pub(crate) fn discord_body(&mut self, french: bool, cx: &mut Context<Self>) -> Vec<AnyElement> {
         let s = self.store.read(cx);
         let saved = s.discord_saved;
         let enabled = s.config.settings.discord_enabled;
         let busy = self.channels.busy;
         let webhook = self.channels.discord_webhook.clone();
+        webhook.update(cx, |i, cx| {
+            i.set_placeholder(
+                if saved {
+                    t(french, "Laisser vide pour conserver le webhook")
+                } else {
+                    "https://discord.com/api/webhooks/…".into()
+                },
+                cx,
+            )
+        });
         let save_input = webhook.clone();
-        let mut actions = div().flex().gap_2().child(button(
+        let save = button(
             "discord-save",
-            tr(french, "Enregistrer", "Save"),
-            rgb(TEXT),
-            Box::new(cx.listener(move |this, _: &ClickEvent, _, cx| {
+            Kind::Secondary,
+            None,
+            t(french, "Enregistrer"),
+            Some(Box::new(cx.listener(move |this, _: &ClickEvent, _, cx| {
                 this.save_secret(
                     cx,
                     save_input.clone(),
@@ -190,19 +176,13 @@ impl SettingsView {
                     discord::clear_webhook,
                     |s, v| s.discord_saved = v,
                     || discord::saved_webhook().is_some(),
-                    tr(
-                        french,
-                        "Webhook Discord enregistré dans le Gestionnaire d’identification Windows.",
-                        "Discord webhook saved in Windows Credential Manager.",
-                    ),
+                    t(french, "Webhook Discord enregistré dans le Gestionnaire d’identification Windows."),
                 )
-            })),
-        ));
-        if saved {
-            actions = actions.child(button(
+            }))),
+        );
+        let clear = saved.then(|| {
+            erase(
                 "discord-clear",
-                tr(french, "Effacer", "Erase"),
-                rgb(DANGER),
                 Box::new(cx.listener(move |this, _: &ClickEvent, _, cx| {
                     let result = discord::clear_webhook();
                     this.store.update(cx, |s, cx| {
@@ -210,81 +190,101 @@ impl SettingsView {
                         cx.notify();
                     });
                     match result {
-                        Ok(()) => this.say(true, tr(french, "Webhook Discord effacé.", "Discord webhook erased."), cx),
+                        Ok(()) => this.say(true, t(french, "Webhook Discord effacé."), cx),
                         Err(e) => this.say(false, e, cx),
                     }
                 })),
-            ));
-        }
+            )
+        });
         let test = button(
             "discord-test",
-            if busy { tr(french, "Envoi…", "Sending…") } else { tr(french, "Envoyer un test", "Send a test") },
-            rgb(TEXT),
-            Box::new(cx.listener(move |this, _: &ClickEvent, _, cx| {
-                if this.channels.busy {
-                    return;
-                }
-                let Some(webhook) = discord::saved_webhook() else {
-                    return this.say(false, tr(french, "Enregistre d’abord le webhook Discord.", "Save the Discord webhook first."), cx);
-                };
-                let body = discord::test_message(french, chrono::Utc::now().timestamp());
-                this.run_remote(
-                    cx,
-                    async move { discord::send(&webhook, body).await },
-                    tr(french, "Message de test envoyé. Regarde Discord.", "Test message sent. Check Discord."),
-                )
-            })),
+            Kind::Primary,
+            Some("send"),
+            t(french, "Envoyer un test"),
+            (saved && !busy).then(|| -> crate::settings::Click {
+                Box::new(cx.listener(move |this, _: &ClickEvent, _, cx| {
+                    let Some(webhook) = discord::saved_webhook() else {
+                        return this.say(false, t(french, "Enregistre d’abord le webhook Discord."), cx);
+                    };
+                    let body = discord::test_message(french, chrono::Utc::now().timestamp());
+                    this.run_remote(
+                        cx,
+                        async move { discord::send(&webhook, body).await },
+                        t(french, "Message de test envoyé. Regarde Discord."),
+                    )
+                }))
+            }),
         );
-        channel_card(
-            tr(french, "Alertes Discord", "Discord alerts"),
-            tr(
-                french,
-                "Publie les alertes dans un salon Discord sous forme de carte, pour toi ou ton équipe.",
-                "Posts alerts to a Discord channel as a card, for you or your team.",
+        vec![
+            setting_row(
+                t(french, "Alertes Discord"),
+                Some(t(french, "Publie les alertes dans un salon Discord sous forme de carte, pour toi ou ton équipe.")),
+                toggle("discord-enabled", enabled, self.setting(cx, |s| s.discord_enabled = !s.discord_enabled)),
             ),
-            toggle("discord-enabled", enabled, self.setting(cx, |s| s.discord_enabled = !s.discord_enabled)),
-            vec![
-                steps([
-                    tr(french, "Dans Discord, ouvre les paramètres du salon → Intégrations → Webhooks.", "In Discord, open the channel settings → Integrations → Webhooks."),
-                    tr(french, "Crée un webhook, puis copie son URL.", "Create a webhook, then copy its URL."),
-                    tr(french, "Colle l’URL ici, enregistre, puis envoie un test.", "Paste the URL here, save, then send a test."),
-                ]),
-                label(
-                    tr(french, "URL du webhook", "Webhook URL"),
-                    if saved { tr(french, "déjà enregistré", "already saved") } else { tr(french, "requis", "required") },
-                ),
-                div()
-                    .flex()
-                    .items_center()
-                    .gap_2()
-                    .pt_1()
-                    .child(div().flex_1().min_w_0().child(webhook))
-                    .child(actions)
-                    .into_any_element(),
-                div().flex().pt_3().child(test).into_any_element(),
-                help(tr(
-                    french,
-                    "L’URL reste dans le Gestionnaire d’identification Windows ; seul le message d’alerte est envoyé à Discord.",
-                    "The URL stays in Windows Credential Manager; only the alert message is sent to Discord.",
-                )),
-            ],
-        )
+            div()
+                .flex()
+                .flex_col()
+                .gap(px(14.))
+                .pt(px(14.))
+                .pb(px(6.))
+                .child(steps([
+                    t(french, "Dans Discord, ouvre les paramètres du salon → Intégrations → Webhooks."),
+                    t(french, "Crée un webhook, puis copie son URL."),
+                    t(french, "Colle l’URL ici, enregistre, puis envoie un test."),
+                ]))
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap(px(6.))
+                        .child(label(
+                            t(french, "URL du webhook"),
+                            if saved { t(french, "déjà enregistré") } else { t(french, "requis") },
+                        ))
+                        .child(
+                            div()
+                                .flex()
+                                .items_center()
+                                .gap(px(8.))
+                                .child(div().flex_1().min_w_0().child(webhook))
+                                .child(save)
+                                .children(clear),
+                        ),
+                )
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap(px(12.))
+                        .mt(px(6.))
+                        .child(test)
+                        .child(help(t(french, "L’URL reste dans le Gestionnaire d’identification Windows ; seul le message d’alerte est envoyé à Discord."))),
+                )
+                .into_any_element(),
+        ]
     }
 
-    pub(crate) fn telegram_card(&mut self, french: bool, cx: &mut Context<Self>) -> AnyElement {
+    pub(crate) fn telegram_body(&mut self, french: bool, cx: &mut Context<Self>) -> Vec<AnyElement> {
         let s = self.store.read(cx);
         let saved = s.telegram_saved;
         let enabled = s.config.settings.telegram_enabled;
         let busy = self.channels.busy;
         let token = self.channels.telegram_token.clone();
         let chat = self.channels.telegram_chat.clone();
+        token.update(cx, |i, cx| {
+            i.set_placeholder(
+                if saved { t(french, "Laisser vide pour conserver le jeton") } else { "123456789:AA…".into() },
+                cx,
+            )
+        });
 
         let save_input = token.clone();
-        let mut token_actions = div().flex().gap_2().child(button(
+        let save = button(
             "telegram-save",
-            tr(french, "Enregistrer", "Save"),
-            rgb(TEXT),
-            Box::new(cx.listener(move |this, _: &ClickEvent, _, cx| {
+            Kind::Secondary,
+            None,
+            t(french, "Enregistrer"),
+            Some(Box::new(cx.listener(move |this, _: &ClickEvent, _, cx| {
                 this.save_secret(
                     cx,
                     save_input.clone(),
@@ -292,19 +292,13 @@ impl SettingsView {
                     telegram::clear_token,
                     |s, v| s.telegram_saved = v,
                     || telegram::saved_token().is_some(),
-                    tr(
-                        french,
-                        "Jeton Telegram enregistré dans le Gestionnaire d’identification Windows.",
-                        "Telegram token saved in Windows Credential Manager.",
-                    ),
+                    t(french, "Jeton Telegram enregistré dans le Gestionnaire d’identification Windows."),
                 )
-            })),
-        ));
-        if saved {
-            token_actions = token_actions.child(button(
+            }))),
+        );
+        let clear = saved.then(|| {
+            erase(
                 "telegram-clear",
-                tr(french, "Effacer", "Erase"),
-                rgb(DANGER),
                 Box::new(cx.listener(move |this, _: &ClickEvent, _, cx| {
                     let result = telegram::clear_token();
                     this.store.update(cx, |s, cx| {
@@ -312,66 +306,53 @@ impl SettingsView {
                         cx.notify();
                     });
                     match result {
-                        Ok(()) => this.say(true, tr(french, "Jeton Telegram effacé.", "Telegram token erased."), cx),
+                        Ok(()) => this.say(true, t(french, "Jeton Telegram effacé."), cx),
                         Err(e) => this.say(false, e, cx),
                     }
                 })),
-            ));
-        }
+            )
+        });
 
         let detect_token = token.clone();
         let detect = button(
             "telegram-detect",
-            tr(french, "Détecter", "Detect"),
-            rgb(TEXT),
-            Box::new(cx.listener(move |this, _: &ClickEvent, _, cx| {
-                if this.channels.busy {
-                    return;
-                }
-                let typed = detect_token.read(cx).text().trim().to_owned();
-                let Some(token) = Some(typed).filter(|t| !t.is_empty()).or_else(telegram::saved_token) else {
-                    return this.say(false, tr(french, "Enregistre d’abord le jeton du bot.", "Save the bot token first."), cx);
-                };
-                let task = RUNTIME
-                    .get()
-                    .expect("tokio runtime")
-                    .spawn(async move { telegram::detect_chats(&token).await });
-                this.channels.busy = true;
-                cx.spawn(async move |this, cx| {
-                    let result = task.await.unwrap_or_else(|_| Err("Interrompu.".into()));
-                    let _ = this.update(cx, |this, cx| {
-                        this.channels.busy = false;
-                        match result {
-                            Ok(chats) if chats.is_empty() => this.say(
-                                false,
-                                tr(french, "Aucun chat trouvé. Envoie /start à ton bot, puis réessaie.", "No chat found. Send /start to your bot, then try again."),
-                                cx,
-                            ),
-                            Ok(chats) => {
-                                this.channels.chats = chats;
-                                this.message = None;
-                                cx.notify();
+            Kind::Secondary,
+            Some("search"),
+            t(french, "Détecter"),
+            (!busy).then(|| -> crate::settings::Click {
+                Box::new(cx.listener(move |this, _: &ClickEvent, _, cx| {
+                    let typed = detect_token.read(cx).text().trim().to_owned();
+                    let Some(token) = Some(typed).filter(|t| !t.is_empty()).or_else(telegram::saved_token) else {
+                        return this.say(false, t(french, "Enregistre d’abord le jeton du bot."), cx);
+                    };
+                    let task = RUNTIME
+                        .get()
+                        .expect("tokio runtime")
+                        .spawn(async move { telegram::detect_chats(&token).await });
+                    this.channels.busy = true;
+                    cx.spawn(async move |this, cx| {
+                        let result = task.await.unwrap_or_else(|_| Err("Interrompu.".into()));
+                        let _ = this.update(cx, |this, cx| {
+                            this.channels.busy = false;
+                            match result {
+                                Ok(chats) if chats.is_empty() => this.say(
+                                    false,
+                                    t(french, "Aucun chat trouvé. Envoie /start à ton bot, puis réessaie."),
+                                    cx,
+                                ),
+                                Ok(chats) => {
+                                    this.channels.chats = chats;
+                                    this.message = None;
+                                    cx.notify();
+                                }
+                                Err(e) => this.say(false, e, cx),
                             }
-                            Err(e) => this.say(false, e, cx),
-                        }
-                    });
-                })
-                .detach();
-                cx.notify();
-            })),
-        );
-        let save_chat_input = chat.clone();
-        let save_chat = button(
-            "telegram-chat-save",
-            tr(french, "Enregistrer", "Save"),
-            rgb(TEXT),
-            Box::new(cx.listener(move |this, _: &ClickEvent, _, cx| {
-                let id = save_chat_input.read(cx).text();
-                this.update_settings(cx, move |s| s.telegram_chat_id = id);
-                if this.message.is_none() {
-                    this.say(true, tr(french, "Chat Telegram enregistré.", "Telegram chat saved."), cx);
-                }
-            })),
+                        });
+                    })
+                    .detach();
+                    cx.notify();
+                }))
+            }),
         );
         let found: Vec<(String, String)> = self
             .channels
@@ -383,115 +364,110 @@ impl SettingsView {
             .into_iter()
             .map(|(id, name)| {
                 let pick = chat.clone();
-                div()
-                    .id(SharedString::from(format!("chat-{id}")))
-                    .px_3()
-                    .py_1()
-                    .rounded_md()
-                    .border_1()
-                    .border_color(rgba(0xffffff1f))
-                    .cursor_pointer()
-                    .text_sm()
-                    .hover(|d| d.bg(rgba(0xffffff12)))
-                    .child(format!("{name} · {id}"))
-                    .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
-                        let id = id.clone();
+                let value = id.clone();
+                button(
+                    SharedString::from(format!("chat-{id}")),
+                    Kind::Secondary,
+                    None,
+                    format!("{name} · {id}"),
+                    Some(Box::new(cx.listener(move |this, _: &ClickEvent, _, cx| {
+                        let id = value.clone();
                         pick.update(cx, |i, cx| i.set_text(id.clone(), cx));
                         this.update_settings(cx, move |s| s.telegram_chat_id = id);
                         this.channels.chats.clear();
-                        if this.message.is_none() {
-                            this.say(true, tr(french, "Chat Telegram enregistré.", "Telegram chat saved."), cx);
-                        }
-                    }))
-                    .into_any_element()
+                        cx.notify();
+                    }))),
+                )
             })
             .collect();
 
         let test_chat = chat.clone();
         let test = button(
             "telegram-test",
-            if busy { tr(french, "Envoi…", "Sending…") } else { tr(french, "Envoyer un test", "Send a test") },
-            rgb(TEXT),
-            Box::new(cx.listener(move |this, _: &ClickEvent, _, cx| {
-                if this.channels.busy {
-                    return;
-                }
-                // Same gate as the Tauri app: sending stays off until validated end to end.
-                if !telegram::AVAILABLE {
-                    return this.say(false, tr(french, "Les alertes Telegram arrivent bientôt.", "Telegram alerts are coming soon."), cx);
-                }
-                let chat = test_chat.read(cx).text().trim().to_owned();
-                if !telegram::valid_chat_id(&chat) {
-                    return this.say(false, "Identifiant de chat Telegram invalide : un nombre (ex. 123456789 ou -100…) ou @nom_du_canal.".into(), cx);
-                }
-                let Some(token) = telegram::saved_token() else {
-                    return this.say(false, tr(french, "Enregistre d’abord le jeton du bot.", "Save the bot token first."), cx);
-                };
-                let body = telegram::test_message(french, chrono::Utc::now().timestamp());
-                this.run_remote(
-                    cx,
-                    async move { telegram::send(&token, &chat, body).await },
-                    tr(french, "Message de test envoyé. Regarde Telegram.", "Test message sent. Check Telegram."),
-                )
-            })),
+            Kind::Primary,
+            Some("send"),
+            t(french, "Envoyer un test"),
+            (saved && !busy).then(|| -> crate::settings::Click {
+                Box::new(cx.listener(move |this, _: &ClickEvent, _, cx| {
+                    let chat = test_chat.read(cx).text().trim().to_owned();
+                    if !telegram::valid_chat_id(&chat) {
+                        return this.say(false, "Identifiant de chat Telegram invalide : un nombre (ex. 123456789 ou -100…) ou @nom_du_canal.".into(), cx);
+                    }
+                    let Some(token) = telegram::saved_token() else {
+                        return this.say(false, t(french, "Enregistre d’abord le jeton du bot."), cx);
+                    };
+                    let body = telegram::test_message(french, chrono::Utc::now().timestamp());
+                    this.run_remote(
+                        cx,
+                        async move { telegram::send(&token, &chat, body).await },
+                        t(french, "Message de test envoyé. Regarde Telegram."),
+                    )
+                }))
+            }),
         );
 
-        let control = if telegram::AVAILABLE {
-            toggle("telegram-enabled", enabled, self.setting(cx, |s| s.telegram_enabled = !s.telegram_enabled))
-        } else {
-            div()
-                .px_2()
-                .py_0p5()
-                .rounded_md()
-                .bg(rgba(0xefa44f22))
-                .text_xs()
-                .text_color(rgb(0xefa44f))
-                .child(tr(french, "Bientôt disponible", "Coming soon"))
-                .into_any_element()
-        };
-        channel_card(
-            tr(french, "Alertes Telegram", "Telegram alerts"),
-            tr(
-                french,
-                "Reçois les alertes sur ton téléphone via ton propre bot, même loin du PC. Les messages partent directement de ce PC vers Telegram.",
-                "Get alerts on your phone through your own bot, even away from the PC. Messages go straight from this PC to Telegram.",
+        vec![
+            setting_row(
+                t(french, "Alertes Telegram"),
+                Some(t(french, "Reçois les alertes sur ton téléphone via ton propre bot, même loin du PC. Les messages partent directement de ce PC vers Telegram.")),
+                toggle("telegram-enabled", enabled, self.setting(cx, |s| s.telegram_enabled = !s.telegram_enabled)),
             ),
-            control,
-            vec![
-                steps([
-                    tr(french, "Dans Telegram, ouvre @BotFather, envoie /newbot et copie le jeton du bot.", "In Telegram, open @BotFather, send /newbot and copy the bot token."),
-                    tr(french, "Ouvre ton bot et envoie-lui /start (ou ajoute-le à un groupe).", "Open your bot and send it /start (or add it to a group)."),
-                    tr(french, "Détecte le chat, puis envoie un message de test.", "Detect the chat, then send a test message."),
-                ]),
-                label(
-                    tr(french, "Jeton du bot", "Bot token"),
-                    if saved { tr(french, "déjà enregistré", "already saved") } else { tr(french, "requis", "required") },
-                ),
-                div()
-                    .flex()
-                    .items_center()
-                    .gap_2()
-                    .pt_1()
-                    .child(div().flex_1().min_w_0().child(token))
-                    .child(token_actions)
-                    .into_any_element(),
-                label(tr(french, "Chat qui reçoit les alertes", "Chat that gets the alerts"), String::new()),
-                div()
-                    .flex()
-                    .items_center()
-                    .gap_2()
-                    .pt_1()
-                    .child(div().flex_1().min_w_0().child(chat))
-                    .child(div().flex().gap_2().child(detect).child(save_chat))
-                    .into_any_element(),
-                div().flex().flex_wrap().gap_2().pt_2().children(chats).into_any_element(),
-                div().flex().pt_2().child(test).into_any_element(),
-                help(tr(
-                    french,
-                    "Le jeton reste dans le Gestionnaire d’identification Windows ; seul le message d’alerte est envoyé à Telegram.",
-                    "The token stays in Windows Credential Manager; only the alert message is sent to Telegram.",
-                )),
-            ],
-        )
+            div()
+                .flex()
+                .flex_col()
+                .gap(px(14.))
+                .pt(px(14.))
+                .pb(px(6.))
+                .child(steps([
+                    t(french, "Dans Telegram, ouvre @BotFather, envoie /newbot et copie le jeton du bot."),
+                    t(french, "Ouvre ton bot et envoie-lui /start (ou ajoute-le à un groupe)."),
+                    t(french, "Détecte le chat, puis envoie un message de test."),
+                ]))
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap(px(6.))
+                        .child(label(
+                            t(french, "Jeton du bot"),
+                            if saved { t(french, "déjà enregistré") } else { t(french, "requis") },
+                        ))
+                        .child(
+                            div()
+                                .flex()
+                                .items_center()
+                                .gap(px(8.))
+                                .child(div().flex_1().min_w_0().child(token))
+                                .child(save)
+                                .children(clear),
+                        ),
+                )
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap(px(6.))
+                        .child(label(t(french, "Chat qui reçoit les alertes"), String::new()))
+                        .child(
+                            div()
+                                .flex()
+                                .items_center()
+                                .gap(px(8.))
+                                .child(div().flex_1().min_w_0().child(chat))
+                                .child(detect),
+                        ),
+                )
+                .when(!chats.is_empty(), |d| d.child(div().flex().flex_wrap().gap(px(8.)).children(chats)))
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap(px(12.))
+                        .mt(px(6.))
+                        .child(test)
+                        .child(help(t(french, "Le jeton reste dans le Gestionnaire d’identification Windows ; seul le message d’alerte est envoyé à Telegram."))),
+                )
+                .into_any_element(),
+        ]
     }
 }

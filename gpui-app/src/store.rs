@@ -17,6 +17,8 @@ pub struct Store {
     pub collapsed: bool,
     /// Whether the pointer is over the rail and over the popover.
     pub hover: [bool; 2],
+    /// The rail is playing its exit before folding to the tab.
+    pub folding: bool,
     /// Bumped on every hover change so a pending fold can tell it is outdated.
     pub fold_generation: u64,
     pub fullscreen: bool,
@@ -40,6 +42,7 @@ impl Store {
             collapsed,
             hover: [false; 2],
             fold_generation: 0,
+            folding: false,
             fullscreen: false,
             telegram_saved: telegram::saved_token().is_some(),
             discord_saved: discord::saved_webhook().is_some(),
