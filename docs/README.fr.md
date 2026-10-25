@@ -36,20 +36,33 @@ figurent dans `SHA256SUMS.txt`.
 
 ## Utiliser
 
-- Codex / ChatGPT, Claude Code, Copilot, Ollama et endpoints JSON personnalisés.
-- Plusieurs profils par fournisseur ; détection locale des profils Codex et Claude.
+- Codex / ChatGPT, Claude Code, Gemini, Copilot, Ollama et endpoints JSON personnalisés.
+- Plusieurs profils par fournisseur ; détection locale des profils Codex, Claude et Gemini.
 - Quatre bords possibles, déplacement par la poignée et position mémorisée.
 - Détails au survol et repli automatique au départ de la souris.
 - Masquage en plein écran et mode jeu manuel pour les jeux en fenêtre.
 - Réglages séparés, formulaires en modale et notifications de seuil optionnelles.
 - Anglais par défaut, français disponible et choix enregistré.
 
-Connectez vos comptes depuis les outils des fournisseurs. Une clé API ne donne
+Dans **Réglages → Comptes → Connexion rapide**, cliquez sur **Se connecter**
+à côté de Codex / ChatGPT, Claude, Gemini, Grok ou OpenCode, puis terminez dans le navigateur.
+Codex se connecte sans terminal : CodeNotch obtient la page OAuth ChatGPT
+officielle via le Codex App Server et l'ouvre ; un code d'appareil s'affiche si
+le port de retour est occupé. Claude, Gemini, Grok et OpenCode ouvrent leur connexion CLI
+officielle dans une petite fenêtre, car Anthropic interdit aux applications
+tierces de gérer elles-mêmes la connexion Claude.ai. CodeNotch détecte ensuite
+la session et ajoute le compte. La détection couvre aussi PATH enregistré, npm,
+pnpm, bun, Volta, Scoop, WinGet, Chocolatey et les copies fournies avec les
+applications de bureau Codex et Claude. CodeNotch ne voit jamais le code
+d'autorisation ni les jetons échangés.
+
+Vous pouvez aussi vous connecter depuis les outils des fournisseurs. Une clé API ne donne
 pas automatiquement accès aux quotas d'un abonnement. Une session Claude
 expirée peut être renouvelée par le CLI installé sans envoyer de prompt ; si
-cela échoue, reconnectez-vous avec `claude auth login`.
+cela échoue, utilisez **Reconnecter** ou `claude auth login`.
 
-Les endpoints Claude et Copilot sont internes et peuvent changer. Ollama
+Les endpoints Claude, Gemini et Copilot sont internes et peuvent changer.
+CodeNotch ne renouvelle jamais la session Gemini : relancez Gemini CLI quand elle expire. Ollama
 affiche les modèles chargés, sans inventer de consommation de tokens.
 Copilot, Ollama et les adaptateurs personnalisés nécessitent davantage de
 validation sur différents comptes.

@@ -1,7 +1,11 @@
 mod claude;
 mod codex;
 mod dashboard;
+mod gemini;
+mod grok;
+mod login;
 mod model;
+mod opencode;
 mod providers;
 mod widget;
 
@@ -114,51 +118,67 @@ fn discover() -> Vec<Account> {
     let Some(home) = dirs::home_dir() else {
         return vec![];
     };
-    let mut profiles = vec![];
-    if let Ok(entries) = std::fs::read_dir(&home) {
-        for entry in entries.flatten() {
+    let mut candidates: Vec<(&str, PathBuf)> = std::fs::read_dir(&home)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter_map(|entry| {
             let name = entry.file_name().to_string_lossy().to_string();
             let provider = if name == ".codex" || name.starts_with(".codex-") {
                 "codex"
             } else if name == ".claude" || name.starts_with(".claude-") {
                 "claude"
+            } else if name == ".gemini" {
+                "gemini"
+            } else if name == ".grok" {
+                "grok"
             } else {
-                continue;
+                return None;
             };
-            if !entry.path().is_dir() {
-                continue;
-            }
-            let auth = if provider == "codex" {
-                "auth.json"
-            } else {
-                ".credentials.json"
-            };
-            if !entry.path().join(auth).is_file() {
-                continue;
-            }
-            let suffix = name
-                .trim_start_matches(&format!(".{provider}"))
-                .trim_start_matches('-');
-            let title = if provider == "codex" {
-                "Codex"
-            } else {
-                "Claude"
-            };
-            profiles.push(Account {
-                id: uuid::Uuid::new_v4().to_string(),
-                name: if suffix.is_empty() {
-                    format!("{title} · personnel")
-                } else {
-                    format!("{title} · {suffix}")
-                },
-                provider: provider.into(),
-                enabled: true,
-                profile_path: entry.path().to_string_lossy().to_string(),
-                endpoint: String::new(),
-                secret_env: String::new(),
-                has_secret: false,
-            });
+            Some((provider, entry.path()))
+        })
+        .collect();
+    // CODEX_HOME and CLAUDE_CONFIG_DIR can move the default profile outside the user folder.
+    for provider in login::PROVIDERS {
+        let path = login::default_profile(provider);
+        if !candidates.iter().any(|(_, p)| *p == path) {
+            candidates.push((provider, path));
         }
+    }
+    let mut profiles = vec![];
+    for (provider, path) in candidates {
+        if !path.is_dir() || !path.join(login::credential_file(provider)).is_file() {
+            continue;
+        }
+        let name = path
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_default();
+        let suffix = name
+            .strip_prefix(&format!(".{provider}"))
+            .unwrap_or("")
+            .trim_start_matches('-');
+        let title = match provider {
+            "codex" => "Codex",
+            "claude" => "Claude",
+            "grok" => "Grok",
+            "opencode" => "OpenCode",
+            _ => "Gemini",
+        };
+        profiles.push(Account {
+            id: uuid::Uuid::new_v4().to_string(),
+            name: if suffix.is_empty() {
+                format!("{title} · personnel")
+            } else {
+                format!("{title} · {suffix}")
+            },
+            provider: provider.into(),
+            enabled: true,
+            profile_path: path.to_string_lossy().to_string(),
+            endpoint: String::new(),
+            secret_env: String::new(),
+            has_secret: false,
+        });
     }
     profiles.sort_by(|a, b| a.profile_path.cmp(&b.profile_path));
     profiles
@@ -398,25 +418,165 @@ async fn discover_accounts(
     app: tauri::AppHandle,
     state: tauri::State<'_, Shared>,
 ) -> Result<Snapshot, String> {
-    let found = discover();
     let mut data = state.data.lock().await;
-    ensure_writable(&data)?;
+    add_discovered(&app, &state, &mut data, None)
+}
+
+/// Identifies a profile folder, treating an empty path as the CLI's default one.
+fn profile_key(account: &Account) -> Option<String> {
+    login::PROVIDERS
+        .contains(&account.provider.as_str())
+        .then(|| {
+            let path = if account.profile_path.is_empty() {
+                login::default_profile(&account.provider)
+            } else {
+                PathBuf::from(&account.profile_path)
+            };
+            let key = path.to_string_lossy().replace('/', "\\");
+            key.trim_end_matches('\\').to_lowercase()
+        })
+}
+
+fn add_discovered(
+    app: &tauri::AppHandle,
+    state: &Shared,
+    data: &mut Data,
+    signed_in: Option<&str>,
+) -> Result<Snapshot, String> {
+    ensure_writable(data)?;
     let mut next = data.config.clone();
-    for account in found {
+    for account in discover() {
         if next.accounts.len() < 20
             && !next
                 .accounts
                 .iter()
-                .any(|a| a.provider == account.provider && a.profile_path == account.profile_path)
+                .any(|a| a.provider == account.provider && profile_key(a) == profile_key(&account))
         {
             next.accounts.push(account);
         }
     }
     save(&state.path, &next)?;
     data.config = next;
+    if let Some(provider) = signed_in {
+        // A fresh sign-in replaces the failed reading and its backoff.
+        for account in data
+            .config
+            .accounts
+            .iter()
+            .filter(|a| a.provider == provider)
+        {
+            data.readings.remove(&account.id);
+        }
+    }
     data.revision += 1;
-    let result = snapshot(&data, false);
+    let result = snapshot(data, false);
     let _ = app.emit("snapshot", &result);
+    Ok(result)
+}
+
+#[tauri::command]
+fn provider_status(
+    provider: Option<String>,
+    profile_path: Option<String>,
+) -> Vec<login::ProviderStatus> {
+    match provider {
+        Some(provider) if login::PROVIDERS.contains(&provider.as_str()) => {
+            let profile = profile_path.filter(|p| !p.is_empty()).map(PathBuf::from);
+            vec![login::status(&provider, profile.as_deref())]
+        }
+        _ => login::PROVIDERS
+            .iter()
+            .map(|p| login::status(p, None))
+            .collect(),
+    }
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LoginStarted {
+    /// True when CodeNotch drives the sign-in itself; false when a CLI console window was opened.
+    in_app: bool,
+    url: Option<String>,
+    user_code: Option<String>,
+}
+
+/// The in-app sign-in in progress; aborting it stops the Codex process and its callback server.
+static LOGIN_TASK: std::sync::Mutex<Option<tauri::async_runtime::JoinHandle<()>>> =
+    std::sync::Mutex::new(None);
+
+fn cancel_login_task() {
+    if let Some(task) = LOGIN_TASK.lock().ok().and_then(|mut t| t.take()) {
+        task.abort();
+    }
+}
+
+#[tauri::command]
+async fn start_login(
+    app: tauri::AppHandle,
+    provider: String,
+    profile_path: Option<String>,
+) -> Result<LoginStarted, String> {
+    let profile = profile_path.filter(|p| !p.is_empty()).map(PathBuf::from);
+    if profile.as_ref().is_some_and(|p| !p.is_absolute()) {
+        return Err("Le dossier du profil doit être un chemin absolu.".into());
+    }
+    cancel_login_task();
+    if provider == "codex" && login::executable("codex").is_some() {
+        let path = profile
+            .as_ref()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_default();
+        if let Some((start, outcome)) = codex::login(&path).await? {
+            // The URL is also returned so the settings can show it if no browser opens.
+            let _ = login::open_url(&start.url);
+            let handle = app.clone();
+            let task = tauri::async_runtime::spawn(async move {
+                let result = tokio::time::timeout(Duration::from_secs(900), outcome)
+                    .await
+                    .unwrap_or_else(|_| Err("Connexion ChatGPT expirée. Réessaie.".into()));
+                let _ = handle.emit(
+                    "login-finished",
+                    serde_json::json!({"provider": "codex", "success": result.is_ok(), "error": result.err()}),
+                );
+            });
+            if let Ok(mut current) = LOGIN_TASK.lock() {
+                *current = Some(task);
+            }
+            return Ok(LoginStarted {
+                in_app: true,
+                url: Some(start.url),
+                user_code: start.user_code,
+            });
+        }
+    }
+    login::start(&provider, profile.as_deref())?;
+    Ok(LoginStarted {
+        in_app: false,
+        url: None,
+        user_code: None,
+    })
+}
+
+#[tauri::command]
+fn cancel_login() {
+    cancel_login_task();
+}
+
+#[tauri::command]
+async fn finish_login(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, Shared>,
+    provider: String,
+) -> Result<Snapshot, String> {
+    if !login::PROVIDERS.contains(&provider.as_str()) {
+        return Err("Connecteur inconnu.".into());
+    }
+    let result = {
+        let mut data = state.data.lock().await;
+        add_discovered(&app, &state, &mut data, Some(&provider))?
+    };
+    let (handle, shared) = (app.clone(), state.inner().clone());
+    tauri::async_runtime::spawn(async move { poll(&handle, &shared, true).await });
     Ok(result)
 }
 
@@ -707,6 +867,10 @@ pub fn run() {
             save_account,
             remove_account,
             discover_accounts,
+            provider_status,
+            start_login,
+            cancel_login,
+            finish_login,
             save_settings,
             show_dashboard,
             hide_dashboard,
@@ -718,14 +882,21 @@ pub fn run() {
             let dir = app.path().app_config_dir()?;
             std::fs::create_dir_all(&dir)?;
             let path = dir.join("config.json");
-            let (config, storage_error) = if path.exists() {
+            let (mut config, storage_error) = if path.exists() {
                 match std::fs::read(&path)
                     .ok()
                     .and_then(|b| serde_json::from_slice::<Config>(&b).ok())
                 {
                     Some(c) => (c, None),
                     None => (
-                        Config::default(),
+                        // Show the settings with the error, not the welcome screen.
+                        Config {
+                            settings: Settings {
+                                onboarding_done: Some(true),
+                                ..Default::default()
+                            },
+                            ..Default::default()
+                        },
                         Some(format!(
                             "Configuration illisible : {}. Le fichier a été conservé.",
                             path.display()
@@ -740,6 +911,12 @@ pub fn run() {
                 save(&path, &c).map_err(std::io::Error::other)?;
                 (c, None)
             };
+            // Configurations from before the welcome screen: offer it only to people
+            // who have not connected anything yet.
+            let first_run = !*config
+                .settings
+                .onboarding_done
+                .get_or_insert(!config.accounts.is_empty());
             apply_widget(
                 app.handle(),
                 &config.settings,
@@ -812,6 +989,10 @@ pub fn run() {
                 tray = tray.icon(icon.clone());
             }
             tray.build(app)?;
+            if first_run {
+                // The settings window starts hidden; open it on the welcome screen.
+                show_dashboard(app.handle().clone());
+            }
             let visibility_handle = app.handle().clone();
             let visibility_state = state.clone();
             tauri::async_runtime::spawn(async move {

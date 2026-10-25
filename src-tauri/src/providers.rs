@@ -40,17 +40,24 @@ pub fn credential(account: &Account) -> Option<String> {
     None
 }
 
-async fn request(url: &str, token: Option<String>, claude: bool) -> Result<Value, Failure> {
+pub async fn request(
+    url: &str,
+    token: Option<String>,
+    claude: bool,
+    body: Option<&Value>,
+) -> Result<Value, Failure> {
     validate_endpoint(url).map_err(Failure::from)?;
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(18))
         .redirect(reqwest::redirect::Policy::none())
         .build()
         .map_err(|_| Failure::from("Client réseau indisponible.".to_owned()))?;
-    let mut req = client
-        .get(url)
-        .header("Accept", "application/json")
-        .header("User-Agent", "SmashToken/0.1");
+    let mut req = match body {
+        Some(body) => client.post(url).json(body),
+        None => client.get(url),
+    }
+    .header("Accept", "application/json")
+    .header("User-Agent", "SmashToken/0.1");
     if let Some(token) = token {
         req = req.bearer_auth(token);
     }
@@ -115,7 +122,7 @@ pub async fn fetch(account: &Account) -> Result<Reading, Failure> {
                 t
             } else {
                 let base = if account.profile_path.is_empty() {
-                    dirs::home_dir().unwrap_or_default().join(".claude")
+                    crate::login::default_profile("claude")
                 } else {
                     PathBuf::from(&account.profile_path)
                 };
@@ -125,6 +132,7 @@ pub async fn fetch(account: &Account) -> Result<Reading, Failure> {
                 "https://api.anthropic.com/api/oauth/usage",
                 Some(token),
                 true,
+                None,
             )
             .await?;
             parse_claude(&value).map_err(Failure::from)
@@ -140,12 +148,13 @@ pub async fn fetch(account: &Account) -> Result<Reading, Failure> {
                 "https://api.github.com/copilot_internal/user",
                 Some(token),
                 false,
+                None,
             )
             .await?;
             parse_copilot(&value).map_err(Failure::from)
         }
         "ollama" => {
-            let value = request(&account.endpoint, credential(account), false).await?;
+            let value = request(&account.endpoint, credential(account), false, None).await?;
             let models = value["models"].as_array().ok_or_else(|| {
                 Failure::from("Réponse Ollama inattendue. Utilise l’URL /api/ps.".to_owned())
             })?;
@@ -159,8 +168,13 @@ pub async fn fetch(account: &Account) -> Result<Reading, Failure> {
                 ..Default::default()
             })
         }
-        "custom" => parse_custom(&request(&account.endpoint, credential(account), false).await?)
-            .map_err(Failure::from),
+        "gemini" => crate::gemini::fetch(account).await,
+        "grok" => crate::grok::fetch(account).await,
+        "opencode" => crate::opencode::fetch(account).await,
+        "custom" => {
+            parse_custom(&request(&account.endpoint, credential(account), false, None).await?)
+                .map_err(Failure::from)
+        }
         _ => Err(Failure::from("Connecteur inconnu.".to_owned())),
     }
 }

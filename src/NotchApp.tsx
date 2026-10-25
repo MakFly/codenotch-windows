@@ -12,7 +12,7 @@ import {
   Check,
   ChevronsRight,
 } from "lucide-react";
-import { Accounts, Preferences, Help } from "./Settings";
+import { Accounts, Preferences, Help, Welcome } from "./Settings";
 import { Mark } from "./components/Controls";
 import {
   emptySnapshot,
@@ -615,6 +615,18 @@ export default function NotchApp() {
                 </button>
               </div>
             </header>
+            {snapshot.config.settings.onboardingDone === false ? (
+              <>
+                {error && (
+                  <div className="message error welcome-error" role="alert">
+                    <AlertCircle size={16} />
+                    <span>{t(error)}</span>
+                  </div>
+                )}
+                <Welcome snapshot={snapshot} busy={busy} run={run}
+                  onSaved={(s) => { setSnapshot(s); setPage("accounts"); }} />
+              </>
+            ) : (
             <div className="settings-layout">
               <nav className="settings-nav" aria-label={t("Réglages")}>
                 <button
@@ -681,6 +693,7 @@ export default function NotchApp() {
                 )}
               </div>
             </div>
+            )}
           </div>
         </div>
       )}

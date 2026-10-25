@@ -5,6 +5,8 @@ import {
   emptySnapshot,
   type Snapshot,
   type Account,
+  type LoginProvider,
+  type ProviderStatus,
   type Settings,
 } from "./types";
 export const native = isTauri();
@@ -151,6 +153,39 @@ export async function saveSettings(settings: Settings) {
 export const discoverAccounts = () =>
   native
     ? invoke<Snapshot>("discover_accounts")
+    : Promise.resolve(structuredClone(preview));
+export async function providerStatus(provider?: LoginProvider, profilePath = "") {
+  if (!native) return [] as ProviderStatus[];
+  const result = await invoke<ProviderStatus[]>("provider_status", {
+    provider: provider ?? null,
+    profilePath: profilePath || null,
+  });
+  return Array.isArray(result) ? result : [];
+}
+export interface LoginStarted {
+  /** True when CodeNotch runs the OAuth itself; false when a CLI console window opened. */
+  inApp: boolean;
+  url: string | null;
+  userCode: string | null;
+}
+export interface LoginFinished {
+  provider: LoginProvider;
+  success: boolean;
+  error: string | null;
+}
+export async function startLogin(provider: LoginProvider, profilePath = "") {
+  if (!native)
+    throw new Error("La connexion est disponible dans l’application Windows.");
+  const started = await invoke<LoginStarted | null>("start_login", { provider, profilePath: profilePath || null });
+  return started && typeof started === "object" ? started : { inApp: false, url: null, userCode: null };
+}
+export const cancelLogin = () =>
+  native ? invoke<void>("cancel_login") : Promise.resolve();
+export const subscribeLogin = (fn: (e: LoginFinished) => void) =>
+  native ? listen<LoginFinished>("login-finished", (e) => fn(e.payload)) : Promise.resolve(() => {});
+export const finishLogin = (provider: LoginProvider) =>
+  native
+    ? invoke<Snapshot>("finish_login", { provider })
     : Promise.resolve(structuredClone(preview));
 export async function windowAction(
   action:

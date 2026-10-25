@@ -1,4 +1,17 @@
-export type Provider = "codex" | "claude" | "copilot" | "ollama" | "custom";
+export type Provider = "codex" | "claude" | "gemini" | "grok" | "opencode" | "copilot" | "ollama" | "custom";
+/** Providers whose official CLI signs in with OAuth and can be launched from the settings. */
+export type LoginProvider = "codex" | "claude" | "gemini" | "grok" | "opencode";
+export const loginProviders: LoginProvider[] = ["codex", "claude", "gemini", "grok", "opencode"];
+export const isLoginProvider = (p: Provider): p is LoginProvider =>
+  (loginProviders as Provider[]).includes(p);
+export interface ProviderStatus {
+  provider: LoginProvider;
+  installed: boolean;
+  cliPath: string | null;
+  signedIn: boolean;
+  signedInAt: number | null;
+  profilePath: string;
+}
 export interface Account {
   id: string;
   name: string;
@@ -20,6 +33,8 @@ export interface Settings {
   gameMode: boolean;
   widgetPlacement: { monitor: string | null; x: number; y: number } | null;
   widgetPosition: "top" | "bottom" | "left" | "right";
+  /** False until the first-run welcome screen is finished or skipped. */
+  onboardingDone?: boolean | null;
 }
 export interface LimitWindow {
   label: string;
@@ -68,6 +83,27 @@ export const providers: {
     description: "Quotas Claude Code via sa session OAuth Windows.",
   },
   {
+    id: "gemini",
+    name: "Gemini",
+    short: "Gemini",
+    color: "#3d68c9",
+    description: "Quotas Gemini CLI via sa session Google.",
+  },
+  {
+    id: "grok",
+    name: "Grok",
+    short: "Grok",
+    color: "#5d5d66",
+    description: "Crédits d’abonnement Grok via la session Grok CLI.",
+  },
+  {
+    id: "opencode",
+    name: "OpenCode",
+    short: "OpenCode",
+    color: "#3f6b5c",
+    description: "Quotas de l’abonnement OpenCode Go via sa clé.",
+  },
+  {
     id: "copilot",
     name: "GitHub Copilot",
     short: "Copilot",
@@ -88,7 +124,7 @@ export const providers: {
     short: "Personnalisé",
     color: "#7e6540",
     description:
-      "Gemini, OpenRouter ou un autre service, via un endpoint JSON au format SmashToken.",
+      "OpenRouter ou un autre service, via un endpoint JSON au format SmashToken.",
   },
 ];
 export const defaultSettings: Settings = {
@@ -102,6 +138,8 @@ export const defaultSettings: Settings = {
   gameMode: false,
   widgetPlacement: null,
   widgetPosition: "right",
+  // The native app decides first-run state; previews open on the settings.
+  onboardingDone: true,
 };
 export const emptySnapshot: Snapshot = {
   config: { accounts: [], settings: defaultSettings },

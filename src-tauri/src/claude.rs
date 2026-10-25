@@ -17,18 +17,8 @@ fn expires_soon(value: &Value, now_ms: u64) -> bool {
         .is_some_and(|at| at <= now_ms.saturating_add(60_000))
 }
 
-fn executable() -> Option<PathBuf> {
-    let local = dirs::home_dir()?.join(".local/bin/claude.exe");
-    if local.is_file() {
-        return Some(local);
-    }
-    std::env::split_paths(&std::env::var_os("PATH")?)
-        .map(|p| p.join("claude.exe"))
-        .find(|p| p.is_file())
-}
-
 fn auth_error() -> Failure {
-    Failure { message: "Session Claude expirée. Reconnectez Claude Code avec « claude auth login », puis actualisez.".into(), status: "needsAuth".into(), retry_seconds: 120 }
+    Failure { message: "Session Claude expirée. Utilise « Se connecter » dans Comptes ou « claude auth login », puis actualise.".into(), status: "needsAuth".into(), retry_seconds: 120 }
 }
 
 async fn read(path: &Path) -> Result<Value, Failure> {
@@ -55,7 +45,7 @@ pub async fn token(profile: &Path) -> Result<String, Failure> {
             }
         };
         if should_renew {
-            if let Some(cli) = executable() {
+            if let Some(cli) = crate::login::executable("claude") {
                 // Claude Code owns token rotation. Empty stdin supplies no prompt:
                 // it renews authentication and exits without running inference.
                 let mut cmd = Command::new(cli);

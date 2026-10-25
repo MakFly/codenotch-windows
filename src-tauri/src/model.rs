@@ -31,6 +31,10 @@ pub struct Settings {
     pub game_mode: bool,
     #[serde(default)]
     pub widget_placement: Option<WidgetPlacement>,
+    /// Whether the welcome screen was completed. `None` in configurations saved before it
+    /// existed; startup then decides from whether any account is configured.
+    #[serde(default)]
+    pub onboarding_done: Option<bool>,
 }
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -58,6 +62,7 @@ impl Default for Settings {
             hide_in_fullscreen: true,
             game_mode: false,
             widget_placement: None,
+            onboarding_done: Some(false),
         }
     }
 }
@@ -114,7 +119,11 @@ pub fn validate_account(a: &Account) -> Result<(), String> {
     if a.name.trim().is_empty() || a.name.len() > 80 {
         return Err("Donne un nom de 1 à 80 caractères au compte.".into());
     }
-    if !["codex", "claude", "copilot", "ollama", "custom"].contains(&a.provider.as_str()) {
+    if ![
+        "codex", "claude", "gemini", "grok", "opencode", "copilot", "ollama", "custom",
+    ]
+    .contains(&a.provider.as_str())
+    {
         return Err("Connecteur inconnu.".into());
     }
     if a.profile_path.len() > 1024 || a.endpoint.len() > 2048 || a.secret_env.len() > 128 {
@@ -173,6 +182,8 @@ mod tests {
         assert!(s.hide_in_fullscreen);
         assert!(!s.game_mode);
         assert!(s.widget_placement.is_none());
+        assert_eq!(s.onboarding_done, None);
+        assert_eq!(Settings::default().onboarding_done, Some(false));
         assert_eq!(s.widget_position, "left");
         assert_eq!(s.poll_seconds, 120);
     }

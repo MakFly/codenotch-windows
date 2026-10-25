@@ -61,23 +61,47 @@ Get-FileHash .\CodeNotch-0.1.0-windows-x64.zip -Algorithm SHA256
 
 ## Connect your accounts
 
+On first launch, CodeNotch opens a welcome screen to connect your subscriptions
+(you can show it again from **Appearance and alerts**). Afterwards, open
+**Settings → Accounts → Quick connect** and click **Sign in** next to
+Codex / ChatGPT, Claude, Gemini, Grok or OpenCode, then finish in your browser:
+
+- **Codex / ChatGPT** signs in without a terminal. CodeNotch asks the Codex App
+  Server for the official ChatGPT OAuth page and opens it. Codex hosts the
+  callback and saves the session, as the Codex apps do. If the callback port is
+  busy, a one-time device code is shown instead.
+- **Claude**, **Gemini**, **Grok** and **OpenCode** open their official CLI sign-in (`claude auth login`, `grok login`, `opencode auth login`,
+  Gemini CLI → Login with Google) in a small window. Anthropic does not allow
+  third-party apps to run Claude.ai sign-in themselves.
+
+CodeNotch then detects the new session and adds the account. Each row shows
+which CLI was found, or the command that installs it. CodeNotch never sees the
+authorization code or the token exchange.
+
 | Provider | Connection | Available readings |
 | --- | --- | --- |
-| Codex / ChatGPT | Sign in with Codex CLI or the Codex app | Subscription quota windows; token activity when available through App Server |
-| Claude Code | Existing Windows CLI OAuth profile, or configured OAuth token | 5-hour, 7-day and model-specific windows when reported |
+| Codex / ChatGPT | Quick connect (in-app ChatGPT OAuth through Codex), Codex CLI or the Codex app | Subscription quota windows; token activity when available through App Server |
+| Claude Code | Quick connect (`claude auth login`), existing CLI OAuth profile, or configured OAuth token | 5-hour, 7-day and model-specific windows when reported |
+| Gemini | Quick connect (Gemini CLI → Login with Google) | Per-model request quotas from the internal Code Assist endpoint while the CLI session is valid; CodeNotch never refreshes it (run Gemini CLI again when it expires) |
+| Grok | Quick connect (`grok login`, Grok Build CLI) | Credits used in the current weekly or monthly period, from the internal billing endpoint. Expired sessions are renewed by running `grok models` (no prompt). |
+| OpenCode | Quick connect (`opencode auth login` → OpenCode Go) | 5-hour, 7-day and monthly windows of an OpenCode Go subscription; other OpenCode providers have no quota |
 | GitHub Copilot | Configured token, `GH_TOKEN` or `GITHUB_TOKEN` with Copilot access | Quotas from the internal Copilot endpoint |
 | Ollama | Local `/api/ps` endpoint | Loaded models; no invented token quota |
 | Custom endpoint | An HTTPS JSON usage endpoint | Quotas, tokens and history in the format below |
 
-Local detection looks for `.codex`, `.codex-*`, `.claude` and `.claude-*` in
-your user folder. You can also configure an absolute profile path.
+Local detection looks for `.codex`, `.codex-*`, `.claude`, `.claude-*` and
+`.gemini` in your user folder, plus `CODEX_HOME`, `CLAUDE_CONFIG_DIR` and
+`GEMINI_CLI_HOME`. CLIs are found from their native installers, the live and
+saved `PATH`, npm (including a custom prefix), pnpm, bun, Volta, Scoop, WinGet
+and Chocolatey. CodeNotch also finds the copies bundled with the Codex and Claude
+desktop apps. You can also configure an absolute profile path.
 
 Sign in through the provider's own tool. A standard API key does **not**
 automatically grant access to subscription quotas. Expired Claude sessions
 are renewed through the installed Claude Code CLI without sending a prompt;
-if renewal fails, run `claude auth login` yourself.
+if renewal fails, use **Sign in again** or run `claude auth login`.
 
-Claude and Copilot rely on **internal endpoints** that can change. Copilot,
+Claude, Gemini and Copilot rely on **internal endpoints** that can change. Gemini, Copilot,
 Ollama and custom endpoints still need broader testing with different accounts.
 This app does not provide native connectors for every AI service.
 
