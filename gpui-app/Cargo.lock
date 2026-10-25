@@ -1002,6 +1002,7 @@ dependencies = [
  "serde_json",
  "tokio",
  "tray-icon",
+ "unicode-segmentation",
  "uuid",
  "windows-sys 0.61.2",
 ]

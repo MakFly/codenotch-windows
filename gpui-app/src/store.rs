@@ -1,4 +1,4 @@
-use crate::{alerts, login, model::*, providers};
+use crate::{alerts, discord, login, model::*, providers, telegram};
 use gpui::{AsyncApp, Entity, WindowHandle};
 use std::{collections::HashMap, path::PathBuf, sync::OnceLock};
 
@@ -20,6 +20,9 @@ pub struct Store {
     /// Bumped on every hover change so a pending fold can tell it is outdated.
     pub fold_generation: u64,
     pub fullscreen: bool,
+    /// A bot token / webhook is stored in Windows Credential Manager.
+    pub telegram_saved: bool,
+    pub discord_saved: bool,
 }
 
 impl Store {
@@ -38,6 +41,8 @@ impl Store {
             hover: [false; 2],
             fold_generation: 0,
             fullscreen: false,
+            telegram_saved: telegram::saved_token().is_some(),
+            discord_saved: discord::saved_webhook().is_some(),
         }
     }
 
@@ -87,7 +92,7 @@ impl Store {
     }
 
     /// Validates and saves new settings, as `save_settings` does in the Tauri backend.
-    pub fn save_settings(&mut self, settings: Settings) -> Result<(), String> {
+    pub fn save_settings(&mut self, mut settings: Settings) -> Result<(), String> {
         if !["en", "fr"].contains(&settings.language.as_str())
             || !(50..=100).contains(&settings.alert_percent)
             || !(50..=100).contains(&settings.critical_percent)
@@ -95,9 +100,84 @@ impl Store {
         {
             return Err("Invalid settings.".into());
         }
+        settings.telegram_chat_id = settings.telegram_chat_id.trim().to_owned();
+        if !settings.telegram_chat_id.is_empty()
+            && !telegram::valid_chat_id(&settings.telegram_chat_id)
+        {
+            return Err("Identifiant de chat Telegram invalide : un nombre (ex. 123456789 ou -100…) ou @nom_du_canal.".into());
+        }
         let mut next = self.config.clone();
         next.settings = settings;
         self.commit(next)
+    }
+
+    /// Adds or updates an account, as `save_account` does in the Tauri backend: the secret
+    /// goes to Windows Credential Manager, never to the configuration file.
+    pub fn save_account(
+        &mut self,
+        mut account: Account,
+        secret: Option<String>,
+        clear_secret: bool,
+    ) -> Result<(), String> {
+        validate_account(&account)?;
+        if account.id.is_empty() {
+            account.id = uuid::Uuid::new_v4().to_string();
+        } else if !self.config.accounts.iter().any(|a| a.id == account.id) {
+            return Err("Ce compte n’existe plus.".into());
+        }
+        if self.config.accounts.len() >= 20
+            && !self.config.accounts.iter().any(|a| a.id == account.id)
+        {
+            return Err("Maximum 20 comptes.".into());
+        }
+        account.has_secret = self
+            .config
+            .accounts
+            .iter()
+            .find(|a| a.id == account.id)
+            .is_some_and(|a| a.has_secret);
+        if clear_secret {
+            if account.has_secret {
+                keyring::Entry::new("SmashToken", &account.id)
+                    .and_then(|e| e.delete_credential())
+                    .map_err(|_| "Impossible d’effacer le secret du coffre Windows.")?;
+            }
+            account.has_secret = false;
+        }
+        if let Some(secret) = secret.filter(|s| !s.is_empty()) {
+            if secret.len() > 8192 {
+                return Err("Secret trop long.".into());
+            }
+            keyring::Entry::new("SmashToken", &account.id)
+                .and_then(|e| e.set_password(&secret))
+                .map_err(|_| "Impossible d’enregistrer le secret dans le coffre Windows.")?;
+            account.has_secret = true;
+        }
+        let mut next = self.config.clone();
+        match next.accounts.iter_mut().find(|a| a.id == account.id) {
+            Some(a) => *a = account.clone(),
+            None => next.accounts.push(account.clone()),
+        }
+        self.commit(next)?;
+        self.readings.remove(&account.id);
+        Ok(())
+    }
+
+    /// After a CLI sign-in: track the new profile and drop the failed readings and their
+    /// backoff so the next poll reads the provider again.
+    pub fn finish_login(&mut self, provider: &str) -> Result<(), String> {
+        self.add_discovered()?;
+        let ids: Vec<_> = self
+            .config
+            .accounts
+            .iter()
+            .filter(|a| a.provider == provider)
+            .map(|a| a.id.clone())
+            .collect();
+        for id in ids {
+            self.readings.remove(&id);
+        }
+        Ok(())
     }
 
     pub fn set_enabled(&mut self, id: &str, enabled: bool) -> Result<(), String> {

@@ -1,7 +1,7 @@
 use crate::model::Settings;
 use crate::assets::app_icon;
 use crate::store::Store;
-use crate::ui::{provider_icon, provider_title, tr};
+use crate::ui::{provider_icon, tr};
 use gpui::{
     div, img, prelude::*, px, rgb, rgba, size, AnyElement, App, Bounds, ClickEvent, Context, Entity,
     FontWeight, Rgba, SharedString, TitlebarOptions, Window, WindowBounds, WindowHandle,
@@ -11,10 +11,10 @@ use gpui::{
 const SURFACE: u32 = 0x0e0e10;
 const SIDEBAR: u32 = 0x161618;
 const CARD: u32 = 0x151517;
-const MUTED: u32 = 0xa3a3a8;
-const TEXT: u32 = 0xf5f5f5;
-const ACCENT: u32 = 0x5c9bf5;
-const DANGER: u32 = 0xff6b5a;
+pub(crate) const MUTED: u32 = 0xa3a3a8;
+pub(crate) const TEXT: u32 = 0xf5f5f5;
+pub(crate) const ACCENT: u32 = 0x5c9bf5;
+pub(crate) const DANGER: u32 = 0xff6b5a;
 
 #[derive(Clone, Copy, PartialEq)]
 enum Section {
@@ -23,7 +23,7 @@ enum Section {
     Alerts,
 }
 
-type Click = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
+pub(crate) type Click = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
 
 /// Opens the settings window, or brings the existing one to the front.
 pub fn open(store: Entity<Store>, cx: &mut App) {
@@ -69,11 +69,16 @@ fn title(french: bool) -> String {
 }
 
 pub struct SettingsView {
-    store: Entity<Store>,
+    pub(crate) store: Entity<Store>,
     section: Section,
     /// Result of the last action: (success, text).
-    message: Option<(bool, String)>,
+    pub(crate) message: Option<(bool, String)>,
     confirm_remove: Option<String>,
+    /// The account being added or edited.
+    pub(crate) editor: Option<crate::account_form::Editor>,
+    /// A CLI sign-in in progress.
+    pub(crate) login: Option<crate::account_form::Login>,
+    pub(crate) channels: crate::channels::Channels,
 }
 
 impl SettingsView {
@@ -85,15 +90,28 @@ impl SettingsView {
             cx.notify();
         })
         .detach();
+        let (french, chat) = {
+            let s = store.read(cx);
+            (s.french(), s.config.settings.telegram_chat_id.clone())
+        };
+        let channels = crate::channels::Channels::new(french, chat, cx);
         Self {
             store,
             section: Section::Accounts,
             message: None,
             confirm_remove: None,
+            editor: None,
+            login: None,
+            channels,
         }
     }
 
-    fn run(
+    pub(crate) fn say(&mut self, ok: bool, text: String, cx: &mut Context<Self>) {
+        self.message = Some((ok, text));
+        cx.notify();
+    }
+
+    pub(crate) fn run(
         &mut self,
         cx: &mut Context<Self>,
         action: impl FnOnce(&mut Store) -> Result<Option<String>, String>,
@@ -111,14 +129,14 @@ impl SettingsView {
         cx.notify();
     }
 
-    fn update_settings(&mut self, cx: &mut Context<Self>, change: impl FnOnce(&mut Settings)) {
+    pub(crate) fn update_settings(&mut self, cx: &mut Context<Self>, change: impl FnOnce(&mut Settings)) {
         let mut settings = self.store.read(cx).config.settings.clone();
         change(&mut settings);
         self.run(cx, move |s| s.save_settings(settings).map(|_| None));
     }
 
     /// A click handler that edits the settings and saves them.
-    fn setting(
+    pub(crate) fn setting(
         &self,
         cx: &mut Context<Self>,
         change: impl Fn(&mut Settings) + 'static,
@@ -129,7 +147,7 @@ impl SettingsView {
     }
 }
 
-fn toggle(id: impl Into<SharedString>, checked: bool, on_click: Click) -> AnyElement {
+pub(crate) fn toggle(id: impl Into<SharedString>, checked: bool, on_click: Click) -> AnyElement {
     div()
         .id(id.into())
         .w(px(38.))
@@ -146,7 +164,7 @@ fn toggle(id: impl Into<SharedString>, checked: bool, on_click: Click) -> AnyEle
         .into_any_element()
 }
 
-fn button(id: impl Into<SharedString>, label: String, color: Rgba, on_click: Click) -> AnyElement {
+pub(crate) fn button(id: impl Into<SharedString>, label: String, color: Rgba, on_click: Click) -> AnyElement {
     div()
         .id(id.into())
         .px_3()
@@ -163,7 +181,7 @@ fn button(id: impl Into<SharedString>, label: String, color: Rgba, on_click: Cli
         .into_any_element()
 }
 
-fn segmented(choices: Vec<(SharedString, String, bool, Click)>) -> AnyElement {
+pub(crate) fn segmented(choices: Vec<(SharedString, String, bool, Click)>) -> AnyElement {
     div()
         .flex()
         .flex_none()
@@ -231,7 +249,7 @@ fn stepper(id: &str, value: String, minus: Option<Click>, plus: Option<Click>) -
 }
 
 /// A labelled setting: title and help on the left, its control on the right.
-fn row(title: String, help: String, control: AnyElement) -> AnyElement {
+pub(crate) fn row(title: String, help: String, control: AnyElement) -> AnyElement {
     div()
         .flex()
         .items_center()
@@ -252,7 +270,7 @@ fn row(title: String, help: String, control: AnyElement) -> AnyElement {
         .into_any_element()
 }
 
-fn card(title: String, rows: Vec<AnyElement>) -> AnyElement {
+pub(crate) fn card(title: String, rows: Vec<AnyElement>) -> AnyElement {
     div()
         .flex()
         .flex_col()
@@ -274,7 +292,7 @@ fn card(title: String, rows: Vec<AnyElement>) -> AnyElement {
         .into_any_element()
 }
 
-fn note(text: String) -> AnyElement {
+pub(crate) fn note(text: String) -> AnyElement {
     div()
         .px_4()
         .py_3()
@@ -290,7 +308,18 @@ fn note(text: String) -> AnyElement {
 
 impl SettingsView {
     fn accounts(&mut self, french: bool, cx: &mut Context<Self>) -> Vec<AnyElement> {
+        if self.editor.is_some() {
+            return self.account_editor(french, cx);
+        }
         let accounts = self.store.read(cx).config.accounts.clone();
+        let add = button(
+            "add-account",
+            tr(french, "+ Ajouter", "+ Add"),
+            rgb(TEXT),
+            Box::new(cx.listener(|this, _: &ClickEvent, window, cx| {
+                this.open_editor(None, window, cx)
+            })),
+        );
         let detect = button(
             "detect",
             tr(french, "Détecter", "Detect"),
@@ -331,7 +360,7 @@ impl SettingsView {
                         "Finds the Codex, Claude, Gemini, Grok and OpenCode profiles already signed in on this PC.",
                     )),
             )
-            .child(detect)
+            .child(div().flex().flex_none().gap_2().child(detect).child(add))
             .into_any_element()];
 
         if accounts.is_empty() {
@@ -413,6 +442,7 @@ impl SettingsView {
             } else {
                 account.profile_path.clone()
             };
+            let edited = account.clone();
             rows.push(
                 div()
                     .flex()
@@ -422,6 +452,21 @@ impl SettingsView {
                     .border_t_1()
                     .border_color(rgba(0xffffff0d))
                     .child(
+                        div()
+                            .id(SharedString::from(format!("edit-{id}")))
+                            .flex()
+                            .items_center()
+                            .gap_3()
+                            .flex_1()
+                            .min_w_0()
+                            .p_1()
+                            .rounded_lg()
+                            .cursor_pointer()
+                            .hover(|d| d.bg(rgba(0xffffff08)))
+                            .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+                                this.open_editor(Some(edited.clone()), window, cx)
+                            }))
+                            .child(
                         div()
                             .size(px(36.))
                             .flex_none()
@@ -448,11 +493,11 @@ impl SettingsView {
                                     .truncate()
                                     .child(format!(
                                         "{} · {}",
-                                        provider_title(&account.provider),
+                                        crate::account_form::name(&account.provider, french),
                                         path
                                     )),
                             ),
-                    )
+                    ))
                     .child(actions)
                     .into_any_element(),
             );
@@ -461,8 +506,8 @@ impl SettingsView {
             card(tr(french, "Comptes configurés", "Configured accounts"), rows),
             note(tr(
                 french,
-                "Prototype : l’ajout manuel, la connexion et la modification d’un compte arriveront avec les champs de saisie. Les sessions existantes restent dans leur outil d’origine.",
-                "Prototype: adding, signing in and editing an account will come with text fields. Existing sessions stay in their own tool.",
+                "Les sessions existantes restent dans leur outil d’origine. Les secrets ajoutés ici sont conservés dans le Gestionnaire d’identification Windows.",
+                "Existing sessions stay in their own tool. Secrets added here are kept in Windows Credential Manager.",
             )),
         ]
     }
@@ -521,13 +566,6 @@ impl SettingsView {
                 )
             })
             .collect();
-        let channel = |on: bool| {
-            if on {
-                tr(french, "Activées", "On")
-            } else {
-                tr(french, "Désactivées", "Off")
-            }
-        };
         vec![
             note(tr(
                 french,
@@ -607,23 +645,8 @@ impl SettingsView {
                     ),
                 ],
             ),
-            card(
-                "Telegram & Discord".into(),
-                vec![
-                    row("Discord".into(), channel(s.discord_enabled), div().into_any_element()),
-                    row("Telegram".into(), channel(s.telegram_enabled), div().into_any_element()),
-                    div()
-                        .pb_2()
-                        .text_sm()
-                        .text_color(rgb(MUTED))
-                        .child(tr(
-                            french,
-                            "Leur configuration (jeton, webhook, chat) demande des champs de saisie : elle reste à porter. L’état actuel est conservé.",
-                            "Setting them up (token, webhook, chat) needs text fields and is not ported yet. Their current state is kept.",
-                        ))
-                        .into_any_element(),
-                ],
-            ),
+            self.discord_card(french, cx),
+            self.telegram_card(french, cx),
         ]
     }
 }
@@ -691,6 +714,7 @@ impl Render for SettingsView {
             .min_h_0()
             .w_full()
             .flex()
+            .relative()
             .child(
                 div()
                     .w(px(200.))
@@ -749,21 +773,42 @@ impl Render for SettingsView {
                             .when_some(storage_error, |d, error| {
                                 d.child(div().text_sm().text_color(rgb(DANGER)).child(error))
                             })
-                            .when_some(message, |d, (ok, text)| {
-                                d.child(
-                                    div()
-                                        .px_4()
-                                        .py_2()
-                                        .rounded_lg()
-                                        .text_sm()
-                                        .bg(if ok { rgba(0x28e07b1a) } else { rgba(0xff6b5a1f) })
-                                        .text_color(if ok { rgb(0x7ee2a8) } else { rgb(DANGER) })
-                                        .child(text),
-                                )
-                            })
-                            .children(content),
+                            .children(content)
+                            // Room for the toast below the last card.
+                            .child(div().h(px(48.))),
                     ),
-            );
+            )
+            // Results float at the bottom so they stay visible however far the page scrolls.
+            .when_some(message, |d, (ok, text)| {
+                d.child(
+                    div()
+                        .absolute()
+                        .bottom(px(16.))
+                        .left(px(224.))
+                        .right(px(24.))
+                        .flex()
+                        .justify_center()
+                        .child(
+                            div()
+                                .id("toast")
+                                .max_w(px(560.))
+                                .px_4()
+                                .py_2()
+                                .rounded_lg()
+                                .border_1()
+                                .text_sm()
+                                .cursor_pointer()
+                                .bg(if ok { rgb(0x10261a) } else { rgb(0x2a1412) })
+                                .border_color(if ok { rgba(0x28e07b55) } else { rgba(0xff6b5a55) })
+                                .text_color(if ok { rgb(0x7ee2a8) } else { rgb(DANGER) })
+                                .child(text)
+                                .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
+                                    this.message = None;
+                                    cx.notify();
+                                })),
+                        ),
+                )
+            });
 
         div()
             .size_full()

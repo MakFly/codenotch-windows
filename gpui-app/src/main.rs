@@ -8,6 +8,8 @@ mod alerts;
 mod claude;
 #[path = "../../src-tauri/src/codex.rs"]
 mod codex;
+#[path = "../../src-tauri/src/discord.rs"]
+mod discord;
 #[path = "../../src-tauri/src/gemini.rs"]
 mod gemini;
 #[path = "../../src-tauri/src/grok.rs"]
@@ -20,9 +22,14 @@ mod model;
 mod opencode;
 #[path = "../../src-tauri/src/providers.rs"]
 mod providers;
+#[path = "../../src-tauri/src/telegram.rs"]
+mod telegram;
 
+mod account_form;
 mod assets;
+mod channels;
 mod desktop;
+mod input;
 mod settings;
 mod store;
 mod tray;
@@ -45,6 +52,7 @@ fn main() {
         let (config, storage_error) = store::load();
         let store = cx.new(|_| store::Store::new(config, storage_error));
         ui::open_rail(store.clone(), cx);
+        input::bind_keys(cx);
         tray::install(store.clone(), cx);
         if std::env::args().any(|a| a == "--settings") {
             settings::open(store.clone(), cx);
