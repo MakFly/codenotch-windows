@@ -394,10 +394,12 @@ pub fn open_rail(store: Entity<Store>, cx: &mut App) {
     };
     let screen = display.bounds();
     let bounds = notch_bounds(screen, store.read(cx));
+    let rail_store = store.clone();
     cx.open_window(popup_options(bounds, Some(display.id())), |window, cx| {
-        cx.new(|cx| Rail::new(store, screen, window, cx))
+        cx.new(|cx| Rail::new(rail_store, screen, window, cx))
     })
     .expect("notch window");
+    prepare_popover(&store, screen, cx);
 }
 
 /// Reveals on hover; folds once the pointer has left both the rail and the popover
@@ -628,7 +630,7 @@ impl Rail {
         self.applied = Some(next);
         desktop::place(window, next.0, next.1, cx);
         // A popover opened beside the old position would be left floating.
-        if (!next.1 || moved) && s.popover.is_some() {
+        if (!next.1 || moved) && s.selected.is_some() {
             let store = self.store.clone();
             cx.defer(move |cx| close_popover(&store, cx));
         }
@@ -638,7 +640,7 @@ impl Rail {
 impl Render for Rail {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         // GPUI refreshes the window when the pointer enters or leaves it.
-        let hovered = window.is_window_hovered();
+        let hovered = window.is_window_hovered() || desktop::pointer_over(window);
         if hovered != self.hovered {
             self.hovered = hovered;
             let store = self.store.clone();
@@ -953,18 +955,42 @@ fn popover_height(s: &Store, id: &str) -> f32 {
     h
 }
 
+/// Hides the popover. Its window is kept: creating a window costs a DirectComposition
+/// surface and a swapchain, far too slow to do on every hover.
 fn close_popover(store: &Entity<Store>, cx: &mut App) {
     let handle = store.update(cx, |s, cx| {
         s.selected = None;
         s.hover[1] = false;
         cx.notify();
-        s.popover.take()
+        s.popover
     });
     if let Some(handle) = handle {
         handle
-            .update(cx, |_, window, _| window.remove_window())
+            .update(cx, |popover, window, cx| {
+                if popover.shown {
+                    popover.shown = false;
+                    popover.hovered = false;
+                    desktop::place(window, popover.bounds, false, cx);
+                }
+            })
             .ok();
     }
+}
+
+/// Creates the popover window up front, hidden, so the first hover shows it at once.
+fn prepare_popover(store: &Entity<Store>, area: Bounds<Pixels>, cx: &mut App) {
+    let edge = Edge::of(store.read(cx));
+    let anchor = Anchor { edge, center: area.center().y, area };
+    let bounds = anchor.bounds(300.);
+    // Created shown, then hidden on the next tick: a window GPUI creates hidden stalls the
+    // renderer it shares with the notch.
+    let handle = cx
+        .open_window(popup_options(bounds, None), |window, cx| {
+            desktop::place(window, bounds, false, cx);
+            cx.new(|cx| Popover::new(store.clone(), anchor, bounds, cx))
+        })
+        .ok();
+    store.update(cx, |s, _| s.popover = handle);
 }
 
 /// Where the popover box goes, before adding the tail toward the rail.
@@ -1026,32 +1052,33 @@ fn open_popover(
         notch.origin.x + rail.origin.x + rail.size.width / 2.
     };
     let anchor = Anchor { edge, center, area };
-    // Another cell of the same rail: reuse the window, only the account changes.
-    if let Some(handle) = store.read(cx).popover {
-        if handle
-            .update(cx, |popover, _, cx| {
-                popover.account_id = id.clone();
-                cx.notify();
-            })
-            .is_ok()
-        {
-            store.update(cx, |s, cx| {
-                s.selected = Some(id);
-                cx.notify();
-            });
-            return;
-        }
+    if store.read(cx).popover.is_none() {
+        prepare_popover(store, area, cx);
     }
-    close_popover(store, cx);
-    let bounds = anchor.bounds(popover_height(store.read(cx), &id));
-    let handle = cx
-        .open_window(popup_options(bounds, None), |window, cx| {
-            cx.new(|cx| Popover::new(store.clone(), id.clone(), anchor, window, cx))
-        })
-        .ok();
+    // The window already exists: point it at the account, place it and show it.
+    let estimate = popover_height(store.read(cx), &id);
+    let Some(handle) = store.read(cx).popover else {
+        return;
+    };
+    let shown = handle.update(cx, |popover, window, cx| {
+        let first = !popover.shown;
+        popover.account_id = id.clone();
+        popover.anchor = anchor;
+        if first {
+            popover.shows += 1;
+            popover.bounds = anchor.bounds(estimate);
+        }
+        popover.shown = true;
+        desktop::place(window, popover.bounds, true, cx);
+        cx.notify();
+    });
+    if shown.is_err() {
+        // The window was closed from outside: start over with a fresh one.
+        store.update(cx, |s, _| s.popover = None);
+        return;
+    }
     store.update(cx, |s, cx| {
         s.selected = Some(id);
-        s.popover = handle;
         cx.notify();
     });
 }
@@ -1062,18 +1089,14 @@ pub struct Popover {
     anchor: Anchor,
     bounds: Bounds<Pixels>,
     hovered: bool,
+    /// Visible on screen; hidden popovers keep their window for the next hover.
+    shown: bool,
+    /// Counts openings so the fade replays each time.
+    shows: usize,
 }
 
 impl Popover {
-    fn new(
-        store: Entity<Store>,
-        account_id: String,
-        anchor: Anchor,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> Self {
-        let bounds = anchor.bounds(popover_height(store.read(cx), &account_id));
-        desktop::place(window, bounds, true, cx);
+    fn new(store: Entity<Store>, anchor: Anchor, bounds: Bounds<Pixels>, cx: &mut Context<Self>) -> Self {
         // The window follows the content: see the probe at the end of the body.
         cx.observe(&store, |_, _, cx| cx.notify()).detach();
         // Keeps "2 min ago" and reset countdowns current between readings.
@@ -1086,10 +1109,12 @@ impl Popover {
         .detach();
         Self {
             store,
-            account_id,
+            account_id: String::new(),
             anchor,
             bounds,
             hovered: false,
+            shown: false,
+            shows: 0,
         }
     }
 }
@@ -1107,6 +1132,9 @@ impl Popover {
                 let Some(popover) = this.upgrade() else {
                     return;
                 };
+                if !popover.read(cx).shown {
+                    return;
+                }
                 let next = anchor.bounds(height);
                 let current = popover.read(cx).bounds;
                 if (f32::from(next.size.height) - f32::from(current.size.height)).abs() > 0.5
@@ -1161,7 +1189,7 @@ fn paint_tail(window: &mut Window, bounds: Bounds<Pixels>, edge: Edge) {
 
 impl Render for Popover {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let hovered = window.is_window_hovered();
+        let hovered = window.is_window_hovered() || desktop::pointer_over(window);
         if hovered != self.hovered {
             self.hovered = hovered;
             let store = self.store.clone();
@@ -1456,9 +1484,10 @@ impl Render for Popover {
         let body = body
             .when(!edge.vertical(), |d| d.flex_1().min_h_0())
             .with_animation(
-                SharedString::from(format!("popover-{}", self.account_id)),
+                SharedString::from(format!("popover-{}-{}", self.shows, self.account_id)),
                 Animation::new(POPOVER_IN).with_easing(ease_out_expo_like),
-                |body, delta| body.opacity(delta),
+                // From 30 %: the content is readable on the first frame.
+                |body, delta| body.opacity(0.3 + 0.7 * delta),
             );
         div()
             .size_full()

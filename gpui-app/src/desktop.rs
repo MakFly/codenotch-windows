@@ -99,6 +99,39 @@ pub fn place(window: &Window, bounds: Bounds<Pixels>, visible: bool, cx: &App) {
 #[cfg(not(windows))]
 pub fn place(_: &Window, _: Bounds<Pixels>, _: bool, _: &App) {}
 
+/// Whether the pointer is over the window's drawn area. Resizing a window under a still
+/// pointer makes Windows report a mouse leave although the pointer never moved; this asks
+/// for the real position instead.
+#[cfg(windows)]
+pub fn pointer_over(window: &Window) -> bool {
+    use windows_sys::Win32::{
+        Foundation::{POINT, RECT},
+        Graphics::Gdi::ClientToScreen,
+        UI::WindowsAndMessaging::{GetClientRect, GetCursorPos, IsWindowVisible},
+    };
+    let Some(hwnd) = hwnd(window) else {
+        return false;
+    };
+    unsafe {
+        let mut cursor = POINT { x: 0, y: 0 };
+        let mut client = RECT { left: 0, top: 0, right: 0, bottom: 0 };
+        let mut origin = POINT { x: 0, y: 0 };
+        IsWindowVisible(hwnd) != 0
+            && GetCursorPos(&mut cursor) != 0
+            && GetClientRect(hwnd, &mut client) != 0
+            && ClientToScreen(hwnd, &mut origin) != 0
+            && cursor.x >= origin.x
+            && cursor.x < origin.x + client.right
+            && cursor.y >= origin.y
+            && cursor.y < origin.y + client.bottom
+    }
+}
+
+#[cfg(not(windows))]
+pub fn pointer_over(window: &Window) -> bool {
+    window.is_window_hovered()
+}
+
 /// The primary display minus the taskbar, in logical pixels.
 #[cfg(windows)]
 pub fn work_area(scale: f32) -> Option<Bounds<Pixels>> {
