@@ -91,6 +91,8 @@ pub struct SettingsView {
     /// The open accordion item of the Appearance and Alerts pages.
     appearance_open: Option<&'static str>,
     alerts_open: Option<&'static str>,
+    /// CodeNotch's own CPU and memory, shown in the header while this window is open.
+    usage: crate::usage::Usage,
 }
 
 impl SettingsView {
@@ -107,6 +109,24 @@ impl SettingsView {
             (s.french(), s.config.settings.telegram_chat_id.clone())
         };
         let channels = crate::channels::Channels::new(french, chat, cx);
+        // Sample only while this window lives: the loop ends when the view is dropped.
+        cx.spawn(async move |this, cx| {
+            let mut sampler = crate::usage::Sampler::new();
+            loop {
+                cx.background_executor().timer(std::time::Duration::from_secs(2)).await;
+                let usage = sampler.sample();
+                if this
+                    .update(cx, |view, cx| {
+                        view.usage = usage;
+                        cx.notify();
+                    })
+                    .is_err()
+                {
+                    break;
+                }
+            }
+        })
+        .detach();
         Self {
             store,
             section: Section::Accounts,
@@ -118,6 +138,7 @@ impl SettingsView {
             open_select: None,
             appearance_open: Some("language"),
             alerts_open: Some("discord"),
+            usage: crate::usage::Usage::default(),
         }
     }
 
@@ -1121,7 +1142,7 @@ impl Render for SettingsView {
             .text_color(rgb(TEXT))
             .font_family("Segoe UI")
             .text_size(px(13.))
-            .child(titlebar());
+            .child(titlebar(crate::usage::label(self.usage, french)));
 
         if self.store.read(cx).config.settings.onboarding_done == Some(false) {
             let welcome = self.welcome(french, cx);
@@ -1294,7 +1315,7 @@ impl Render for SettingsView {
 }
 
 /// `.settings-titlebar`: the mini notch, the name, and minimize / close.
-fn titlebar() -> AnyElement {
+fn titlebar(usage: String) -> AnyElement {
     let caption = |id: &'static str, glyph: &'static str, close: bool, action: fn(&mut Window)| {
         div()
             .id(id)
@@ -1345,6 +1366,19 @@ fn titlebar() -> AnyElement {
             div()
                 .h_full()
                 .flex()
+                .items_center()
+                // The whole app's real use (notch included), as Task Manager reports it.
+                .child(
+                    div()
+                        .mr(px(10.))
+                        .flex()
+                        .items_center()
+                        .gap(px(6.))
+                        .text_size(px(11.))
+                        .text_color(rgb(0x8f8f96))
+                        .child(icon("monitor", 13., 0x8f8f96))
+                        .child(usage),
+                )
                 .child(caption("min", "minus", false, |w| w.minimize_window()))
                 .child(caption("close", "x", true, |w| w.remove_window())),
         )

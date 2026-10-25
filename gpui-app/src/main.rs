@@ -33,6 +33,7 @@ mod input;
 mod settings;
 mod store;
 mod tray;
+mod usage;
 mod welcome;
 mod ui;
 
