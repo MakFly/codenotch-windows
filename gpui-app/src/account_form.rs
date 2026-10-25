@@ -79,7 +79,7 @@ pub(crate) struct Editor {
 }
 
 pub(crate) struct Login {
-    provider: String,
+    pub(crate) provider: String,
     url: Option<String>,
     user_code: Option<String>,
     /// Keeps Codex's in-app sign-in (and its callback server) alive.
@@ -225,7 +225,7 @@ impl SettingsView {
     }
 
     /// Reads the providers again right away, so a saved account shows up in the notch.
-    fn refresh_now(&self, cx: &mut Context<Self>) {
+    pub(crate) fn refresh_now(&self, cx: &mut Context<Self>) {
         let store = self.store.clone();
         cx.spawn(async move |_, cx| store::poll(&store, true, cx).await)
             .detach();
@@ -269,13 +269,18 @@ impl SettingsView {
         let Some(e) = self.editor.as_ref() else {
             return;
         };
-        let french = self.store.read(cx).french();
         let provider = e.provider.clone();
         let profile = if has_profile(&provider) {
             e.profile.read(cx).text().trim().to_owned()
         } else {
             String::new()
         };
+        self.sign_in(provider, profile, cx);
+    }
+
+    /// Starts the provider's sign-in and adds the profile once its session appears.
+    pub(crate) fn sign_in(&mut self, provider: String, profile: String, cx: &mut Context<Self>) {
+        let french = self.store.read(cx).french();
         self.login = None;
         self.message = None;
         let started_ms = chrono::Utc::now().timestamp_millis();
@@ -330,6 +335,7 @@ impl SettingsView {
                             })
                         });
                         this.editor = None;
+                        this.load_statuses();
                         this.refresh_now(cx);
                         this.login = None;
                     });

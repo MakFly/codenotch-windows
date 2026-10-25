@@ -33,6 +33,7 @@ mod input;
 mod settings;
 mod store;
 mod tray;
+mod welcome;
 mod ui;
 
 use gpui::{App, AppContext, Application};
@@ -49,12 +50,18 @@ fn main() {
     store::RUNTIME.set(runtime.handle().clone()).ok();
 
     Application::new().with_assets(assets::Assets).run(|cx: &mut App| {
-        let (config, storage_error) = store::load();
+        let (mut config, storage_error) = store::load();
+        // Configurations from before the welcome screen: offer it only to people who have
+        // not connected anything yet.
+        let first_run = !*config
+            .settings
+            .onboarding_done
+            .get_or_insert(!config.accounts.is_empty());
         let store = cx.new(|_| store::Store::new(config, storage_error));
         ui::open_rail(store.clone(), cx);
         input::bind_keys(cx);
         tray::install(store.clone(), cx);
-        if std::env::args().any(|a| a == "--settings") {
+        if first_run || std::env::args().any(|a| a == "--settings") {
             settings::open(store.clone(), cx);
         }
         let watched = store.clone();

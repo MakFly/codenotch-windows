@@ -25,7 +25,10 @@ Add `-- --settings` to open the settings window at launch.
   - Accounts: add or edit (provider, name, profile folder, JSON URL, token kept in Windows
     Credential Manager, environment variable), sign in through the official CLI, enable or
     disable, remove (with confirmation), detect local CLI profiles.
-  - Language: French or English, applied at once to the notch, the window and the tray menu.
+  - Language: French or English, applied at once to the notch, the window and the tray menu;
+    the welcome screen can be shown again from here.
+- Welcome screen on first launch (no account yet, as in the Tauri app): CLI install and
+  sign-in state for each provider, sign in or add a detected session, language choice.
   - Alerts: notifications, warning and critical levels, urgent alerts in full screen,
     limit forecast and its lead time, quota-back notice, Discord webhook and Telegram bot
     setup (secrets in Credential Manager, chat detection, test message; Telegram sending
@@ -37,6 +40,6 @@ Add `-- --settings` to open the settings window at launch.
 
 ## Not yet ported
 
-The welcome screen; notch position and poll interval settings; alert delivery (Windows,
+Notch position and poll interval settings; alert delivery (Windows,
 Telegram, Discord); fold animation, Escape to fold, drag to move; updater. Text fields have
 no Tab navigation or undo yet.

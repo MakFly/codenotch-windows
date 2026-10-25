@@ -79,6 +79,8 @@ pub struct SettingsView {
     /// A CLI sign-in in progress.
     pub(crate) login: Option<crate::account_form::Login>,
     pub(crate) channels: crate::channels::Channels,
+    /// CLI install and sign-in state per login provider, for the welcome screen.
+    pub(crate) statuses: Vec<crate::login::ProviderStatus>,
 }
 
 impl SettingsView {
@@ -103,6 +105,7 @@ impl SettingsView {
             editor: None,
             login: None,
             channels,
+            statuses: crate::welcome::statuses(),
         }
     }
 
@@ -524,17 +527,37 @@ impl SettingsView {
                 )
             })
             .collect();
+        let replay = button(
+            "replay-welcome",
+            tr(french, "Revoir l’écran d’accueil", "Show the welcome screen"),
+            rgb(TEXT),
+            Box::new(cx.listener(|this, _: &ClickEvent, _, cx| {
+                this.load_statuses();
+                this.update_settings(cx, |s| s.onboarding_done = Some(false));
+            })),
+        );
         vec![card(
-            tr(french, "Langue", "Language"),
-            vec![row(
-                tr(french, "Langue de l’interface", "Interface language"),
-                tr(
-                    french,
-                    "S’applique immédiatement à l’encoche, à ce panneau et au menu de l’icône.",
-                    "Applies right away to the notch, this window and the tray menu.",
+            tr(french, "Langue et accueil", "Language and welcome"),
+            vec![
+                row(
+                    tr(french, "Langue de l’interface", "Interface language"),
+                    tr(
+                        french,
+                        "S’applique immédiatement à l’encoche, à ce panneau et au menu de l’icône.",
+                        "Applies right away to the notch, this window and the tray menu.",
+                    ),
+                    segmented(choices),
                 ),
-                segmented(choices),
-            )],
+                row(
+                    tr(french, "Écran d’accueil", "Welcome screen"),
+                    tr(
+                        french,
+                        "Reprends la connexion de tes abonnements IA pas à pas.",
+                        "Go through connecting your AI subscriptions again, step by step.",
+                    ),
+                    replay,
+                ),
+            ],
         )]
     }
 
@@ -654,6 +677,17 @@ impl SettingsView {
 impl Render for SettingsView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let french = self.store.read(cx).french();
+        if self.store.read(cx).config.settings.onboarding_done == Some(false) {
+            let welcome = self.welcome(french, cx);
+            return div()
+                .size_full()
+                .flex()
+                .flex_col()
+                .bg(rgb(SURFACE))
+                .text_color(rgb(TEXT))
+                .child(titlebar(french, &tr(french, "Bienvenue", "Welcome"), window.is_maximized()))
+                .child(welcome);
+        }
         let (heading, intro, content) = match self.section {
             Section::Accounts => (
                 tr(french, "Comptes", "Accounts"),
