@@ -2,12 +2,12 @@
 //! app's `notch.css` so both builds look the same.
 use crate::assets::icon_path;
 use crate::desktop;
-use crate::model::{Reading, Window as Quota};
+use crate::model::{Reading, WidgetPlacement, Window as Quota};
 use crate::store::{self, Store};
 use gpui::{
     canvas, div, point, prelude::*, px, relative, rgb, rgba, svg, Animation, AnimationExt,
     AnyElement, App, Bounds,
-    Context, DisplayId, Entity, FontWeight, PathBuilder, Pixels, Point, Rgba, SharedString, Size,
+    Context, DisplayId, Entity, FontWeight, MouseButton, PathBuilder, Pixels, Point, Rgba, SharedString, Size,
     Window, WindowBackgroundAppearance, WindowBounds, WindowKind, WindowOptions,
 };
 use std::collections::HashMap;
@@ -124,7 +124,7 @@ pub(crate) fn provider_mark(provider: &str) -> &'static str {
     }
 }
 
-fn usage_color(value: Option<f64>) -> Rgba {
+pub(crate) fn usage_color(value: Option<f64>) -> Rgba {
     match value {
         None => rgb(0x858585),
         Some(v) if v < 50. => rgb(0x28e07b),
@@ -133,7 +133,7 @@ fn usage_color(value: Option<f64>) -> Rgba {
     }
 }
 
-fn headline(reading: Option<&Reading>) -> Option<&Quota> {
+pub(crate) fn headline(reading: Option<&Reading>) -> Option<&Quota> {
     reading?
         .windows
         .iter()
@@ -141,7 +141,7 @@ fn headline(reading: Option<&Reading>) -> Option<&Quota> {
 }
 
 /// `isFresh` in format.ts: a reading counts as current for two poll intervals.
-fn is_fresh(reading: Option<&Reading>, interval: u64, now: i64) -> bool {
+pub(crate) fn is_fresh(reading: Option<&Reading>, interval: u64, now: i64) -> bool {
     reading.is_some_and(|r| {
         r.status == "ok"
             && r.updated_at
@@ -149,7 +149,7 @@ fn is_fresh(reading: Option<&Reading>, interval: u64, now: i64) -> bool {
     })
 }
 
-fn status_label(status: &str) -> &'static str {
+pub(crate) fn status_label(status: &str) -> &'static str {
     match status {
         "ok" => "À jour",
         "needsAuth" => "À connecter",
@@ -163,7 +163,7 @@ pub(crate) fn tr(french: bool, fr: &str, en: &str) -> String {
     if french { fr } else { en }.to_owned()
 }
 
-fn percentage(value: f64, french: bool) -> String {
+pub(crate) fn percentage(value: f64, french: bool) -> String {
     let rounded = (value * 10.).round() / 10.;
     let text = if rounded.fract() == 0. {
         format!("{rounded:.0}")
@@ -198,7 +198,7 @@ fn tokens(n: u64, compact: bool, french: bool) -> String {
     out
 }
 
-fn reset_time(at: Option<i64>, now: i64, french: bool) -> String {
+pub(crate) fn reset_time(at: Option<i64>, now: i64, french: bool) -> String {
     let Some(at) = at else {
         return tr(french, "Date non communiquée", "Reset time unavailable");
     };
@@ -218,7 +218,7 @@ fn reset_time(at: Option<i64>, now: i64, french: bool) -> String {
     tr(french, &format!("dans {hours} h {m} min"), &format!("in {hours} h {m} min"))
 }
 
-fn freshness(at: Option<i64>, now: i64, french: bool) -> String {
+pub(crate) fn freshness(at: Option<i64>, now: i64, french: bool) -> String {
     let Some(at) = at else {
         return tr(french, "Aucun relevé", "No reading");
     };
@@ -277,6 +277,16 @@ impl Edge {
         matches!(self, Edge::Right | Edge::Left)
     }
 
+    /// The `widget_position` setting for this edge.
+    fn name(self) -> &'static str {
+        match self {
+            Edge::Right => "right",
+            Edge::Left => "left",
+            Edge::Top => "top",
+            Edge::Bottom => "bottom",
+        }
+    }
+
     /// Rounds the corners facing the screen, leaving the side against the edge square.
     fn round<T: Styled>(self, element: T, radius: f32) -> T {
         match self {
@@ -324,12 +334,14 @@ fn open_layout(area: Bounds<Pixels>, s: &Store) -> Layout {
             Edge::Right => area.origin.x + area.size.width - size.width,
             _ => area.origin.x,
         };
+        let rail = Bounds {
+            origin: point(px(0.), px(FLARE)),
+            size: Size { width: px(RAIL_THICKNESS), height: px(len) },
+        };
+        let window = Bounds { origin: point(x, rail_top - px(FLARE)), size };
         Layout {
-            window: Bounds { origin: point(x, rail_top - px(FLARE)), size },
-            rail: Bounds {
-                origin: point(px(0.), px(FLARE)),
-                size: Size { width: px(RAIL_THICKNESS), height: px(len) },
-            },
+            window: placed(window, rail, area, s),
+            rail,
             tools: Bounds {
                 origin: point(px(0.), px(FLARE + len + TOOLS_GAP)),
                 size: Size { width: px(TOOLS_WIDTH), height: px(TOOLS_SIZE) },
@@ -351,12 +363,14 @@ fn open_layout(area: Bounds<Pixels>, s: &Store) -> Layout {
             Edge::Bottom => H_RAIL_THICKNESS - 25. - TOOLS_SIZE,
             _ => 25.,
         };
+        let rail = Bounds {
+            origin: point(px(0.), px(0.)),
+            size: Size { width: px(len), height: px(H_RAIL_THICKNESS) },
+        };
+        let window = Bounds { origin: point(rail_left, y), size };
         Layout {
-            window: Bounds { origin: point(rail_left, y), size },
-            rail: Bounds {
-                origin: point(px(0.), px(0.)),
-                size: Size { width: px(len), height: px(H_RAIL_THICKNESS) },
-            },
+            window: placed(window, rail, area, s),
+            rail,
             tools: Bounds {
                 origin: point(px(len + 8.), px(tools_y)),
                 size: Size { width: px(TOOLS_WIDTH), height: px(TOOLS_SIZE) },
@@ -384,7 +398,145 @@ fn notch_bounds(area: Bounds<Pixels>, s: &Store) -> Bounds<Pixels> {
         Edge::Top => point(center_x, area.origin.y),
         Edge::Bottom => point(center_x, area.origin.y + area.size.height - size.height),
     };
-    Bounds { origin, size }
+    let tab = Bounds { origin: point(px(0.), px(0.)), size };
+    placed(Bounds { origin, size }, tab, area, s)
+}
+
+/// The point of the notch that a drag saves: the middle of its side against the screen
+/// edge (`offset` in `src-tauri/src/widget.rs`). The open rail and the fold tab share it.
+fn anchor_offset(edge: Edge, size: Size<Pixels>) -> Point<Pixels> {
+    match edge {
+        Edge::Right => point(size.width, size.height / 2.),
+        Edge::Left => point(px(0.), size.height / 2.),
+        Edge::Bottom => point(size.width / 2., size.height),
+        Edge::Top => point(size.width / 2., px(0.)),
+    }
+}
+
+/// Moves `window` so its `part` (relative to it) sits where the grip left the notch along its
+/// edge, kept inside `area` (`restore` in `src-tauri/src/widget.rs`). Unmoved without a
+/// saved spot. The notch always stays against its edge, even for a spot saved off it.
+fn placed(window: Bounds<Pixels>, part: Bounds<Pixels>, area: Bounds<Pixels>, s: &Store) -> Bounds<Pixels> {
+    let Some(saved) = &s.config.settings.widget_placement else {
+        return window;
+    };
+    let ratio = |v: f64| if v.is_finite() { v.clamp(0., 1.) as f32 } else { 0.5 };
+    let edge = Edge::of(s);
+    let (rx, ry) = match edge {
+        Edge::Right => (1., ratio(saved.y)),
+        Edge::Left => (0., ratio(saved.y)),
+        Edge::Top => (ratio(saved.x), 0.),
+        Edge::Bottom => (ratio(saved.x), 1.),
+    };
+    let anchor = part.origin + anchor_offset(edge, part.size);
+    let x = area.origin.x + area.size.width * rx - anchor.x;
+    let y = area.origin.y + area.size.height * ry - anchor.y;
+    let clamp = |v: Pixels, lo: Pixels, len: Pixels, size: Pixels| v.min(lo + len - size).max(lo);
+    Bounds {
+        origin: point(
+            clamp(x, area.origin.x, area.size.width, window.size.width),
+            clamp(y, area.origin.y, area.size.height, window.size.height),
+        ),
+        size: window.size,
+    }
+}
+
+/// How much nearer another edge the pointer must be before the notch jumps to it, so it
+/// does not flicker between two edges near a corner.
+const EDGE_SWITCH: f32 = 48.;
+
+/// Docks the notch on the screen edge nearest the pointer, at the pointer along it.
+/// `grab` is the distance along the edge from the rail's anchor to where the grip was taken,
+/// kept while the notch stays on that edge so it does not jump under the pointer.
+fn dock(s: &mut Store, pointer: &desktop::Pointer, grab: (Edge, Pixels)) {
+    let (p, a) = (pointer.at, pointer.area);
+    let distance = |edge: Edge| match edge {
+        Edge::Right => a.origin.x + a.size.width - p.x,
+        Edge::Left => p.x - a.origin.x,
+        Edge::Top => p.y - a.origin.y,
+        Edge::Bottom => a.origin.y + a.size.height - p.y,
+    };
+    let current = Edge::of(s);
+    let nearest = [Edge::Right, Edge::Left, Edge::Top, Edge::Bottom]
+        .into_iter()
+        .min_by(|x, y| distance(*x).partial_cmp(&distance(*y)).unwrap_or(std::cmp::Ordering::Equal))
+        .unwrap_or(current);
+    let edge = if distance(nearest) + px(EDGE_SWITCH) < distance(current) { nearest } else { current };
+    let offset = if edge == grab.0 { grab.1 } else { px(0.) };
+    let along = |v: Pixels, lo: Pixels, len: Pixels| ((v - offset - lo) / len.max(px(1.))).clamp(0., 1.) as f64;
+    let (x, y) = match edge {
+        Edge::Right => (1., along(p.y, a.origin.y, a.size.height)),
+        Edge::Left => (0., along(p.y, a.origin.y, a.size.height)),
+        Edge::Top => (along(p.x, a.origin.x, a.size.width), 0.),
+        Edge::Bottom => (along(p.x, a.origin.x, a.size.width), 1.),
+    };
+    let settings = &mut s.config.settings;
+    settings.widget_position = edge.name().to_owned();
+    settings.widget_placement = Some(WidgetPlacement { monitor: Some(pointer.monitor.clone()), x, y });
+}
+
+/// The grip: while the button is held the notch follows the pointer along the screen edges
+/// (the nearest one, on whichever display), then the edge and spot are saved.
+fn drag(store: &Entity<Store>, window: &Window, cx: &mut App) {
+    let scale = window.scale_factor();
+    let Some(pointer) = desktop::pointer(scale) else {
+        return;
+    };
+    close_popover(store, cx);
+    let (before, grab) = {
+        let s = store.read(cx);
+        let edge = Edge::of(s);
+        let monitor = s.config.settings.widget_placement.as_ref().and_then(|p| p.monitor.as_deref());
+        let area = desktop::work_area(scale, monitor).unwrap_or(pointer.area);
+        let layout = open_layout(area, s);
+        let anchor = layout.window.origin + layout.rail.origin + anchor_offset(edge, layout.rail.size);
+        let along = if edge.vertical() { pointer.at.y - anchor.y } else { pointer.at.x - anchor.x };
+        (s.config.settings.clone(), (edge, along))
+    };
+    store.update(cx, |s, _| s.dragging = true);
+    let store = store.clone();
+    cx.spawn(async move |cx| loop {
+        cx.background_executor().timer(Duration::from_millis(16)).await;
+        let held = desktop::left_button_down();
+        let pointer = desktop::pointer(scale);
+        let done = store.update(cx, |s, cx| {
+            if let Some(pointer) = &pointer {
+                dock(s, pointer, grab);
+            }
+            if !held {
+                s.dragging = false;
+                // Unsaved (read-only configuration), the notch goes back where it was.
+                if s.save_dock().is_err() {
+                    s.config.settings = before.clone();
+                }
+            }
+            cx.notify();
+            !held
+        });
+        if done.unwrap_or(true) {
+            break;
+        }
+    })
+    .detach();
+}
+
+/// The screen area as the popover sees it: its rail-side edge moved onto the notch, which
+/// may have been dragged off the screen edge.
+fn popover_area(screen: Bounds<Pixels>, notch: Bounds<Pixels>, edge: Edge) -> Bounds<Pixels> {
+    let mut area = screen;
+    match edge {
+        Edge::Right => area.size.width = notch.origin.x + notch.size.width - screen.origin.x,
+        Edge::Left => {
+            area.origin.x = notch.origin.x;
+            area.size.width = screen.origin.x + screen.size.width - notch.origin.x;
+        }
+        Edge::Bottom => area.size.height = notch.origin.y + notch.size.height - screen.origin.y,
+        Edge::Top => {
+            area.origin.y = notch.origin.y;
+            area.size.height = screen.origin.y + screen.size.height - notch.origin.y;
+        }
+    }
+    area
 }
 
 /// Opens the notch on the primary display.
@@ -438,7 +590,7 @@ pub fn set_hover(store: &Entity<Store>, which: usize, hovered: bool, cx: &mut Ap
 pub fn fold(store: &Entity<Store>, cx: &mut App) {
     close_popover(store, cx);
     let generation = store.update(cx, |s, cx| {
-        if !s.config.settings.auto_hide || s.collapsed {
+        if !s.config.settings.auto_hide || s.collapsed || s.dragging {
             return None;
         }
         s.folding = true;
@@ -577,6 +729,9 @@ fn paint_flares(window: &mut Window, bounds: Bounds<Pixels>, edge: Edge, rail: B
 
 pub struct Rail {
     store: Entity<Store>,
+    /// The primary display, in case Windows cannot tell its work area.
+    display: Bounds<Pixels>,
+    /// The work area of the display the notch is on.
     screen: Bounds<Pixels>,
     hovered: bool,
     /// Last (bounds, visible) given to Windows, to skip redundant calls.
@@ -604,8 +759,8 @@ impl Rail {
         .detach();
         let mut rail = Self {
             store,
-            // Keep clear of the taskbar, whichever edge it is on.
-            screen: desktop::work_area(window.scale_factor()).unwrap_or(screen),
+            display: screen,
+            screen,
             hovered: false,
             applied: None,
             reveals: 0,
@@ -620,6 +775,9 @@ impl Rail {
 
     fn apply(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let s = self.store.read(cx);
+        // Keep clear of the taskbar, whichever edge it is on, on the display the grip chose.
+        let monitor = s.config.settings.widget_placement.as_ref().and_then(|p| p.monitor.as_deref());
+        self.screen = desktop::work_area(window.scale_factor(), monitor).unwrap_or(self.display);
         let next = (notch_bounds(self.screen, s), s.visible());
         if self.applied == Some(next) {
             return;
@@ -687,7 +845,7 @@ impl Render for Rail {
         let interval = s.config.settings.poll_seconds;
         let now = chrono::Utc::now().timestamp();
         let french = s.french();
-        let area = self.screen;
+        let area = popover_area(self.screen, layout.window, edge);
         let rail_bounds = layout.rail;
         let accounts = s.enabled();
         let view = cx.entity().downgrade();
@@ -801,6 +959,7 @@ impl Render for Rail {
         let auto_hide = s.config.settings.auto_hide;
         let fold_store = self.store.clone();
         let settings_store = self.store.clone();
+        let grip_store = self.store.clone();
         let tools = div()
             .absolute()
             .left(layout.tools.origin.x)
@@ -856,7 +1015,9 @@ impl Render for Rail {
                     .flex()
                     .items_center()
                     .justify_center()
-                    .child(icon("grip-vertical", 14., rgb(0xd0d0d0))),
+                    .cursor_grab()
+                    .child(icon("grip-vertical", 14., rgb(0xd0d0d0)))
+                    .on_mouse_down(MouseButton::Left, move |_, window, cx| drag(&grip_store, window, cx)),
             );
 
         // Reveal slides the rail in from its edge and fades it in; folding plays it backward
@@ -1041,7 +1202,8 @@ fn open_popover(
     area: Bounds<Pixels>,
     cx: &mut App,
 ) {
-    if store.read(cx).selected.as_deref() == Some(id.as_str()) {
+    // Already open, or the grip is dragging the rings under the pointer.
+    if store.read(cx).selected.as_deref() == Some(id.as_str()) || store.read(cx).dragging {
         return;
     }
     let edge = Edge::of(store.read(cx));

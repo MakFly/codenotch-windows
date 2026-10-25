@@ -11,6 +11,9 @@ use gpui::{
 };
 use std::time::Duration;
 
+/// Hover group of a quick-connect row, so its actions can react to the whole row.
+const ROW_GROUP: &str = "quick-row";
+
 pub(crate) fn statuses() -> Vec<ProviderStatus> {
     login::PROVIDERS
         .iter()
@@ -358,8 +361,9 @@ impl SettingsView {
         let path = status.cli_path.clone();
         let waiting = self.login.as_ref().is_some_and(|l| l.provider == p);
         let (status_pill, action) = if waiting {
-            (pill(Tone::Info, t(french, "Connexion en cours")), self.waiting_action(french, cx))
+            (Some(pill(Tone::Info, t(french, "Connexion en cours"))), self.waiting_action(french, cx))
         } else if tracked_now {
+            // Icon only at rest; the label shows while the row is hovered.
             let reconnect = div()
                 .id(SharedString::from(format!("reconnect-{p}")))
                 .flex()
@@ -373,15 +377,17 @@ impl SettingsView {
                 .border_color(rgba(0x00000000))
                 .text_size(px(12.))
                 .text_color(rgb(0xc3c3c8))
-                .opacity(0.7)
+                .opacity(0.6)
                 .cursor_pointer()
-                .hover(|d| d.opacity(1.).bg(rgba(0xffffff0f)).border_color(rgb(0x3b3b3f)).text_color(rgb(0xffffff)))
+                .group_hover(ROW_GROUP, |s| s.opacity(1.))
+                .hover(|d| d.bg(rgba(0xffffff0f)).border_color(rgb(0x3b3b3f)).text_color(rgb(0xffffff)))
                 .tooltip(crate::settings::tip(t(french, "Relancer la connexion officielle")))
                 .child(icon("refresh-cw", 14., 0xc3c3c8))
-                .child(t(french, "Reconnecter"))
+                .child(div().opacity(0.).group_hover(ROW_GROUP, |s| s.opacity(1.)).child(t(french, "Reconnecter")))
                 .when(self.login.is_none(), |d| d.on_click(self.quick_sign_in(p.clone(), cx)))
                 .into_any_element();
-            (pill(Tone::Ok, t(french, "Suivi dans l’encoche")), reconnect)
+            // The "In the notch" group label already says it: no pill.
+            (None, reconnect)
         } else {
             let provider = p.clone();
             let add = button(
@@ -399,7 +405,7 @@ impl SettingsView {
                     this.refresh_now(cx);
                 }))),
             );
-            (pill(Tone::Warn, t(french, "Connecté sur ce PC")), add)
+            (Some(pill(Tone::Warn, t(french, "Connecté sur ce PC"))), add)
         };
         let source = path.map(|path| {
             let (file, place) = short_source(&path, french);
@@ -441,7 +447,7 @@ impl SettingsView {
                 button(SharedString::from(format!("sign-in-{p}")), Kind::Primary, Some("log-in"), t(french, "Se connecter"), click),
             )
         };
-        self.row(&p, french, status_pill, Some(hint), None, action)
+        self.row(&p, french, Some(status_pill), Some(hint), None, action)
     }
 
     fn waiting_action(&self, french: bool, cx: &mut Context<Self>) -> AnyElement {
@@ -487,12 +493,13 @@ impl SettingsView {
         &self,
         provider: &str,
         french: bool,
-        status_pill: AnyElement,
+        status_pill: Option<AnyElement>,
         hint: Option<String>,
         source: Option<AnyElement>,
         action: AnyElement,
     ) -> AnyElement {
         div()
+            .group(ROW_GROUP)
             .flex()
             .items_center()
             .gap(px(14.))
@@ -512,7 +519,7 @@ impl SettingsView {
                             .items_center()
                             .gap(px(8.))
                             .child(div().text_size(px(13.)).font_weight(FontWeight::MEDIUM).child(t(french, &name(provider, true))))
-                            .child(status_pill),
+                            .children(status_pill),
                     )
                     .when_some(hint, |d, hint| d.child(div().mt(px(4.)).text_size(px(11.)).text_color(rgb(0x9999a2)).child(hint)))
                     .children(source),
@@ -538,23 +545,33 @@ impl SettingsView {
             .border_1()
             .border_color(rgba(0xffffff12))
             .bg(rgba(0xffffff05))
+            // The "Available" group label already says the CLI is missing: no pill, so the
+            // description gets the whole width.
             .child(
                 div()
                     .flex()
-                    .items_center()
+                    .items_start()
                     .gap(px(12.))
-                    .child(provider_icon(&p, 20.))
+                    .child(div().mt(px(1.)).child(provider_icon(&p, 20.)))
                     .child(
                         div()
                             .flex_1()
                             .min_w_0()
                             .child(div().text_size(px(13.)).font_weight(FontWeight::MEDIUM).child(t(french, &name(&p, true))))
-                            .child(div().mt(px(2.)).text_size(px(11.)).text_color(rgb(0x9999a2)).child(crate::account_form::description(&p, french))),
-                    )
-                    .child(pill(Tone::Idle, t(french, "CLI absent"))),
+                            .child(
+                                div()
+                                    .mt(px(2.))
+                                    .text_size(px(11.))
+                                    .line_height(px(16.))
+                                    .text_color(rgb(0x9999a2))
+                                    .child(crate::account_form::description(&p, french)),
+                            ),
+                    ),
             )
             .child(
+                // Pinned to the bottom, so two cards of a row line up whatever their text.
                 div()
+                    .mt_auto()
                     .flex()
                     .items_center()
                     .gap(px(8.))
@@ -633,7 +650,14 @@ impl SettingsView {
 
     /// Quick connect: a summary, the sessions in the notch, those to connect, and the CLIs
     /// still to install.
-    pub(crate) fn quick_connect(&mut self, french: bool, heading: &str, intro: bool, cx: &mut Context<Self>) -> AnyElement {
+    pub(crate) fn quick_connect(
+        &mut self,
+        french: bool,
+        heading: &str,
+        intro: bool,
+        catalog: bool,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         let accounts = self.store.read(cx).config.accounts.clone();
         let (mut in_notch, mut to_connect, mut to_install) = (vec![], vec![], vec![]);
         for i in 0..self.statuses.len() {
@@ -710,7 +734,7 @@ impl SettingsView {
             .into_iter()
             .map(|i| self.other_cli_row(i, french, cx))
             .collect();
-        let all_agents = self.all_agents(french, cx);
+        let all_agents = catalog.then(|| self.all_agents(french, cx));
         let install_cards: Vec<AnyElement> = to_install.iter().map(|&i| self.install_card(i, french, cx)).collect();
         // Two cards per line, like the mock's grid.
         let mut install_grid: Vec<AnyElement> = vec![];
@@ -774,7 +798,7 @@ impl SettingsView {
                 d.child(div().mt(px(20.)).child(group_label(t(french, "Autres CLI installés"))))
                     .child(row_card(other_rows, false))
             })
-            .child(all_agents)
+            .children(all_agents)
             .into_any_element()
     }
 
@@ -782,25 +806,90 @@ impl SettingsView {
         self.update_settings(cx, |s| s.onboarding_done = Some(true));
     }
 
+    /// Two segments, so switching language is one click and no menu.
+    fn language_toggle(&self, french: bool, cx: &mut Context<Self>) -> AnyElement {
+        let segment = |code: &'static str, label: &'static str, on: bool, click: crate::settings::Click| {
+            div()
+                .id(SharedString::from(format!("welcome-lang-{code}")))
+                .flex()
+                .items_center()
+                .h_full()
+                .px(px(8.))
+                .rounded(px(4.))
+                .text_size(px(11.))
+                .font_weight(FontWeight::MEDIUM)
+                .when(on, |d| d.bg(rgb(0x3a3a3f)).text_color(rgb(0xffffff)))
+                .when(!on, |d| {
+                    d.text_color(rgb(0x9a9aa3))
+                        .cursor_pointer()
+                        .hover(|d| d.text_color(rgb(0xffffff)))
+                        .on_click(click)
+                })
+                .child(label)
+        };
+        div()
+            .flex()
+            .flex_none()
+            .items_center()
+            .gap(px(2.))
+            .h(px(28.))
+            .p(px(2.))
+            .rounded(px(6.))
+            .border_1()
+            .border_color(rgb(0x414147))
+            .bg(rgb(0x1c1c1f))
+            .child(div().px(px(6.)).child(icon("languages", 14., 0x9a9aa3)))
+            .child(segment("fr", "FR", french, self.setting(cx, |s| s.language = "fr".into())))
+            .child(segment("en", "EN", !french, self.setting(cx, |s| s.language = "en".into())))
+            .into_any_element()
+    }
+
     pub(crate) fn welcome(&mut self, french: bool, cx: &mut Context<Self>) -> AnyElement {
         let count = self.store.read(cx).enabled().len();
-        let language = self.select(
-            "welcome-language",
-            if french { "Français".into() } else { "English".into() },
-            [("en", "English"), ("fr", "Français")]
-                .into_iter()
-                .map(|(code, label)| (label.to_owned(), (code == "fr") == french, self.setting(cx, move |s| s.language = code.into())))
-                .collect(),
-            140.,
-            cx,
-        );
-        let subscriptions = self.quick_connect(french, "Tes abonnements", false, cx);
-        let steps = [
-            ("Connecte", "Clique « Se connecter » et termine dans le navigateur."),
-            ("Survole", "Passe la souris sur la languette au bord de l’écran (à droite par défaut) pour voir tes quotas."),
-            ("Ajuste", "Copilot, Ollama, la position et les alertes se règlent ensuite dans les réglages."),
-        ];
+        let language = self.language_toggle(french, cx);
+        let subscriptions = self.quick_connect(french, "Tes abonnements", false, false, cx);
         let banner = self.message.clone().map(|(ok, text)| message(ok, text));
+
+        let header = div()
+            .mb(px(20.))
+            .w_full()
+            .child(
+                div()
+                    .flex()
+                    .items_start()
+                    .justify_between()
+                    .gap(px(16.))
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .child(
+                                div()
+                                    .mb(px(6.))
+                                    .text_size(px(10.5))
+                                    .font_weight(FontWeight::SEMIBOLD)
+                                    .text_color(rgb(0xb8cbe6))
+                                    .child(t(french, "Bienvenue dans CodeNotch").to_uppercase()),
+                            )
+                            .child(
+                                div()
+                                    .text_size(px(24.))
+                                    .font_weight(FontWeight::SEMIBOLD)
+                                    .child(t(french, "Connecte tes abonnements IA")),
+                            ),
+                    )
+                    .child(language),
+            )
+            .child(
+                div()
+                    .mt(px(8.))
+                    .w_full()
+                    .max_w(px(580.))
+                    .text_size(px(12.5))
+                    .line_height(px(20.))
+                    .text_color(rgb(MUTED))
+                    .child(t(french, "Tes quotas ChatGPT, Claude, Gemini, Grok et OpenCode, dans une petite encoche au bord de l’écran. La connexion se fait chez le fournisseur : CodeNotch ne voit jamais ton mot de passe.")),
+            );
 
         let body = div()
             .id("welcome-scroll")
@@ -821,75 +910,9 @@ impl SettingsView {
                     .flex()
                     .flex_col()
                     .children(banner)
-                    .child(
-                        div()
-                            .mb(px(22.))
-                            .w_full()
-                            .child(
-                                div()
-                                    .mb(px(16.))
-                                    .flex()
-                                    .items_center()
-                                    .justify_between()
-                                    .gap(px(12.))
-                                    .child(
-                                        div()
-                                            .px(px(10.))
-                                            .py(px(4.))
-                                            .rounded_full()
-                                            .bg(rgb(0x24303f))
-                                            .text_size(px(11.))
-                                            .font_weight(FontWeight::MEDIUM)
-                                            .text_color(rgb(0xb8cbe6))
-                                            .child(t(french, "Bienvenue")),
-                                    )
-                                    .child(language),
-                            )
-                            .child(
-                                div()
-                                    .mb(px(8.))
-                                    .text_size(px(24.))
-                                    .font_weight(FontWeight::SEMIBOLD)
-                                    .child(t(french, "Connecte tes abonnements IA")),
-                            )
-                            .child(
-                                div()
-                                    .w_full()
-                                    .max_w(px(560.))
-                                    .text_size(px(12.5))
-                                    .line_height(px(20.))
-                                    .text_color(rgb(MUTED))
-                                    .child(t(french, "CodeNotch affiche les quotas de ChatGPT, Claude, Gemini, Grok et OpenCode dans une petite encoche au bord de l’écran. Connecte au moins un compte : la connexion se fait chez le fournisseur, CodeNotch ne voit jamais ton mot de passe.")),
-                            ),
-                    )
-                    .child(subscriptions)
-                    .child(
-                        div()
-                            .mt(px(22.))
-                            .flex()
-                            .gap(px(12.))
-                            .children(steps.into_iter().enumerate().map(|(i, (title, text))| {
-                                div()
-                                    .flex_1()
-                                    .min_w_0()
-                                    .flex()
-                                    .flex_col()
-                                    .gap(px(4.))
-                                    .p(px(12.))
-                                    .rounded(px(8.))
-                                    .border_1()
-                                    .border_color(rgba(0xffffff12))
-                                    .child(
-                                        div()
-                                            .flex()
-                                            .text_size(px(12.))
-                                            .font_weight(FontWeight::MEDIUM)
-                                            .child(div().text_color(rgb(0x8f8f96)).child(format!("{}.\u{a0}", i + 1)))
-                                            .child(t(french, title)),
-                                    )
-                                    .child(div().text_size(px(11.)).line_height(px(16.5)).text_color(rgb(0x9999a2)).child(t(french, text)))
-                            })),
-                    ),
+                    .child(header)
+                    .child(stepper(if count > 0 { 1 } else { 0 }, french))
+                    .child(subscriptions),
             );
 
         let finish = button(
@@ -912,17 +935,20 @@ impl SettingsView {
             .border_color(rgba(0xffffff12))
             .bg(rgb(0x121214))
             .child(div().flex_1().text_size(px(11.)).text_color(rgb(0x9999a2)).child(match count {
-                0 => t(french, "Aucun compte connecté pour l’instant"),
+                0 => t(french, "Connecte au moins un compte pour terminer."),
                 1 => t(french, "{count} compte suivi").replace("{count}", "1"),
                 n => t(french, "{count} comptes suivis").replace("{count}", &n.to_string()),
             }))
-            .child(button(
-                "welcome-later",
-                Kind::Secondary,
-                None,
-                t(french, "Plus tard"),
-                Some(Box::new(cx.listener(|this, _: &ClickEvent, _, cx| this.finish_onboarding(cx)))),
-            ))
+            // Once an account is tracked, "Later" would do the same as "Finish".
+            .when(count == 0, |d| {
+                d.child(button(
+                    "welcome-later",
+                    Kind::Secondary,
+                    None,
+                    t(french, "Plus tard"),
+                    Some(Box::new(cx.listener(|this, _: &ClickEvent, _, cx| this.finish_onboarding(cx)))),
+                ))
+            })
             .child(finish);
 
         div()
@@ -934,4 +960,75 @@ impl SettingsView {
             .child(footer)
             .into_any_element()
     }
+}
+
+/// The three first-run steps as a strip: done ones checked, the current one lit.
+pub(crate) fn stepper(active: usize, french: bool) -> AnyElement {
+    let steps = [
+        ("Connecte", "Un compte suffit pour commencer."),
+        ("Survole", "Passe la souris sur la languette au bord de l’écran."),
+        ("Ajuste", "Position, alertes et autres comptes dans les réglages."),
+    ];
+    let last = steps.len() - 1;
+    div()
+        .mb(px(24.))
+        .flex()
+        .gap(px(12.))
+        .children(steps.into_iter().enumerate().map(move |(i, (title, text))| {
+            let (done, current) = (i < active, i == active);
+            let badge = div()
+                .size(px(22.))
+                .flex_none()
+                .flex()
+                .items_center()
+                .justify_center()
+                .rounded_full()
+                .text_size(px(11.))
+                .font_weight(FontWeight::SEMIBOLD)
+                .when(done, |d| d.bg(rgba(0x7fd69b26)).child(icon("check", 12., 0x7fd69b)))
+                .when(current, |d| d.bg(rgb(0xe7e7eb)).text_color(rgb(0x17171a)).child((i + 1).to_string()))
+                .when(!done && !current, |d| {
+                    d.border_1().border_color(rgb(0x414147)).text_color(rgb(0x77777f)).child((i + 1).to_string())
+                });
+            div()
+                .flex_1()
+                .min_w_0()
+                .flex()
+                .flex_col()
+                .gap(px(6.))
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap(px(8.))
+                        .child(badge)
+                        .child(
+                            div()
+                                .flex_none()
+                                .text_size(px(12.5))
+                                .font_weight(FontWeight::MEDIUM)
+                                .text_color(if current {
+                                    rgb(0xffffff)
+                                } else if done {
+                                    rgb(0xc3c3c8)
+                                } else {
+                                    rgb(0x8f8f96)
+                                })
+                                .child(t(french, title)),
+                        )
+                        .when(i < last, |d| {
+                            d.child(div().flex_1().h(px(1.)).bg(if done { rgba(0x7fd69b40) } else { rgba(0xffffff14) }))
+                        }),
+                )
+                .child(
+                    div()
+                        .pl(px(30.))
+                        .pr(px(8.))
+                        .text_size(px(11.))
+                        .line_height(px(16.))
+                        .text_color(if current { rgb(0x9999a2) } else { rgb(0x6b6b72) })
+                        .child(t(french, text)),
+                )
+        }))
+        .into_any_element()
 }

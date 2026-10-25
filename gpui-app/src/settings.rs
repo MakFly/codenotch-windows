@@ -23,13 +23,14 @@ pub(crate) const DANGER: u32 = 0xf1a1a1;
 
 /// The two parts of the Accounts page, shown one at a time; adding goes through « Ajouter ».
 #[derive(Clone, Copy, PartialEq)]
-enum AccountsTab {
+pub(crate) enum AccountsTab {
     Configured,
     Quick,
 }
 
 #[derive(Clone, Copy, PartialEq)]
-enum Section {
+pub(crate) enum Section {
+    Home,
     Accounts,
     Appearance,
     Alerts,
@@ -83,7 +84,7 @@ fn title(french: bool) -> String {
 
 pub struct SettingsView {
     pub(crate) store: Entity<Store>,
-    section: Section,
+    pub(crate) section: Section,
     /// Result of the last action: (success, text).
     pub(crate) message: Option<(bool, String)>,
     /// The account being added or edited, shown as a dialog.
@@ -100,13 +101,16 @@ pub struct SettingsView {
     /// The open dropdown, by id.
     open_select: Option<&'static str>,
     /// The open accordion item of the Appearance and Alerts pages.
-    accounts_tab: AccountsTab,
+    pub(crate) accounts_tab: AccountsTab,
+    /// The start guide of the Home page is unfolded.
     appearance_open: Option<&'static str>,
     alerts_open: Option<&'static str>,
     /// The install command just copied, shown as « Copié » for a moment.
     pub(crate) copied: Option<String>,
-    /// CodeNotch's own CPU and memory, shown in the header while this window is open.
+    /// The computer's CPU, memory and GPU use, shown in the header while this window is open.
     usage: crate::usage::Usage,
+    /// The "Check" button of the updates section is waiting for the release feed.
+    checking: bool,
 }
 
 impl SettingsView {
@@ -143,7 +147,7 @@ impl SettingsView {
         .detach();
         Self {
             store,
-            section: Section::Accounts,
+            section: Section::Home,
             message: None,
             editor: None,
             login: None,
@@ -157,7 +161,96 @@ impl SettingsView {
             alerts_open: Some("discord"),
             usage: crate::usage::Usage::default(),
             copied: None,
+            checking: false,
         }
+    }
+
+    /// The manual check of the updates section; a found release shows as the banner.
+    fn check_update(&mut self, cx: &mut Context<Self>) {
+        if self.checking {
+            return;
+        }
+        self.checking = true;
+        self.message = None;
+        cx.notify();
+        let store = self.store.clone();
+        cx.spawn(async move |this, cx| {
+            let result = crate::store::check_update(&store, false, cx).await;
+            let _ = this.update(cx, |view, cx| {
+                view.checking = false;
+                let french = view.store.read(cx).french();
+                view.message = match result {
+                    Ok(true) => None,
+                    Ok(false) => Some((true, t(french, "CodeNotch est à jour."))),
+                    Err(error) => Some((false, t(french, &error))),
+                };
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn install_update(&mut self, cx: &mut Context<Self>) {
+        self.message = None;
+        let store = self.store.clone();
+        cx.spawn(async move |this, cx| {
+            // On success the process has already quit for the installer.
+            if let Err(error) = crate::store::install_update(&store, cx).await {
+                let _ = this.update(cx, |view, cx| {
+                    let french = view.store.read(cx).french();
+                    view.message = Some((false, t(french, &error)));
+                    cx.notify();
+                });
+            }
+        })
+        .detach();
+    }
+
+    /// `.update-banner`: a signed release is ready, installed in one click.
+    fn update_banner(&mut self, version: &str, french: bool, cx: &mut Context<Self>) -> AnyElement {
+        let installing = self.store.read(cx).installing;
+        let text = if installing {
+            t(french, "Téléchargement et vérification de la signature… CodeNotch redémarrera tout seul.")
+        } else {
+            t(french, "Version actuelle : {current}. La mise à jour est signée et s’installe en un clic.")
+                .replace("{current}", crate::updater::current())
+        };
+        div()
+            .flex()
+            .items_center()
+            .gap(px(10.))
+            .p(px(12.))
+            .mb(px(18.))
+            .rounded(px(6.))
+            .text_size(px(12.))
+            .line_height(px(18.))
+            .bg(rgb(0x24303f))
+            .text_color(rgb(0xb8cbe6))
+            .child(icon("download", 16., 0xb8cbe6))
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .flex()
+                    .flex_col()
+                    .child(
+                        div()
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .text_color(rgb(0xffffff))
+                            .child(t(french, "CodeNotch {version} est disponible").replace("{version}", version)),
+                    )
+                    .child(text),
+            )
+            .child(button(
+                "install-update",
+                Kind::Primary,
+                Some(if installing { "loader-circle" } else { "download" }),
+                if installing { t(french, "Mise à jour…") } else { t(french, "Mettre à jour") },
+                (!installing).then(|| -> Click {
+                    Box::new(cx.listener(|this, _: &ClickEvent, _, cx| this.install_update(cx)))
+                }),
+            ))
+            .into_any_element()
     }
 
     pub(crate) fn say(&mut self, ok: bool, text: String, cx: &mut Context<Self>) {
@@ -614,7 +707,7 @@ fn interval_label(n: u64, french: bool) -> String {
     }
 }
 
-fn position_label(edge: &str) -> &'static str {
+pub(crate) fn position_label(edge: &str) -> &'static str {
     match edge {
         "left" => "À gauche",
         "top" => "En haut",
@@ -695,7 +788,7 @@ impl SettingsView {
         let mut out = vec![self.accounts_tabs(french, accounts.len(), cx)];
         if tab == AccountsTab::Quick {
             // The tab names the section, so the block keeps only its intro and summary.
-            out.push(self.quick_connect(french, "", true, cx));
+            out.push(self.quick_connect(french, "", true, true, cx));
             return out;
         }
 
@@ -866,8 +959,15 @@ impl SettingsView {
                     t(french, "Version {version}. CodeNotch vérifie au démarrage puis deux fois par jour ; chaque mise à jour est signée avant d’être installée.")
                         .replace("{version}", version),
                 ),
-                // The signed updater is not ported to the prototype yet.
-                button("check-update", Kind::Secondary, Some("refresh-cw"), t(french, "Vérifier"), None),
+                button(
+                    "check-update",
+                    Kind::Secondary,
+                    Some(if self.checking { "loader-circle" } else { "refresh-cw" }),
+                    if self.checking { t(french, "Vérification…") } else { t(french, "Vérifier") },
+                    (!self.checking).then(|| -> Click {
+                        Box::new(cx.listener(|this, _: &ClickEvent, _, cx| this.check_update(cx)))
+                    }),
+                ),
             )],
             cx,
         );
@@ -1175,6 +1275,10 @@ impl Render for SettingsView {
         }
 
         let (heading, intro, action, content) = match self.section {
+            Section::Home => {
+                let (heading, intro, action) = self.home_heading(french, cx);
+                (heading, intro, Some(action), self.home_page(french, cx))
+            }
             Section::Accounts => (
                 t(french, "Comptes"),
                 t(french, "Choisissez les comptes affichés dans l’encoche."),
@@ -1209,8 +1313,38 @@ impl Render for SettingsView {
             ),
         };
 
+        let pending = self.store.read(cx).update.as_ref().map(|r| r.version.clone());
+        let installing = self.store.read(cx).installing;
+        let update_pill = pending.clone().map(|version| {
+            div()
+                .id("update-pill")
+                .mt(px(4.))
+                .flex()
+                .items_center()
+                .gap(px(5.))
+                .px(px(8.))
+                .py(px(4.))
+                .rounded_full()
+                .bg(rgb(0x24303f))
+                .text_color(rgb(0xb8cbe6))
+                .text_size(px(11.))
+                .when(!installing, |d| {
+                    d.cursor_pointer()
+                        .hover(|d| d.bg(rgb(0x2c3b4e)))
+                        .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.install_update(cx)))
+                })
+                .child(icon(if installing { "loader-circle" } else { "download" }, 13., 0xb8cbe6))
+                .child(if installing {
+                    t(french, "Mise à jour…")
+                } else {
+                    t(french, "Mise à jour {version}").replace("{version}", &version)
+                })
+        });
+        let update_banner = pending.map(|version| self.update_banner(&version, french, cx));
+
         let count = self.store.read(cx).enabled().len();
         let nav = [
+            (Section::Home, "house", "Accueil"),
             (Section::Accounts, "users-round", "Comptes"),
             (Section::Appearance, "settings-2", "Apparence"),
             (Section::Alerts, "bell", "Alertes"),
@@ -1269,7 +1403,8 @@ impl Render for SettingsView {
                     .text_size(px(10.))
                     .text_color(rgb(0x94949b))
                     .child(t(french, "Adaptation Windows"))
-                    .child(t(french, "v{version} · locale").replace("{version}", env!("CARGO_PKG_VERSION"))),
+                    .child(t(french, "v{version} · locale").replace("{version}", env!("CARGO_PKG_VERSION")))
+                    .children(update_pill),
             );
 
         let page_heading = div()
@@ -1321,6 +1456,7 @@ impl Render for SettingsView {
                             .px(px(30.))
                             .pt(px(12.))
                             .pb(px(28.))
+                            .children(update_banner)
                             .children(banner)
                             .children(content),
                     ),
@@ -1392,7 +1528,7 @@ fn titlebar(usage: String) -> AnyElement {
                 .h_full()
                 .flex()
                 .items_center()
-                // The whole app's real use (notch included), as Task Manager reports it.
+                // The whole computer's use, as Task Manager's Performance tab reports it.
                 .child(
                     div()
                         .mr(px(10.))

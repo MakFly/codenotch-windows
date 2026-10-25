@@ -1,6 +1,6 @@
-# CodeNotch — GPUI prototype
+# CodeNotch — GPUI app
 
-Experimental native rewrite of the notch with [GPUI](https://gpui.rs), Zed's GPU UI framework.
+Native rewrite of the notch, shipped since 0.2.0, with [GPUI](https://gpui.rs), Zed's GPU UI framework.
 No WebView: the provider code from `src-tauri/src` (`model`, `providers`, `claude`, `codex`,
 `gemini`, `grok`, `opencode`, `login`, `alerts`) is mounted as-is with `#[path]`, so both apps
 read quotas the same way. Provider logos come from the same `src/lib/glyphs.json`.
@@ -29,7 +29,7 @@ Add `-- --settings` to open the settings window at launch.
   - Accounts: add or edit (provider, name, profile folder, JSON URL, token kept in Windows
     Credential Manager, environment variable), sign in through the official CLI, enable or
     disable, remove (with confirmation), detect local CLI profiles.
-  - Appearance: language and welcome, updates (version only), notch (show, fold, edge, full
+  - Appearance: language and welcome, updates (signed, see `updater.rs`), notch (show, fold, edge, full
     screen, game mode), poll interval.
   - About: what each reading means, as in the Tauri app.
   - Language: French or English, applied at once to the notch, the window and the tray menu;
@@ -48,5 +48,5 @@ Add `-- --settings` to open the settings window at launch.
 ## Not yet ported
 
 Alert delivery (Windows,
-Telegram, Discord); Escape to fold, drag to move (the grip is drawn only); updater. Text fields have
+Telegram, Discord); Escape to fold, drag to move (the grip is drawn only). Text fields have
 no Tab navigation or undo yet.

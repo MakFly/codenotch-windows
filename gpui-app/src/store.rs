@@ -21,10 +21,18 @@ pub struct Store {
     pub folding: bool,
     /// Bumped on every hover change so a pending fold can tell it is outdated.
     pub fold_generation: u64,
+    /// The grip is held: the notch follows the pointer and must not fold meanwhile.
+    pub dragging: bool,
     pub fullscreen: bool,
     /// A bot token / webhook is stored in Windows Credential Manager.
     pub telegram_saved: bool,
     pub discord_saved: bool,
+    /// A newer signed release, found by the background check or the settings button.
+    pub update: Option<crate::updater::Release>,
+    /// The installer is downloading; CodeNotch quits once it starts.
+    pub installing: bool,
+    /// The version a notification already announced, so each one is announced once.
+    pub update_notified: Option<String>,
 }
 
 impl Store {
@@ -43,9 +51,13 @@ impl Store {
             hover: [false; 2],
             fold_generation: 0,
             folding: false,
+            dragging: false,
             fullscreen: false,
             telegram_saved: telegram::saved_token().is_some(),
             discord_saved: discord::saved_webhook().is_some(),
+            update: None,
+            installing: false,
+            update_notified: None,
         }
     }
 
@@ -246,6 +258,12 @@ impl Store {
         Ok(added)
     }
 
+    /// Saves the edge and spot the grip docked the notch to, already set while dragging.
+    pub fn save_dock(&mut self) -> Result<(), String> {
+        let next = self.config.clone();
+        self.commit(next)
+    }
+
     fn commit(&mut self, next: Config) -> Result<(), String> {
         if let Some(error) = &self.storage_error {
             return Err(error.clone());
@@ -288,6 +306,55 @@ impl Store {
         };
         self.readings.insert(account.id, reading);
     }
+}
+
+/// Asks the release feed for a newer build and records it. `announce` shows a Windows
+/// notification, once per version, for the background checks.
+pub async fn check_update(store: &Entity<Store>, announce: bool, cx: &mut AsyncApp) -> Result<bool, String> {
+    let runtime = RUNTIME.get().expect("tokio runtime");
+    let found = runtime
+        .spawn(crate::updater::check())
+        .await
+        .map_err(|_| "Vérification des mises à jour indisponible.".to_owned())??;
+    let _ = store.update(cx, |s, cx| {
+        if let Some(release) = found.as_ref().filter(|r| announce && s.update_notified.as_deref() != Some(&r.version)) {
+            s.update_notified = Some(release.version.clone());
+            crate::updater::notify(&release.version, s.french());
+        }
+        s.update = found.clone();
+        cx.notify();
+    });
+    Ok(found.is_some())
+}
+
+/// Downloads and verifies the pending release, starts its installer and quits, as the
+/// Tauri updater did; the installer relaunches CodeNotch on the new version.
+pub async fn install_update(store: &Entity<Store>, cx: &mut AsyncApp) -> Result<(), String> {
+    let release = store
+        .update(cx, |s, cx| {
+            let release = s.update.clone().filter(|_| !s.installing)?;
+            s.installing = true;
+            cx.notify();
+            Some(release)
+        })
+        .ok()
+        .flatten()
+        .ok_or("Aucune mise à jour en attente. Vérifie à nouveau.")?;
+    let runtime = RUNTIME.get().expect("tokio runtime");
+    let result = runtime
+        .spawn(crate::updater::download(release))
+        .await
+        .map_err(|_| "Échec du téléchargement ou de la vérification de la mise à jour.".to_owned())
+        .and_then(|path| path)
+        .and_then(|path| crate::updater::run_installer(&path));
+    if result.is_ok() {
+        std::process::exit(0);
+    }
+    let _ = store.update(cx, |s, cx| {
+        s.installing = false;
+        cx.notify();
+    });
+    result
 }
 
 pub async fn poll(store: &Entity<Store>, force: bool, cx: &mut AsyncApp) {

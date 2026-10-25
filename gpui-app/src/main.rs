@@ -30,10 +30,12 @@ mod agents;
 mod assets;
 mod channels;
 mod desktop;
+mod home;
 mod input;
 mod settings;
 mod store;
 mod tray;
+mod updater;
 mod usage;
 mod welcome;
 mod ui;
@@ -77,6 +79,17 @@ fn main() {
                 });
             }
             cx.background_executor().timer(Duration::from_secs(1)).await;
+        })
+        .detach();
+        // Like the Tauri app: shortly after launch, then twice a day. Errors stay silent
+        // since the settings offer a manual check.
+        let updates = store.clone();
+        cx.spawn(async move |cx| {
+            cx.background_executor().timer(Duration::from_secs(20)).await;
+            loop {
+                let _ = store::check_update(&updates, true, cx).await;
+                cx.background_executor().timer(Duration::from_secs(12 * 3600)).await;
+            }
         })
         .detach();
         cx.spawn(async move |cx| loop {

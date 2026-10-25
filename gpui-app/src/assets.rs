@@ -27,7 +27,7 @@ icons!(
     "circle-alert", "check", "chevrons-right", "bell", "download", "loader-circle", "send",
     "timer", "languages", "webhook", "log-in", "search", "chevron-right", "chevron-down",
     "chevron-up", "shield-check", "trash-2", "monitor", "external-link", "sliders-horizontal",
-    "terminal", "copy",
+    "terminal", "copy", "house",
 );
 
 /// Path of a bundled Lucide icon, for `svg().path(..)`.

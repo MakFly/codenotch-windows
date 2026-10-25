@@ -132,28 +132,103 @@ pub fn pointer_over(window: &Window) -> bool {
     window.is_window_hovered()
 }
 
-/// The primary display minus the taskbar, in logical pixels.
 #[cfg(windows)]
-pub fn work_area(scale: f32) -> Option<Bounds<Pixels>> {
+fn logical(r: windows_sys::Win32::Foundation::RECT, scale: f32) -> Bounds<Pixels> {
     use gpui::{point, px, size};
+    let l = |v: i32| px(v as f32 / scale);
+    Bounds { origin: point(l(r.left), l(r.top)), size: size(l(r.right - r.left), l(r.bottom - r.top)) }
+}
+
+/// A display's name (`\\.\DISPLAY2`, as Tauri reports it) and its area minus the taskbar.
+#[cfg(windows)]
+fn monitor_work(monitor: windows_sys::Win32::Graphics::Gdi::HMONITOR) -> Option<(String, windows_sys::Win32::Foundation::RECT)> {
+    use windows_sys::Win32::Graphics::Gdi::{GetMonitorInfoW, MONITORINFOEXW};
+    unsafe {
+        let mut info: MONITORINFOEXW = std::mem::zeroed();
+        info.monitorInfo.cbSize = std::mem::size_of::<MONITORINFOEXW>() as u32;
+        if GetMonitorInfoW(monitor, &mut info as *mut MONITORINFOEXW as _) == 0 {
+            return None;
+        }
+        let end = info.szDevice.iter().position(|&c| c == 0).unwrap_or(info.szDevice.len());
+        Some((String::from_utf16_lossy(&info.szDevice[..end]), info.monitorInfo.rcWork))
+    }
+}
+
+/// The named display minus the taskbar, in logical pixels; the primary display when it is
+/// not connected (or none is named), so the notch can never end up out of reach.
+#[cfg(windows)]
+pub fn work_area(scale: f32, monitor: Option<&str>) -> Option<Bounds<Pixels>> {
     use windows_sys::Win32::{
-        Foundation::RECT,
+        Foundation::{LPARAM, RECT},
+        Graphics::Gdi::{EnumDisplayMonitors, HDC, HMONITOR},
         UI::WindowsAndMessaging::{SystemParametersInfoW, SPI_GETWORKAREA},
     };
+    unsafe extern "system" fn collect(monitor: HMONITOR, _: HDC, _: *mut RECT, found: LPARAM) -> i32 {
+        unsafe { (*(found as *mut Vec<HMONITOR>)).push(monitor) };
+        1
+    }
+    if let Some(name) = monitor {
+        let mut monitors: Vec<HMONITOR> = vec![];
+        unsafe { EnumDisplayMonitors(std::ptr::null_mut(), std::ptr::null(), Some(collect), &mut monitors as *mut _ as LPARAM) };
+        if let Some((_, r)) = monitors.into_iter().filter_map(monitor_work).find(|(n, _)| n == name) {
+            return Some(logical(r, scale));
+        }
+    }
     let mut r = RECT { left: 0, top: 0, right: 0, bottom: 0 };
     let ok = unsafe { SystemParametersInfoW(SPI_GETWORKAREA, 0, &mut r as *mut RECT as _, 0) };
-    (ok != 0).then(|| {
-        let logical = |v: i32| px(v as f32 / scale);
-        Bounds {
-            origin: point(logical(r.left), logical(r.top)),
-            size: size(logical(r.right - r.left), logical(r.bottom - r.top)),
-        }
-    })
+    (ok != 0).then(|| logical(r, scale))
 }
 
 #[cfg(not(windows))]
-pub fn work_area(_: f32) -> Option<Bounds<Pixels>> {
+pub fn work_area(_: f32, _: Option<&str>) -> Option<Bounds<Pixels>> {
     None
+}
+
+/// The mouse pointer, the work area of the display it is on and that display's name, in
+/// logical pixels.
+pub struct Pointer {
+    pub at: gpui::Point<Pixels>,
+    pub area: Bounds<Pixels>,
+    pub monitor: String,
+}
+
+#[cfg(windows)]
+pub fn pointer(scale: f32) -> Option<Pointer> {
+    use gpui::{point, px};
+    use windows_sys::Win32::{
+        Foundation::POINT,
+        Graphics::Gdi::{MonitorFromPoint, MONITOR_DEFAULTTONEAREST},
+        UI::WindowsAndMessaging::GetCursorPos,
+    };
+    unsafe {
+        let mut cursor = POINT { x: 0, y: 0 };
+        if GetCursorPos(&mut cursor) == 0 {
+            return None;
+        }
+        let (monitor, work) = monitor_work(MonitorFromPoint(cursor, MONITOR_DEFAULTTONEAREST))?;
+        Some(Pointer {
+            at: point(px(cursor.x as f32 / scale), px(cursor.y as f32 / scale)),
+            area: logical(work, scale),
+            monitor,
+        })
+    }
+}
+
+#[cfg(not(windows))]
+pub fn pointer(_: f32) -> Option<Pointer> {
+    None
+}
+
+/// Whether the left mouse button is held, wherever the pointer is.
+#[cfg(windows)]
+pub fn left_button_down() -> bool {
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON};
+    unsafe { GetAsyncKeyState(VK_LBUTTON as i32) as u16 & 0x8000 != 0 }
+}
+
+#[cfg(not(windows))]
+pub fn left_button_down() -> bool {
+    false
 }
 
 fn covers_monitor(client: (i32, i32, i32, i32), monitor: (i32, i32, i32, i32)) -> bool {
