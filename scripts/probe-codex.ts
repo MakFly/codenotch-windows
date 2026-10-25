@@ -75,7 +75,7 @@ await new Promise<void>((resolve, reject) => {
     id: 1,
     method: "initialize",
     params: {
-      clientInfo: { name: "smashtoken", title: "SmashToken", version: "0.1.2" },
+      clientInfo: { name: "smashtoken", title: "SmashToken", version: "0.1.3" },
       capabilities: { experimentalApi: true },
     },
   });

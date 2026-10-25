@@ -1,6 +1,6 @@
 {
   "name": "smashtoken",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "A Windows desktop notch for local AI account quotas and usage.",
   "license": "MIT",
   "author": "Kev (MakFly)",

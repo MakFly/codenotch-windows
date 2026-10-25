@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.3 — 2026-10-25
+
+- Maintenance release to exercise the built-in updater from 0.1.2: the update banner, the green “Update” button in the settings menu, the signed install and the restart. No functional change.
+
 ## 0.1.2 — 2026-10-25
 
 - **Alerts before the limit**: pace forecast (“limit in ~25 min”, only when it lands before the reset), graded warning / critical / limit-reached alerts, “quota available again” after a reset, urgent alerts in full screen, faster readings near a limit, and an alert at launch when a window is already past a threshold.
