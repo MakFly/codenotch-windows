@@ -44,6 +44,10 @@ figurent dans `SHA256SUMS.txt`.
 - Réglages séparés, formulaires en modale et notifications de seuil optionnelles.
 - Anglais par défaut, français disponible et choix enregistré.
 
+Au premier lancement, un écran d’accueil s’ouvre pour connecter vos abonnements.
+
+![Écran d’accueil avec données fictives](images/welcome.png)
+
 Dans **Réglages → Comptes → Connexion rapide**, cliquez sur **Se connecter**
 à côté de Codex / ChatGPT, Claude, Gemini, Grok ou OpenCode, puis terminez dans le navigateur.
 Codex se connecte sans terminal : CodeNotch obtient la page OAuth ChatGPT

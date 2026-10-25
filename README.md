@@ -61,6 +61,8 @@ Get-FileHash .\CodeNotch-0.1.3-windows-x64.zip -Algorithm SHA256
 
 ## Connect your accounts
 
+![Welcome screen with sample accounts](docs/images/welcome.png)
+
 On first launch, CodeNotch opens a welcome screen to connect your subscriptions
 (you can show it again from **Appearance**). Afterwards, open
 **Settings → Accounts → Quick connect** and click **Sign in** next to
@@ -77,6 +79,8 @@ Codex / ChatGPT, Claude, Gemini, Grok or OpenCode, then finish in your browser:
 CodeNotch then detects the new session and adds the account. Each row shows
 which CLI was found, or the command that installs it. CodeNotch never sees the
 authorization code or the token exchange.
+
+![Quick connect in Accounts, with sample data](docs/images/accounts.png)
 
 | Provider | Connection | Available readings |
 | --- | --- | --- |
@@ -107,7 +111,9 @@ This app does not provide native connectors for every AI service.
 
 ## Settings
 
-![English settings](docs/images/settings.png)
+![Appearance settings](docs/images/settings.png)
+
+Settings are grouped into collapsible sections (one open at a time, remembered).
 
 - **Appearance → Interface language** switches English / Français.
 - Drag the grip to save position and monitor. Choosing another edge resets placement.
@@ -128,6 +134,8 @@ Refresh intervals are 30, 60, 120 or 300 seconds. Claude enforces a minimum of
 Readings stay in memory for the session; any history comes from the provider.
 
 ## Alerts (for agents running in the background)
+
+![Alerts with Discord set up](docs/images/alerts.png)
 
 - **Graded alerts**: warning threshold (80 % by default), critical threshold
   (95 %), and limit reached. Each level fires once per window and period; jumping
