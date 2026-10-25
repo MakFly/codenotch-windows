@@ -1,23 +1,67 @@
-use crate::model::{Reading, Window as Quota};
+//! The notch: rail, fold tab and usage popover, drawn to the measurements of the Tauri
+//! app's `notch.css` so both builds look the same.
+use crate::assets::icon_path;
 use crate::desktop;
+use crate::model::{Reading, Window as Quota};
 use crate::store::{self, Store};
 use gpui::{
-    canvas, div, point, prelude::*, px, relative, rgb, rgba, svg, AnyElement, App, Bounds, Context,
-    DisplayId,
-    Entity, FontWeight, PathBuilder, Pixels, Point, Rgba, SharedString, Size, Window,
-    WindowBackgroundAppearance, WindowBounds, WindowKind, WindowOptions,
+    canvas, div, point, prelude::*, px, relative, rgb, rgba, svg, AnyElement, App, Bounds,
+    Context, DisplayId, Entity, FontWeight, PathBuilder, Pixels, Point, Rgba, SharedString, Size,
+    Window, WindowBackgroundAppearance, WindowBounds, WindowKind, WindowOptions,
 };
+use std::collections::HashMap;
 use std::f32::consts::{FRAC_PI_2, TAU};
+use std::sync::OnceLock;
 use std::time::Duration;
 
-const RAIL_WIDTH: f32 = 76.;
-const CELL: f32 = 84.;
-const PAD: f32 = 12.;
-const POPOVER_WIDTH: f32 = 300.;
-const POPOVER_GAP: f32 = 8.;
-const PEEK_WIDTH: f32 = 12.;
-const PEEK_HEIGHT: f32 = 72.;
-const TOOLS: f32 = 36.;
+// `.notch-rail` and `.provider-cell` in notch.css.
+const RAIL_THICKNESS: f32 = 74.;
+const RAIL_RADIUS: f32 = 33.;
+const RAIL_PAD_START: f32 = 23.;
+const RAIL_PAD_END: f32 = 18.;
+const H_RAIL_THICKNESS: f32 = 100.;
+const H_RAIL_PAD: f32 = 24.;
+const H_RAIL_RADIUS: f32 = 28.;
+const RING: f32 = 44.;
+const CELL_LEN: f32 = 72.;
+const CELL_WIDTH: f32 = 48.;
+const CELL_GAP: f32 = 22.;
+const H_CELL_GAP: f32 = 25.;
+/// Concave corners joining a side rail to the screen edge.
+const FLARE: f32 = 32.;
+/// `.notch-tools` sits 23 px past the rail; the settings orb is 36 px.
+const TOOLS_GAP: f32 = 23.;
+const TOOLS_SIZE: f32 = 36.;
+const TOOLS_WIDTH: f32 = 74.;
+// `.notch-peek` hit area and `.peek-indicator`.
+const PEEK_LEN: f32 = 96.;
+const PEEK_THICKNESS: f32 = 24.;
+const INDICATOR_LEN: f32 = 64.;
+const INDICATOR_THICKNESS: f32 = 10.;
+// `.usage-popover`: 310 px wide, 97 px from a side edge, 110 px from the top or bottom.
+const POPOVER_WIDTH: f32 = 310.;
+const POPOVER_SIDE_OFFSET: f32 = 97.;
+const POPOVER_END_OFFSET: f32 = 110.;
+const TAIL: f32 = 21.;
+
+const BLACK: u32 = 0x000000;
+
+/// The Tauri app's English strings, keyed by the French source text.
+fn english() -> &'static HashMap<String, String> {
+    static TABLE: OnceLock<HashMap<String, String>> = OnceLock::new();
+    TABLE.get_or_init(|| {
+        serde_json::from_str(include_str!("../../src/lib/messages.en.json")).unwrap_or_default()
+    })
+}
+
+/// Translates a source string the way the Tauri app's `t()` does.
+pub(crate) fn t(french: bool, key: &str) -> String {
+    if french {
+        key.to_owned()
+    } else {
+        english().get(key).cloned().unwrap_or_else(|| key.to_owned())
+    }
+}
 
 pub fn provider_title(provider: &str) -> &'static str {
     match provider {
@@ -27,7 +71,8 @@ pub fn provider_title(provider: &str) -> &'static str {
         "grok" => "Grok",
         "opencode" => "OpenCode",
         "copilot" => "Copilot",
-        _ => "API",
+        "ollama" => "Ollama",
+        _ => "Personnalisé",
     }
 }
 
@@ -59,17 +104,62 @@ fn headline(reading: Option<&Reading>) -> Option<&Quota> {
         .max_by(|a, b| a.used_percent.total_cmp(&b.used_percent))
 }
 
+/// `isFresh` in format.ts: a reading counts as current for two poll intervals.
+fn is_fresh(reading: Option<&Reading>, interval: u64, now: i64) -> bool {
+    reading.is_some_and(|r| {
+        r.status == "ok"
+            && r.updated_at
+                .is_some_and(|at| now - at <= (interval as i64 * 2 + 30).max(270))
+    })
+}
+
+fn status_label(status: &str) -> &'static str {
+    match status {
+        "ok" => "À jour",
+        "needsAuth" => "À connecter",
+        "stale" => "Ancien relevé",
+        "rateLimited" => "En attente",
+        _ => "Indisponible",
+    }
+}
+
 pub(crate) fn tr(french: bool, fr: &str, en: &str) -> String {
     if french { fr } else { en }.to_owned()
 }
 
-fn percentage(value: f64) -> String {
+fn percentage(value: f64, french: bool) -> String {
     let rounded = (value * 10.).round() / 10.;
-    if rounded.fract() == 0. {
-        format!("{rounded:.0} %")
+    let text = if rounded.fract() == 0. {
+        format!("{rounded:.0}")
+    } else if french {
+        format!("{rounded:.1}").replace('.', ",")
     } else {
-        format!("{rounded:.1} %")
+        format!("{rounded:.1}")
+    };
+    format!("{text} %")
+}
+
+fn tokens(n: u64, compact: bool, french: bool) -> String {
+    if compact && n >= 1000 {
+        let (value, unit) = if n >= 1_000_000_000 {
+            (n as f64 / 1e9, if french { " Md" } else { "B" })
+        } else if n >= 1_000_000 {
+            (n as f64 / 1e6, if french { " M" } else { "M" })
+        } else {
+            (n as f64 / 1e3, if french { " k" } else { "K" })
+        };
+        let text = format!("{:.1}", value).trim_end_matches(".0").to_owned();
+        return format!("{}{unit}", if french { text.replace('.', ",") } else { text });
     }
+    let digits = n.to_string();
+    let mut out = String::new();
+    for (i, c) in digits.chars().enumerate() {
+        if i > 0 && (digits.len() - i) % 3 == 0 {
+            out.push(if french { '\u{202f}' } else { ',' });
+        }
+        out.push(c);
+    }
+    out
 }
 
 fn reset_time(at: Option<i64>, now: i64, french: bool) -> String {
@@ -105,6 +195,14 @@ fn freshness(at: Option<i64>, now: i64, french: bool) -> String {
     }
 }
 
+fn icon(name: &str, size: f32, color: Rgba) -> gpui::Svg {
+    svg()
+        .path(icon_path(name))
+        .size(px(size))
+        .flex_none()
+        .text_color(color)
+}
+
 fn popup_options(bounds: Bounds<Pixels>, display: Option<DisplayId>) -> WindowOptions {
     WindowOptions {
         window_bounds: Some(WindowBounds::Windowed(bounds)),
@@ -121,7 +219,6 @@ fn popup_options(bounds: Bounds<Pixels>, display: Option<DisplayId>) -> WindowOp
     }
 }
 
-/// The rail when open, or the peek tab when folded, on the right edge and vertically centered.
 #[derive(Clone, Copy, PartialEq)]
 enum Edge {
     Right,
@@ -154,39 +251,102 @@ impl Edge {
         }
     }
 
-    /// Points toward the edge: folding pushes the notch into it.
-    fn fold_glyph(self) -> &'static str {
+    /// `.fold-button` rotates the chevrons toward the edge.
+    fn fold_rotation(self) -> f32 {
         match self {
-            Edge::Right => "»",
-            Edge::Left => "«",
-            Edge::Top => "˄",
-            Edge::Bottom => "˅",
+            Edge::Right => 0.,
+            Edge::Left => 180.,
+            Edge::Top => -90.,
+            Edge::Bottom => 90.,
         }
     }
 }
 
-/// The rail when open, or the peek tab when folded, centered on the chosen edge.
-fn rail_bounds(screen: Bounds<Pixels>, s: &Store) -> Bounds<Pixels> {
+/// Where the parts of the open notch sit inside its window.
+struct Layout {
+    window: Bounds<Pixels>,
+    /// The black rail, relative to the window.
+    rail: Bounds<Pixels>,
+    /// The tool buttons, relative to the window.
+    tools: Bounds<Pixels>,
+}
+
+fn cell_count(s: &Store) -> usize {
+    s.enabled().len().max(1)
+}
+
+/// `.notch-position` centered on its edge; the window adds the flares and the tools.
+fn open_layout(area: Bounds<Pixels>, s: &Store) -> Layout {
     let edge = Edge::of(s);
-    let (along, across) = if s.collapsed {
-        (PEEK_HEIGHT, PEEK_WIDTH)
+    let n = cell_count(s) as f32;
+    if edge.vertical() {
+        let len = RAIL_PAD_START + n * CELL_LEN + (n - 1.) * CELL_GAP + RAIL_PAD_END;
+        let after = FLARE.max(TOOLS_GAP + TOOLS_SIZE);
+        let size = Size { width: px(RAIL_THICKNESS), height: px(FLARE + len + after) };
+        let rail_top = area.origin.y + (area.size.height - px(len)) / 2.;
+        let x = match edge {
+            Edge::Right => area.origin.x + area.size.width - size.width,
+            _ => area.origin.x,
+        };
+        Layout {
+            window: Bounds { origin: point(x, rail_top - px(FLARE)), size },
+            rail: Bounds {
+                origin: point(px(0.), px(FLARE)),
+                size: Size { width: px(RAIL_THICKNESS), height: px(len) },
+            },
+            tools: Bounds {
+                origin: point(px(0.), px(FLARE + len + TOOLS_GAP)),
+                size: Size { width: px(TOOLS_WIDTH), height: px(TOOLS_SIZE) },
+            },
+        }
     } else {
-        let count = s.enabled().len().max(1) as f32;
-        let tools = if s.config.settings.auto_hide { TOOLS } else { 0. };
-        (PAD * 2. + CELL * count + tools, RAIL_WIDTH)
-    };
+        let len = H_RAIL_PAD * 2. + n * CELL_WIDTH + (n - 1.) * H_CELL_GAP;
+        let size = Size {
+            width: px(len + 8. + TOOLS_WIDTH),
+            height: px(H_RAIL_THICKNESS),
+        };
+        let rail_left = area.origin.x + (area.size.width - px(len)) / 2.;
+        let y = match edge {
+            Edge::Bottom => area.origin.y + area.size.height - size.height,
+            _ => area.origin.y,
+        };
+        // `.horizontal .notch-tools` sits 25 px from the screen edge.
+        let tools_y = match edge {
+            Edge::Bottom => H_RAIL_THICKNESS - 25. - TOOLS_SIZE,
+            _ => 25.,
+        };
+        Layout {
+            window: Bounds { origin: point(rail_left, y), size },
+            rail: Bounds {
+                origin: point(px(0.), px(0.)),
+                size: Size { width: px(len), height: px(H_RAIL_THICKNESS) },
+            },
+            tools: Bounds {
+                origin: point(px(len + 8.), px(tools_y)),
+                size: Size { width: px(TOOLS_WIDTH), height: px(TOOLS_SIZE) },
+            },
+        }
+    }
+}
+
+/// The open rail's window, or the fold tab's.
+fn notch_bounds(area: Bounds<Pixels>, s: &Store) -> Bounds<Pixels> {
+    let edge = Edge::of(s);
+    if !s.collapsed {
+        return open_layout(area, s).window;
+    }
     let size = if edge.vertical() {
-        Size { width: px(across), height: px(along) }
+        Size { width: px(PEEK_THICKNESS), height: px(PEEK_LEN) }
     } else {
-        Size { width: px(along), height: px(across) }
+        Size { width: px(PEEK_LEN), height: px(PEEK_THICKNESS) }
     };
-    let center_x = screen.origin.x + (screen.size.width - size.width) / 2.;
-    let center_y = screen.origin.y + (screen.size.height - size.height) / 2.;
+    let center_x = area.origin.x + (area.size.width - size.width) / 2.;
+    let center_y = area.origin.y + (area.size.height - size.height) / 2.;
     let origin = match edge {
-        Edge::Right => point(screen.origin.x + screen.size.width - size.width, center_y),
-        Edge::Left => point(screen.origin.x, center_y),
-        Edge::Top => point(center_x, screen.origin.y),
-        Edge::Bottom => point(center_x, screen.origin.y + screen.size.height - size.height),
+        Edge::Right => point(area.origin.x + area.size.width - size.width, center_y),
+        Edge::Left => point(area.origin.x, center_y),
+        Edge::Top => point(center_x, area.origin.y),
+        Edge::Bottom => point(center_x, area.origin.y + area.size.height - size.height),
     };
     Bounds { origin, size }
 }
@@ -197,7 +357,7 @@ pub fn open_rail(store: Entity<Store>, cx: &mut App) {
         return;
     };
     let screen = display.bounds();
-    let bounds = rail_bounds(screen, store.read(cx));
+    let bounds = notch_bounds(screen, store.read(cx));
     cx.open_window(popup_options(bounds, Some(display.id())), |window, cx| {
         cx.new(|cx| Rail::new(store, screen, window, cx))
     })
@@ -241,12 +401,13 @@ pub fn fold(store: &Entity<Store>, cx: &mut App) {
     });
 }
 
-fn paint_arc(window: &mut Window, center: Point<Pixels>, radius: f32, to: f32, color: Rgba) {
+/// Strokes an arc of a circle, from 12 o'clock clockwise over `to` of a full turn.
+fn paint_arc(window: &mut Window, center: Point<Pixels>, radius: f32, width: f32, to: f32, color: Rgba) {
     if to <= 0. {
         return;
     }
     let steps = (to * 96.).ceil().max(2.) as usize;
-    let mut builder = PathBuilder::stroke(px(4.));
+    let mut builder = PathBuilder::stroke(px(width));
     for i in 0..=steps {
         let angle = to * TAU * i as f32 / steps as f32 - FRAC_PI_2;
         let p = point(
@@ -271,50 +432,83 @@ pub(crate) fn provider_icon(provider: &str, size: f32) -> AnyElement {
             .path(path)
             .size(px(size))
             .flex_none()
-            .text_color(rgb(0xf5f5f5))
+            .text_color(rgb(0xf7f7f7))
             .into_any_element(),
-        None => div()
-            .text_xs()
-            .font_weight(FontWeight::BOLD)
-            .child(provider_mark(provider))
-            .into_any_element(),
+        None => icon("sliders-horizontal", size, rgb(0xf7f7f7)).into_any_element(),
     }
 }
 
+/// `.quota-ring`: a 44 px ring (viewBox 48, r 20) with a 5.5 track and a 3 px value arc.
 fn ring(value: Option<f64>, provider: &str, stale: bool) -> impl IntoElement {
     let color = usage_color(value);
+    let scale = RING / 48.;
     div()
         .relative()
-        .size(px(48.))
+        .size(px(RING))
+        .flex_none()
         .flex()
         .items_center()
         .justify_center()
+        .when(stale, |d| d.opacity(0.5))
         .child(
             canvas(
                 |_, _, _| {},
                 move |bounds, _, window, _| {
                     let center = bounds.center();
-                    paint_arc(window, center, 20., 1., rgb(0x2b2b2b));
+                    paint_arc(window, center, 20. * scale, 5.5 * scale, 1., rgb(0x333333));
                     if let Some(v) = value {
-                        paint_arc(window, center, 20., (v / 100.).clamp(0., 1.) as f32, color);
+                        let share = (v / 100.).clamp(0., 1.) as f32;
+                        paint_arc(window, center, 20. * scale, 3. * scale, share, color);
                     }
                 },
             )
             .absolute()
             .size_full(),
         )
-        .child(provider_icon(provider, 22.))
+        .child(provider_icon(provider, 20.))
         .when(stale, |d| {
             d.child(
                 div()
                     .absolute()
-                    .top(px(2.))
-                    .right(px(2.))
-                    .size(px(8.))
+                    .right_0()
+                    .bottom_0()
+                    .size(px(10.))
                     .rounded_full()
-                    .bg(rgb(0xefa44f)),
+                    .bg(rgb(BLACK))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .child(div().size(px(6.)).rounded_full().bg(rgb(0xefa44f))),
             )
         })
+}
+
+/// The black concave corners that join a side rail to the screen edge, like a notch.
+fn paint_flares(window: &mut Window, bounds: Bounds<Pixels>, edge: Edge, rail: Bounds<Pixels>) {
+    // u: distance from the screen edge; v: position along it (window coordinates).
+    let map = |u: f32, v: f32| -> Point<Pixels> {
+        match edge {
+            Edge::Right => point(bounds.origin.x + bounds.size.width - px(u), bounds.origin.y + px(v)),
+            _ => point(bounds.origin.x + px(u), bounds.origin.y + px(v)),
+        }
+    };
+    let start = f32::from(rail.origin.y);
+    let end = f32::from(rail.origin.y + rail.size.height);
+    for (base, dir) in [(start, -1.), (end, 1.)] {
+        let mut builder = PathBuilder::fill();
+        builder.move_to(map(0., base));
+        builder.line_to(map(FLARE, base));
+        for i in 0..=24 {
+            let phi = FRAC_PI_2 * i as f32 / 24.;
+            let u = FLARE - FLARE * phi.sin();
+            let v = base + dir * (FLARE - FLARE * phi.cos());
+            builder.line_to(map(u, v));
+        }
+        builder.close();
+        if let Ok(path) = builder.build() {
+            window.paint_path(path, rgb(BLACK));
+        }
+    }
 }
 
 pub struct Rail {
@@ -350,7 +544,7 @@ impl Rail {
 
     fn apply(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let s = self.store.read(cx);
-        let next = (rail_bounds(self.screen, s), s.visible());
+        let next = (notch_bounds(self.screen, s), s.visible());
         if self.applied == Some(next) {
             return;
         }
@@ -380,110 +574,251 @@ impl Render for Rail {
         let edge = Edge::of(s);
         let vertical = edge.vertical();
         if s.collapsed {
+            // `.peek-indicator`: 10 × 64, open on the edge side, inside a 24 × 96 hit area.
             let store = self.store.clone();
-            return edge
-                .round(div().id("peek").size_full(), 6.)
-                .bg(rgb(0x000000))
-                .border_1()
+            let indicator = edge
+                .round(div(), 10.)
+                .when(vertical, |d| d.w(px(INDICATOR_THICKNESS)).h(px(INDICATOR_LEN)))
+                .when(!vertical, |d| d.w(px(INDICATOR_LEN)).h(px(INDICATOR_THICKNESS)))
+                .bg(rgb(BLACK))
                 .border_color(rgba(0xffffff28))
+                .map(|d| match edge {
+                    Edge::Right => d.border_l_1().border_t_1().border_b_1(),
+                    Edge::Left => d.border_r_1().border_t_1().border_b_1(),
+                    Edge::Top => d.border_b_1().border_l_1().border_r_1(),
+                    Edge::Bottom => d.border_t_1().border_l_1().border_r_1(),
+                });
+            return div()
+                .id("peek")
+                .size_full()
+                .flex()
+                .items_center()
+                .map(|d| match edge {
+                    Edge::Right => d.justify_end(),
+                    Edge::Left => d.justify_start(),
+                    Edge::Top => d.flex_col().justify_start(),
+                    Edge::Bottom => d.flex_col().justify_end(),
+                })
                 .cursor_pointer()
-                .on_click(move |_, _, cx| set_hover(&store, 0, true, cx));
+                .child(indicator)
+                .on_click(move |_, _, cx| set_hover(&store, 0, true, cx))
+                .into_any_element();
         }
+
+        let layout = open_layout(self.screen, s);
+        let interval = s.config.settings.poll_seconds;
+        let now = chrono::Utc::now().timestamp();
+        let french = s.french();
         let area = self.screen;
-        let auto_hide = s.config.settings.auto_hide;
-        let fold_store = self.store.clone();
+        let rail_bounds = layout.rail;
         let accounts = s.enabled();
-        let cells: Vec<_> = accounts
+        let cells: Vec<AnyElement> = accounts
             .iter()
-            .enumerate()
-            .map(|(index, account)| {
+            .map(|account| {
                 let reading = s.readings.get(&account.id);
                 let value = headline(reading).map(|w| w.used_percent);
-                let stale = reading.is_some_and(|r| r.status != "ok");
-                let selected = s.selected.as_deref() == Some(account.id.as_str());
+                let stale = reading.is_some() && !is_fresh(reading, interval, now);
                 let store = self.store.clone();
                 let id = account.id.clone();
                 div()
                     .id(SharedString::from(account.id.clone()))
-                    .when(vertical, |d| d.h(px(CELL)))
-                    .when(!vertical, |d| d.w(px(CELL)))
+                    .flex_none()
+                    .w(px(CELL_WIDTH))
+                    .h(px(CELL_LEN))
                     .flex()
                     .flex_col()
                     .items_center()
-                    .justify_center()
-                    .gap_1()
-                    .rounded_xl()
+                    .gap(px(9.))
                     .cursor_pointer()
-                    .hover(|d| d.bg(rgba(0xffffff10)))
-                    .when(selected, |d| d.bg(rgba(0xffffff18)))
                     .child(ring(value, &account.provider, stale))
                     .child(
                         div()
-                            .text_sm()
-                            .font_weight(FontWeight::BOLD)
-                            .child(value.map_or("—".into(), |v| format!("{v:.0}%"))),
+                            .text_size(px(15.))
+                            .line_height(px(19.))
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .child(value.map_or("—".into(), |v| {
+                                percentage(v, french).replace(" %", "%")
+                            })),
                     )
                     .on_hover({
                         let (store, id) = (store.clone(), id.clone());
                         move |hovered, window, cx| {
                             if *hovered {
-                                open_popover(&store, id.clone(), index, window.bounds(), area, cx)
+                                open_popover(&store, id.clone(), window.bounds(), rail_bounds, area, cx)
                             }
                         }
                     })
                     .on_click(move |_, window, cx| {
-                        open_popover(&store, id.clone(), index, window.bounds(), area, cx)
+                        open_popover(&store, id.clone(), window.bounds(), rail_bounds, area, cx)
                     })
+                    .into_any_element()
             })
             .collect();
-        edge.round(div().id("rail").size_full(), 24.)
-            .flex()
-            .when(vertical, |d| d.flex_col().py(px(PAD)).px(px(6.)))
-            .when(!vertical, |d| d.flex_row().px(px(PAD)).py(px(6.)))
-            .bg(rgb(0x000000))
-            .border_1()
-            .border_color(rgba(0xffffff1c))
-            .text_color(rgb(0xf5f5f5))
-            .children(cells)
-            .when(accounts.is_empty(), |d| {
-                d.child(
+        let empty = accounts.is_empty().then(|| {
+            let store = self.store.clone();
+            div()
+                .id("empty-cell")
+                .w(px(CELL_WIDTH))
+                .h(px(CELL_LEN))
+                .flex()
+                .flex_col()
+                .items_center()
+                .gap(px(9.))
+                .cursor_pointer()
+                .child(
                     div()
-                        .when(vertical, |d| d.h(px(CELL)))
-                        .when(!vertical, |d| d.w(px(CELL)))
+                        .size(px(RING))
+                        .rounded_full()
+                        .border_2()
+                        .border_color(rgb(0x3a3a3a))
                         .flex()
                         .items_center()
                         .justify_center()
-                        .text_color(rgb(0x858585))
-                        .child("—"),
+                        .child(icon("plus", 22., rgb(0xd4d4d4))),
                 )
+                .child(div().text_size(px(11.)).child(t(french, "Ajouter")))
+                .on_click(move |_, _, cx| crate::settings::open(store.clone(), cx))
+        });
+
+        let rail = edge
+            .round(div(), if vertical { RAIL_RADIUS } else { H_RAIL_RADIUS })
+            .absolute()
+            .left(rail_bounds.origin.x)
+            .top(rail_bounds.origin.y)
+            .w(rail_bounds.size.width)
+            .h(rail_bounds.size.height)
+            .bg(rgb(BLACK))
+            .flex()
+            .when(vertical, |d| {
+                d.flex_col()
+                    .items_center()
+                    .gap(px(CELL_GAP))
+                    .pt(px(RAIL_PAD_START))
+                    .pb(px(RAIL_PAD_END))
             })
+            .when(!vertical, |d| {
+                d.flex_row()
+                    .gap(px(H_CELL_GAP))
+                    .px(px(H_RAIL_PAD))
+                    .map(|d| if edge == Edge::Top { d.pt(px(13.)) } else { d.pt(px(15.)) })
+            })
+            .children(cells)
+            .children(empty);
+
+        // `.notch-tools`: fold (with auto-hide), settings orb and grip, all on black.
+        let auto_hide = s.config.settings.auto_hide;
+        let fold_store = self.store.clone();
+        let settings_store = self.store.clone();
+        let tools = div()
+            .absolute()
+            .left(layout.tools.origin.x)
+            .top(layout.tools.origin.y)
+            .w(layout.tools.size.width)
+            .h(layout.tools.size.height)
+            .flex()
+            .items_center()
+            .justify_center()
             .when(auto_hide, |d| {
                 d.child(
                     div()
                         .id("fold")
-                        .when(vertical, |d| d.h(px(TOOLS)))
-                        .when(!vertical, |d| d.w(px(TOOLS)))
+                        .w(px(22.))
+                        .h(px(32.))
+                        .rounded(px(16.))
+                        .bg(rgb(BLACK))
                         .flex()
                         .items_center()
                         .justify_center()
-                        .rounded_lg()
                         .cursor_pointer()
-                        .text_color(rgb(0xa3a3a8))
-                        .hover(|d| d.bg(rgba(0xffffff10)).text_color(rgb(0xf5f5f5)))
-                        .child(edge.fold_glyph())
+                        .text_color(rgb(0xaaaaaa))
+                        .hover(|d| d.text_color(rgb(0xffffff)))
+                        .child(
+                            icon("chevrons-right", 16., rgb(0xaaaaaa))
+                                .with_transformation(gpui::Transformation::rotate(gpui::radians(
+                                    edge.fold_rotation().to_radians(),
+                                ))),
+                        )
                         .on_click(move |_, _, cx| fold(&fold_store, cx)),
                 )
             })
+            .child(
+                div()
+                    .id("settings-orb")
+                    .size(px(if auto_hide { 32. } else { 36. }))
+                    .rounded_full()
+                    .bg(rgb(BLACK))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .cursor_pointer()
+                    .hover(|d| d.bg(rgb(0x161616)))
+                    .child(icon("settings-2", 17., rgb(0xbbbbbb)))
+                    .on_click(move |_, _, cx| crate::settings::open(settings_store.clone(), cx)),
+            )
+            .child(
+                div()
+                    .w(px(if auto_hide { 20. } else { 18. }))
+                    .h(px(32.))
+                    .rounded(px(10.))
+                    .bg(rgb(BLACK))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .child(icon("grip-vertical", 14., rgb(0xd0d0d0))),
+            );
+
+        div()
+            .id("notch")
+            .size_full()
+            .relative()
+            .text_color(rgb(0xf9f9f9))
+            .font_family("Segoe UI")
+            .when(vertical, |d| {
+                d.child(
+                    canvas(|_, _, _| {}, move |bounds, _, window, _| {
+                        paint_flares(window, bounds, edge, rail_bounds)
+                    })
+                    .absolute()
+                    .size_full(),
+                )
+            })
+            .child(rail)
+            .child(tools)
+            .into_any_element()
     }
 }
 
+/// Matches the stacked blocks of `.usage-popover`, so its window fits the content.
 fn popover_height(s: &Store, id: &str) -> f32 {
     let reading = s.readings.get(id);
-    let windows = reading.map_or(0, |r| r.windows.len()).max(1) as f32;
-    let warning = reading.is_some_and(|r| r.status != "ok" && !r.message.is_empty());
-    // Padding, header, identity and footer, then one 16 px gap per row.
-    let rows = windows + 2. + if warning { 1. } else { 0. };
-    124. + rows * 16. + windows * 62. + if warning { 20. } else { 0. }
+    let now = chrono::Utc::now().timestamp();
+    let fresh = is_fresh(reading, s.config.settings.poll_seconds, now);
+    let windows = reading.map_or(0, |r| r.windows.len()) as f32;
+    let forecasts = reading.map_or(0, |r| {
+        r.windows
+            .iter()
+            .filter(|w| r.exhausts_at.contains_key(&w.label))
+            .count()
+    }) as f32;
+    let mut h = 19. + 28. + 12. + 15. + 18. + 17. + 10. + 25. + 14.;
+    h += if windows > 0. {
+        windows * 51. + (windows - 1.) * 19. + forecasts * 22.
+    } else {
+        42.
+    };
+    if reading.is_some() && !fresh {
+        h += 36.;
+    }
+    if let Some(r) = reading {
+        let rows = r.tokens_today.is_some() as u8 + r.lifetime_tokens.is_some() as u8;
+        if rows > 0 {
+            h += 17. + 12. + rows as f32 * 15. + (rows as f32 - 1.) * 9.;
+        }
+        if !r.models.is_empty() {
+            h += r.models.len() as f32 * 21.;
+        }
+    }
+    h
 }
 
 fn close_popover(store: &Entity<Store>, cx: &mut App) {
@@ -500,10 +835,50 @@ fn close_popover(store: &Entity<Store>, cx: &mut App) {
     }
 }
 
+/// Where the popover box goes, before adding the tail toward the rail.
+#[derive(Clone, Copy)]
+struct Anchor {
+    edge: Edge,
+    /// Rail center along its edge, in screen coordinates.
+    center: Pixels,
+    area: Bounds<Pixels>,
+}
+
+impl Anchor {
+    /// Window bounds for a popover of `height`, tail included.
+    fn bounds(self, height: f32) -> Bounds<Pixels> {
+        let (w, h) = (px(POPOVER_WIDTH), px(height));
+        let a = self.area;
+        let clamp = |v: Pixels, lo: Pixels, len: Pixels, size: Pixels| v.max(lo).min(lo + len - size);
+        match self.edge {
+            Edge::Right | Edge::Left => {
+                let size = Size { width: w + px(TAIL), height: h };
+                let y = clamp(self.center - h / 2., a.origin.y, a.size.height, h);
+                let x = if self.edge == Edge::Right {
+                    a.origin.x + a.size.width - px(POPOVER_SIDE_OFFSET) - w
+                } else {
+                    a.origin.x + px(POPOVER_SIDE_OFFSET) - px(TAIL)
+                };
+                Bounds { origin: point(x, y), size }
+            }
+            Edge::Top | Edge::Bottom => {
+                let size = Size { width: w, height: h + px(TAIL) };
+                let x = clamp(self.center - w / 2., a.origin.x, a.size.width, w);
+                let y = if self.edge == Edge::Top {
+                    a.origin.y + px(POPOVER_END_OFFSET) - px(TAIL)
+                } else {
+                    a.origin.y + a.size.height - px(POPOVER_END_OFFSET) - h
+                };
+                Bounds { origin: point(x, y), size }
+            }
+        }
+    }
+}
+
 fn open_popover(
     store: &Entity<Store>,
     id: String,
-    index: usize,
+    notch: Bounds<Pixels>,
     rail: Bounds<Pixels>,
     area: Bounds<Pixels>,
     cx: &mut App,
@@ -511,30 +886,35 @@ fn open_popover(
     if store.read(cx).selected.as_deref() == Some(id.as_str()) {
         return;
     }
-    close_popover(store, cx);
     let edge = Edge::of(store.read(cx));
-    let (w, h) = (px(POPOVER_WIDTH), px(popover_height(store.read(cx), &id)));
-    let gap = px(POPOVER_GAP);
-    // Centered on the hovered cell, on the side facing the screen.
-    let offset = px(PAD + CELL * index as f32 + CELL / 2.);
-    let origin = match edge {
-        Edge::Right => point(rail.origin.x - w - gap, rail.origin.y + offset - h / 2.),
-        Edge::Left => point(rail.origin.x + rail.size.width + gap, rail.origin.y + offset - h / 2.),
-        Edge::Top => point(rail.origin.x + offset - w / 2., rail.origin.y + rail.size.height + gap),
-        Edge::Bottom => point(rail.origin.x + offset - w / 2., rail.origin.y - gap - h),
+    // Like `.vertical .usage-popover { top: 50% }`: centered on the rail, not the cell.
+    let center = if edge.vertical() {
+        notch.origin.y + rail.origin.y + rail.size.height / 2.
+    } else {
+        notch.origin.x + rail.origin.x + rail.size.width / 2.
     };
-    let clamp = |v: Pixels, lo: Pixels, len: Pixels, size: Pixels| v.max(lo).min(lo + len - size);
-    let bounds = Bounds {
-        origin: point(
-            clamp(origin.x, area.origin.x, area.size.width, w),
-            clamp(origin.y, area.origin.y, area.size.height, h),
-        ),
-        size: Size { width: w, height: h },
-    };
-    let anchored_bottom = edge == Edge::Bottom;
+    let anchor = Anchor { edge, center, area };
+    // Another cell of the same rail: reuse the window, only the account changes.
+    if let Some(handle) = store.read(cx).popover {
+        if handle
+            .update(cx, |popover, _, cx| {
+                popover.account_id = id.clone();
+                cx.notify();
+            })
+            .is_ok()
+        {
+            store.update(cx, |s, cx| {
+                s.selected = Some(id);
+                cx.notify();
+            });
+            return;
+        }
+    }
+    close_popover(store, cx);
+    let bounds = anchor.bounds(popover_height(store.read(cx), &id));
     let handle = cx
         .open_window(popup_options(bounds, None), |window, cx| {
-            cx.new(|cx| Popover::new(store.clone(), id.clone(), bounds, anchored_bottom, window, cx))
+            cx.new(|cx| Popover::new(store.clone(), id.clone(), anchor, window, cx))
         })
         .ok();
     store.update(cx, |s, cx| {
@@ -547,6 +927,7 @@ fn open_popover(
 pub struct Popover {
     store: Entity<Store>,
     account_id: String,
+    anchor: Anchor,
     bounds: Bounds<Pixels>,
     hovered: bool,
 }
@@ -555,25 +936,14 @@ impl Popover {
     fn new(
         store: Entity<Store>,
         account_id: String,
-        bounds: Bounds<Pixels>,
-        anchored_bottom: bool,
+        anchor: Anchor,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
+        let bounds = anchor.bounds(popover_height(store.read(cx), &account_id));
         desktop::place(window, bounds, true, cx);
-        cx.observe_in(&store, window, move |this: &mut Self, store, window, cx| {
-            let height = px(popover_height(store.read(cx), &this.account_id));
-            if this.bounds.size.height != height {
-                // Above a bottom notch, grow upward so the popover stays clear of it.
-                if anchored_bottom {
-                    this.bounds.origin.y += this.bounds.size.height - height;
-                }
-                this.bounds.size.height = height;
-                desktop::place(window, this.bounds, true, cx);
-            }
-            cx.notify();
-        })
-        .detach();
+        // The window follows the content: see the probe at the end of the body.
+        cx.observe(&store, |_, _, cx| cx.notify()).detach();
         // Keeps "2 min ago" and reset countdowns current between readings.
         cx.spawn(async move |this, cx| loop {
             cx.background_executor().timer(Duration::from_secs(15)).await;
@@ -585,9 +955,75 @@ impl Popover {
         Self {
             store,
             account_id,
+            anchor,
             bounds,
             hovered: false,
         }
+    }
+}
+
+impl Popover {
+    /// A zero-height marker after the last block: where it lands is where the content
+    /// ends, so the window can be sized to the text GPUI actually laid out.
+    fn size_probe(&self, edge: Edge, cx: &mut Context<Self>) -> impl IntoElement {
+        let this = cx.entity().downgrade();
+        let anchor = self.anchor;
+        canvas(
+            move |bounds, window, cx| {
+                let end = f32::from(bounds.origin.y) + 14.;
+                let height = if edge == Edge::Top { end - TAIL } else { end };
+                let Some(popover) = this.upgrade() else {
+                    return;
+                };
+                let next = anchor.bounds(height);
+                let current = popover.read(cx).bounds;
+                if (f32::from(next.size.height) - f32::from(current.size.height)).abs() > 0.5
+                    || next.origin != current.origin
+                {
+                    popover.update(cx, |p, _| p.bounds = next);
+                    desktop::place(window, next, true, cx);
+                }
+            },
+            |_, _, _, _| {},
+        )
+        .w_full()
+        .h(px(0.))
+    }
+}
+
+/// The triangle pointing from the popover to the rail (`.usage-popover:after`).
+fn paint_tail(window: &mut Window, bounds: Bounds<Pixels>, edge: Edge) {
+    let o = bounds.origin;
+    let (w, h) = (bounds.size.width, bounds.size.height);
+    let points = match edge {
+        Edge::Right => {
+            let x = o.x + w - px(TAIL) - px(1.);
+            let cy = o.y + h / 2.;
+            [point(x, cy - px(13.)), point(x + px(22.), cy), point(x, cy + px(13.))]
+        }
+        Edge::Left => {
+            let x = o.x + px(TAIL) + px(1.);
+            let cy = o.y + h / 2.;
+            [point(x, cy - px(13.)), point(x - px(22.), cy), point(x, cy + px(13.))]
+        }
+        Edge::Top => {
+            let y = o.y + px(TAIL) + px(1.);
+            let cx = o.x + w / 2.;
+            [point(cx - px(13.), y), point(cx, y - px(22.)), point(cx + px(13.), y)]
+        }
+        Edge::Bottom => {
+            let y = o.y + h - px(TAIL) - px(1.);
+            let cx = o.x + w / 2.;
+            [point(cx - px(13.), y), point(cx, y + px(22.)), point(cx + px(13.), y)]
+        }
+    };
+    let mut builder = PathBuilder::fill();
+    builder.move_to(points[0]);
+    builder.line_to(points[1]);
+    builder.line_to(points[2]);
+    builder.close();
+    if let Ok(path) = builder.build() {
+        window.paint_path(path, rgb(BLACK));
     }
 }
 
@@ -602,6 +1038,7 @@ impl Render for Popover {
         let s = self.store.read(cx);
         let french = s.french();
         let now = chrono::Utc::now().timestamp();
+        let interval = s.config.settings.poll_seconds;
         let account = s
             .config
             .accounts
@@ -611,152 +1048,249 @@ impl Render for Popover {
         let reading = s.readings.get(&self.account_id).cloned();
         let refreshing = s.refreshing;
         let Some(account) = account else {
-            return div();
+            return div().into_any_element();
         };
-        let muted = rgb(0xa3a3a8);
+        let fresh = is_fresh(reading.as_ref(), interval, now);
+        let edge = self.anchor.edge;
 
+        let close_store = self.store.clone();
         let header = div()
             .flex()
             .items_center()
-            .justify_between()
+            .gap(px(9.))
+            .h(px(28.))
+            .child(provider_icon(&account.provider, 22.))
             .child(
                 div()
                     .flex()
-                    .items_center()
                     .gap_1()
-                    .text_lg()
-                    .child(div().mr_1().child(provider_icon(&account.provider, 22.)))
+                    .text_size(px(16.))
                     .child(
                         div()
-                            .font_weight(FontWeight::BOLD)
-                            .child(provider_title(&account.provider)),
+                            .font_weight(FontWeight::MEDIUM)
+                            .child(t(french, provider_title(&account.provider))),
                     )
-                    .child(div().text_color(muted).child(tr(french, "· usage", "Usage"))),
+                    .child(div().child(t(french, "Usage"))),
             )
+            .child(div().flex_1())
             .child(
                 div()
                     .id("close")
-                    .px_2()
-                    .rounded_md()
+                    .w(px(27.))
+                    .h(px(28.))
+                    .rounded(px(5.))
+                    .flex()
+                    .items_center()
+                    .justify_center()
                     .cursor_pointer()
-                    .text_color(muted)
-                    .hover(|d| d.bg(rgba(0xffffff14)))
-                    .child("×")
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        close_popover(&this.store, cx);
+                    .hover(|d| d.bg(rgb(0x252525)))
+                    .child(icon("x", 15., rgb(0x939393)))
+                    .on_click(move |_, _, cx| {
+                        close_popover(&close_store, cx);
                         // The pointer is no longer over a popover: fold unless it is on the rail.
-                        set_hover(&this.store, 1, false, cx);
-                    })),
+                        set_hover(&close_store, 1, false, cx);
+                    }),
             );
 
         let identity = div()
+            .mt(px(12.))
+            .mb(px(18.))
             .flex()
             .items_center()
             .justify_between()
-            .text_sm()
-            .text_color(muted)
+            .gap(px(8.))
+            .text_size(px(11.))
+            .text_color(rgb(0xa4a4a4))
             .child(account.name.clone())
             .when_some(reading.as_ref().and_then(|r| r.plan.clone()), |d, plan| {
                 d.child(
                     div()
-                        .px_2()
-                        .rounded_md()
-                        .bg(rgb(0x252525))
-                        .text_xs()
-                        .text_color(rgb(0xd0d0d0))
+                        .px(px(6.))
+                        .py(px(2.))
+                        .rounded(px(4.))
+                        .bg(rgb(0x202020))
+                        .text_size(px(10.))
                         .child(plan),
                 )
             });
 
-        let warning = reading
-            .as_ref()
-            .filter(|r| r.status != "ok" && !r.message.is_empty())
-            .map(|r| {
-                div()
-                    .text_sm()
-                    .text_color(rgb(0xefa44f))
-                    .child(r.message.clone())
-            });
+        let warning = reading.as_ref().filter(|_| !fresh).map(|r| {
+            let status = if r.status == "ok" {
+                t(french, "Dernier relevé ancien")
+            } else {
+                t(french, status_label(&r.status))
+            };
+            div()
+                .mb(px(15.))
+                .flex()
+                .gap(px(7.))
+                .text_size(px(11.))
+                .text_color(rgb(0xeab778))
+                .child(icon("circle-alert", 14., rgb(0xeab778)))
+                .child(div().flex_1().min_w_0().child(format!("{status}. {}", t(french, &r.message))))
+        });
 
-        let windows: Vec<_> = reading
+        let windows: Vec<AnyElement> = reading
             .as_ref()
             .map(|r| r.windows.clone())
             .unwrap_or_default()
             .into_iter()
             .map(|w| {
-                let color = usage_color(Some(w.used_percent));
                 let forecast = reading
                     .as_ref()
                     .and_then(|r| r.exhausts_at.get(&w.label).copied());
                 div()
                     .flex()
                     .flex_col()
-                    .gap_1p5()
                     .child(
                         div()
                             .flex()
                             .justify_between()
-                            .text_sm()
-                            .child(div().font_weight(FontWeight::BOLD).child(w.label.clone()))
+                            .items_end()
+                            .gap(px(9.))
+                            .mb(px(9.))
+                            .text_size(px(12.))
+                            .child(t(french, &w.label))
                             .child(
                                 div()
-                                    .text_color(muted)
+                                    .text_size(px(11.))
+                                    .text_color(rgb(0xa5a5a5))
                                     .child(reset_time(w.resets_at, now, french)),
                             ),
                     )
                     .child(
                         div()
-                            .h(px(6.))
+                            .h(px(4.))
                             .w_full()
-                            .rounded_full()
-                            .bg(rgb(0x2b2b2b))
+                            .rounded(px(4.))
+                            .bg(rgb(0x2f2f2f))
                             .child(
                                 div()
                                     .h_full()
                                     .w(relative((w.used_percent / 100.).clamp(0., 1.) as f32))
-                                    .rounded_full()
-                                    .bg(color),
+                                    .rounded(px(4.))
+                                    .bg(usage_color(Some(w.used_percent))),
                             ),
                     )
-                    .child(div().text_sm().child(format!(
-                        "{} {}",
-                        percentage(w.used_percent),
-                        tr(french, "utilisés", "used")
-                    )))
+                    .child(
+                        div()
+                            .mt(px(8.))
+                            .flex()
+                            .gap_1()
+                            .text_size(px(12.))
+                            .text_color(rgb(0xf2f2f2))
+                            .child(percentage(w.used_percent, french))
+                            .child(div().text_color(rgb(0xc9c9c9)).child(t(french, "utilisés"))),
+                    )
                     .when_some(forecast, |d, at| {
-                        d.child(div().text_xs().text_color(rgb(0xefa44f)).child(tr(
-                            french,
-                            &format!("Limite atteinte {}", reset_time(Some(at), now, true)),
-                            &format!("Limit reached {}", reset_time(Some(at), now, false)),
-                        )))
+                        let text = t(french, "Plafond estimé {time} au rythme actuel")
+                            .replace("{time}", &reset_time(Some(at), now, french));
+                        d.child(
+                            div()
+                                .mt(px(8.))
+                                .text_size(px(11.))
+                                .text_color(rgb(0xeab778))
+                                .child(text),
+                        )
                     })
+                    .into_any_element()
             })
             .collect();
-        let empty = windows.is_empty();
+        let missing = windows.is_empty().then(|| {
+            let text = if account.provider == "ollama" {
+                t(french, "Pas de quota pour ce serveur local.")
+            } else if reading.is_some() && !fresh {
+                t(french, "Les quotas seront affichés après la prochaine connexion réussie.")
+            } else if let Some(message) = reading.as_ref().map(|r| r.message.clone()).filter(|m| !m.is_empty()) {
+                t(french, &message)
+            } else {
+                t(french, "En attente du premier relevé. Configurez la connexion dans les réglages.")
+            };
+            div()
+                .text_size(px(12.))
+                .line_height(px(20.))
+                .text_color(rgb(0xb6b6b6))
+                .child(text)
+        });
+
+        let token_rows = reading.as_ref().and_then(|r| {
+            let mut rows = vec![];
+            if let Some(n) = r.tokens_today {
+                rows.push(
+                    div()
+                        .flex()
+                        .justify_between()
+                        .child(
+                            div()
+                                .flex()
+                                .gap_1()
+                                .items_end()
+                                .text_color(rgb(0xa9a9a9))
+                                .child(t(french, "Tokens aujourd’hui"))
+                                .child(div().text_size(px(9.)).text_color(rgb(0x888888)).child("UTC")),
+                        )
+                        .child(div().font_weight(FontWeight::MEDIUM).child(tokens(n, false, french))),
+                );
+            }
+            if let Some(n) = r.lifetime_tokens {
+                rows.push(
+                    div()
+                        .flex()
+                        .justify_between()
+                        .child(div().text_color(rgb(0xa9a9a9)).child(t(french, "Total communiqué")))
+                        .child(div().font_weight(FontWeight::MEDIUM).child(tokens(n, true, french))),
+                );
+            }
+            (!rows.is_empty()).then(|| {
+                div()
+                    .mt(px(17.))
+                    .pt(px(12.))
+                    .border_t_1()
+                    .border_color(rgba(0xffffff16))
+                    .flex()
+                    .flex_col()
+                    .gap(px(9.))
+                    .text_size(px(11.))
+                    .children(rows)
+            })
+        });
+        let models = reading
+            .as_ref()
+            .filter(|r| !r.models.is_empty())
+            .map(|r| {
+                div()
+                    .mt(px(12.))
+                    .flex()
+                    .flex_col()
+                    .gap(px(6.))
+                    .text_size(px(11.))
+                    .children(r.models.clone())
+            });
 
         let store = self.store.clone();
         let footer = div()
+            .mt(px(17.))
+            .pt(px(10.))
+            .border_t_1()
+            .border_color(rgba(0xffffff16))
             .flex()
             .items_center()
             .justify_between()
-            .pt_3()
-            .border_t_1()
-            .border_color(rgba(0xffffff16))
-            .text_xs()
-            .text_color(muted)
+            .text_size(px(10.))
+            .text_color(rgb(0x9e9e9e))
             .child(freshness(reading.as_ref().and_then(|r| r.updated_at), now, french))
             .child(
                 div()
                     .id("refresh")
-                    .px_2()
-                    .rounded_md()
+                    .min_h(px(25.))
+                    .flex()
+                    .items_center()
+                    .gap(px(5.))
                     .cursor_pointer()
-                    .hover(|d| d.bg(rgba(0xffffff14)).text_color(rgb(0xf5f5f5)))
-                    .child(if refreshing {
-                        tr(french, "Actualisation…", "Refreshing…")
-                    } else {
-                        tr(french, "Actualiser", "Refresh")
-                    })
+                    .text_color(rgb(0xd0d0d0))
+                    .hover(|d| d.text_color(rgb(0xffffff)))
+                    .child(icon("refresh-cw", 12., rgb(0xd0d0d0)).when(refreshing, |i| i.opacity(0.5)))
+                    .child(t(french, "Actualiser"))
                     .on_click(move |_, _, cx| {
                         let store = store.clone();
                         cx.spawn(async move |cx| store::poll(&store, true, cx).await)
@@ -764,29 +1298,44 @@ impl Render for Popover {
                     }),
             );
 
-        div()
-            .size_full()
+        let body = div()
             .flex()
             .flex_col()
-            .gap_4()
-            .p_4()
-            .bg(rgb(0x000000))
-            .rounded_2xl()
-            .border_1()
-            .border_color(rgba(0xffffff1c))
-            .text_color(rgb(0xf5f5f5))
+            .w(px(POPOVER_WIDTH))
+            .h_full()
+            .pt(px(19.))
+            .px(px(18.))
+            .pb(px(14.))
+            .rounded(px(18.))
+            .bg(rgb(BLACK))
+            .text_color(rgb(0xf4f4f4))
             .child(header)
             .child(identity)
             .children(warning)
-            .children(windows)
-            .when(empty, |d| {
-                d.child(
-                    div()
-                        .text_sm()
-                        .text_color(muted)
-                        .child(tr(french, "Pas encore de relevé", "No reading yet")),
-                )
-            })
+            .child(div().flex().flex_col().gap(px(19.)).children(windows).children(missing))
+            .children(token_rows)
+            .children(models)
             .child(footer)
+            .child(self.size_probe(edge, cx));
+
+        // The window holds the box plus a strip on the rail side for the tail.
+        let tail_space = div().flex_none().size(px(TAIL));
+        let body = body.when(!edge.vertical(), |d| d.flex_1().min_h_0());
+        div()
+            .size_full()
+            .flex()
+            .font_family("Segoe UI")
+            .map(|d| match edge {
+                Edge::Right => d.flex_row().child(body).child(tail_space),
+                Edge::Left => d.flex_row().child(tail_space).child(body),
+                Edge::Top => d.flex_col().child(tail_space).child(body),
+                Edge::Bottom => d.flex_col().child(body).child(tail_space),
+            })
+            .child(
+                canvas(|_, _, _| {}, move |bounds, _, window, _| paint_tail(window, bounds, edge))
+                    .absolute()
+                    .size_full(),
+            )
+            .into_any_element()
     }
 }

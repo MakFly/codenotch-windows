@@ -10,11 +10,42 @@ fn glyphs() -> &'static HashMap<String, String> {
     GLYPHS_MAP.get_or_init(|| serde_json::from_str(GLYPHS).unwrap_or_default())
 }
 
-/// Serves `logos/<key>.svg`; `svg()` tints them with the text color, like `currentColor`.
+macro_rules! icons {
+    ($($name:literal),* $(,)?) => {
+        /// Lucide icons the Tauri app uses, as `icons/<name>.svg`.
+        fn icon(name: &str) -> Option<&'static [u8]> {
+            match name {
+                $($name => Some(include_bytes!(concat!("../assets/icons/", $name, ".svg"))),)*
+                _ => None,
+            }
+        }
+    };
+}
+
+icons!(
+    "settings-2", "refresh-cw", "x", "minus", "users-round", "info", "plus", "grip-vertical",
+    "circle-alert", "check", "chevrons-right", "bell", "download", "loader-circle", "send",
+    "timer", "languages", "webhook", "log-in", "search", "chevron-right", "chevron-down",
+    "chevron-up", "shield-check", "trash-2", "monitor", "external-link", "sliders-horizontal",
+);
+
+/// Path of a bundled Lucide icon, for `svg().path(..)`.
+pub fn icon_path(name: &str) -> SharedString {
+    format!("icons/{name}.svg").into()
+}
+
+/// Serves `logos/<key>.svg` and `icons/<name>.svg`; `svg()` tints them with the text color,
+/// like `currentColor`.
 pub struct Assets;
 
 impl AssetSource for Assets {
     fn load(&self, path: &str) -> anyhow::Result<Option<Cow<'static, [u8]>>> {
+        if let Some(name) = path
+            .strip_prefix("icons/")
+            .and_then(|p| p.strip_suffix(".svg"))
+        {
+            return Ok(icon(name).map(Cow::Borrowed));
+        }
         let Some(key) = path
             .strip_prefix("logos/")
             .and_then(|p| p.strip_suffix(".svg"))

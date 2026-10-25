@@ -31,8 +31,62 @@ pub fn place(window: &Window, bounds: Bounds<Pixels>, visible: bool, cx: &App) {
     cx.foreground_executor()
         .spawn(async move {
             unsafe {
+                // Windows 11 outlines and rounds every top-level window, transparent or not;
+                // the notch draws its own shape.
+                use windows_sys::Win32::Graphics::Dwm::{
+                    DwmSetWindowAttribute, DWMWA_BORDER_COLOR, DWMWA_COLOR_NONE,
+                    DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_DONOTROUND,
+                };
+                let corner = DWMWCP_DONOTROUND;
+                let border = DWMWA_COLOR_NONE;
+                DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE as u32, &corner as *const _ as _, 4);
+                DwmSetWindowAttribute(hwnd, DWMWA_BORDER_COLOR as u32, &border as *const _ as _, 4);
+                // GPUI creates popups as overlapped windows, which keep a 1 px top frame line.
+                use windows_sys::Win32::UI::WindowsAndMessaging::{
+                    GetWindowLongPtrW, SetWindowLongPtrW, GWL_STYLE, SWP_FRAMECHANGED, WS_POPUP,
+                };
+                let style = GetWindowLongPtrW(hwnd, GWL_STYLE);
+                let popup = WS_POPUP as isize;
+                let flags = if style & popup == 0 {
+                    SetWindowLongPtrW(hwnd, GWL_STYLE, style | popup);
+                    SWP_NOACTIVATE | SWP_FRAMECHANGED
+                } else {
+                    SWP_NOACTIVATE
+                };
                 if visible {
-                    SetWindowPos(hwnd, HWND_TOPMOST, x, y, width, height, SWP_NOACTIVATE);
+                    // GPUI keeps an invisible frame around its windows on Windows 11 (a strip
+                    // at the top where Windows paints a light line, and resize borders on the
+                    // other sides), so the drawn area sits inside the window rect. Measure that
+                    // frame, grow the window by it so the client area lands exactly on the
+                    // requested bounds (flush against the screen edge), and clip the frame off.
+                    use windows_sys::Win32::{
+                        Foundation::{POINT, RECT},
+                        Graphics::Gdi::{ClientToScreen, CreateRectRgn, SetWindowRgn},
+                        UI::WindowsAndMessaging::{GetClientRect, GetWindowRect},
+                    };
+                    SetWindowPos(hwnd, HWND_TOPMOST, x, y, width, height, flags);
+                    let mut outer = RECT { left: 0, top: 0, right: 0, bottom: 0 };
+                    let mut client = RECT { left: 0, top: 0, right: 0, bottom: 0 };
+                    let mut origin = POINT { x: 0, y: 0 };
+                    if GetWindowRect(hwnd, &mut outer) != 0
+                        && GetClientRect(hwnd, &mut client) != 0
+                        && ClientToScreen(hwnd, &mut origin) != 0
+                    {
+                        let left = origin.x - outer.left;
+                        let top = origin.y - outer.top;
+                        let right = outer.right - origin.x - client.right;
+                        let bottom = outer.bottom - origin.y - client.bottom;
+                        SetWindowPos(
+                            hwnd,
+                            HWND_TOPMOST,
+                            x - left,
+                            y - top,
+                            width + left + right,
+                            height + top + bottom,
+                            SWP_NOACTIVATE,
+                        );
+                        SetWindowRgn(hwnd, CreateRectRgn(left, top, left + width, top + height), 1);
+                    }
                     ShowWindow(hwnd, SW_SHOWNOACTIVATE);
                 } else {
                     ShowWindow(hwnd, SW_HIDE);
