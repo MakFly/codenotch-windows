@@ -273,6 +273,48 @@ impl Store {
         Ok(())
     }
 
+    /// Sends alerts as Windows notifications and, when configured, to Telegram and Discord,
+    /// as the Tauri app does. Those are meant for when the user is away, so full screen and
+    /// game mode only hold back the desktop notifications, and not the urgent ones if asked.
+    fn deliver(&self, alerts: Vec<alerts::Alert>, now: i64) {
+        if alerts.is_empty() {
+            return;
+        }
+        let settings = &self.config.settings;
+        let french = self.french();
+        let suppressed = settings.game_mode || (settings.hide_in_fullscreen && self.fullscreen);
+        for alert in &alerts {
+            if settings.notifications && (!suppressed || (alert.urgent() && settings.critical_in_fullscreen)) {
+                let (title, body) = alerts::desktop_text(alert, french, now);
+                crate::desktop::toast(&title, &body);
+            }
+        }
+        let runtime = RUNTIME.get().expect("tokio runtime");
+        if telegram::AVAILABLE && self.telegram_saved && settings.telegram_enabled && !settings.telegram_chat_id.is_empty() {
+            let chat = settings.telegram_chat_id.clone();
+            let messages: Vec<_> = alerts.iter().map(|a| telegram::message(a, french, now)).collect();
+            runtime.spawn(async move {
+                let Some(token) = telegram::saved_token() else {
+                    return;
+                };
+                for message in messages {
+                    let _ = telegram::send(&token, &chat, message).await;
+                }
+            });
+        }
+        if self.discord_saved && settings.discord_enabled {
+            let messages: Vec<_> = alerts.iter().map(|a| discord::message(a, french)).collect();
+            runtime.spawn(async move {
+                let Some(webhook) = discord::saved_webhook() else {
+                    return;
+                };
+                for message in messages {
+                    let _ = discord::send(&webhook, message).await;
+                }
+            });
+        }
+    }
+
     fn apply(&mut self, account: Account, result: Result<Reading, providers::Failure>) {
         // Removed while its reading was in flight.
         if !self.config.accounts.iter().any(|a| a.id == account.id) {
@@ -285,10 +327,10 @@ impl Store {
                 r.account_id = account.id.clone();
                 r.status = "ok".into();
                 r.updated_at = Some(at);
-                // Alerts are not delivered yet; observing still fills the forecasts.
-                let _ = self
+                let alerts = self
                     .tracker
                     .observe(&account, &mut r, &self.config.settings, at);
+                self.deliver(alerts, at);
                 r
             }
             Err(f) => {

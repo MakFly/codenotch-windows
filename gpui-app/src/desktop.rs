@@ -308,3 +308,22 @@ pub fn fullscreen_active() -> Option<bool> {
 pub fn fullscreen_active() -> Option<bool> {
     Some(false)
 }
+
+/// The identifier the installer's shortcuts carry, which Windows needs to show a toast.
+#[cfg(windows)]
+const APP_ID: &str = "dev.kev.smashtoken";
+
+/// A Windows notification. Installed builds have a Start menu shortcut carrying `APP_ID`;
+/// a build run from elsewhere borrows PowerShell's so the toast still shows.
+#[cfg(windows)]
+pub fn toast(title: &str, body: &str) {
+    let installed = std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(|dir| dir.join("uninstall.exe").exists()))
+        .unwrap_or(false);
+    let id = if installed { APP_ID } else { tauri_winrt_notification::Toast::POWERSHELL_APP_ID };
+    let _ = tauri_winrt_notification::Toast::new(id).title(title).text1(body).show();
+}
+
+#[cfg(not(windows))]
+pub fn toast(_: &str, _: &str) {}

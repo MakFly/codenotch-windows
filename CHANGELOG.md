@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.1 — 2026-10-26
+
+- **Alerts are delivered again** by the native app, as in 0.1.x: warning, critical, limit-reached, forecast and “quota available again” alerts show as Windows notifications (held back in full screen and game mode, except urgent ones when that option is on) and are posted to Discord when a webhook is set up.
+- Moving the notch by dragging its grip is still not ported; the screen edge is set in Appearance → Notch.
+
 ## 0.2.0 — 2026-10-26
 
 - **Native rewrite with GPUI**: CodeNotch is now a native Rust app (GPUI, the UI framework behind Zed) instead of Tauri + WebView2. Same notch, settings and connectors, without a browser engine: WebView2 is no longer required.
