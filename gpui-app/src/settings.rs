@@ -91,6 +91,8 @@ pub struct SettingsView {
     /// The open accordion item of the Appearance and Alerts pages.
     appearance_open: Option<&'static str>,
     alerts_open: Option<&'static str>,
+    /// The install command just copied, shown as « Copié » for a moment.
+    pub(crate) copied: Option<String>,
     /// CodeNotch's own CPU and memory, shown in the header while this window is open.
     usage: crate::usage::Usage,
 }
@@ -139,6 +141,7 @@ impl SettingsView {
             appearance_open: Some("language"),
             alerts_open: Some("discord"),
             usage: crate::usage::Usage::default(),
+            copied: None,
         }
     }
 
@@ -1383,4 +1386,28 @@ fn titlebar(usage: String) -> AnyElement {
                 .child(caption("close", "x", true, |w| w.remove_window())),
         )
         .into_any_element()
+}
+
+/// A small hover bubble, as the mock's `data-tip`.
+pub(crate) struct Tip(SharedString);
+
+impl Render for Tip {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        div()
+            .px(px(8.))
+            .py(px(4.))
+            .rounded(px(6.))
+            .border_1()
+            .border_color(rgb(0x44444a))
+            .bg(rgb(0x242427))
+            .text_size(px(11.))
+            .text_color(rgb(0xe5e5ea))
+            .font_family("Segoe UI")
+            .child(self.0.clone())
+    }
+}
+
+pub(crate) fn tip(text: impl Into<SharedString>) -> impl Fn(&mut Window, &mut App) -> gpui::AnyView + 'static {
+    let text = text.into();
+    move |_, cx| cx.new(|_| Tip(text.clone())).into()
 }
