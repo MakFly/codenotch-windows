@@ -1,6 +1,6 @@
 # References and attribution
 
-Visual layout, provider response formats and endpoint discovery follow CodeNotch. Provider glyph paths in src/lib/glyphs.json are adapted from Sources/Providers/GlyphOutline.swift (normalized polygon outlines), https://github.com/vinzdg/codenotch. The application is independently implemented in Rust and TypeScript. Claude Code empty-input credential renewal follows the approach documented in windows/codenotch/src/usage.rs in the same project; the CLI owns credential rotation.
+Visual layout, provider response formats and endpoint discovery follow CodeNotch. Provider glyph paths in src/lib/glyphs.json are adapted from Sources/Providers/GlyphOutline.swift (normalized polygon outlines), https://github.com/vinzdg/codenotch. The application is independently implemented in Rust. Claude Code empty-input credential renewal follows the approach documented in windows/codenotch/src/usage.rs in the same project; the CLI owns credential rotation.
 
 MIT License
 
@@ -32,4 +32,4 @@ icon, media or sounds are bundled. No companion character is included.
 
 ## Dependencies
 
-React (MIT), Tauri (MIT/Apache-2.0), Radix UI (MIT), Lucide (ISC), and Rust crates carry their respective licenses in their distributions. Dependency versions are pinned in bun.lock and Cargo.lock.
+GPUI (Apache-2.0), Lucide icons (ISC) and the other Rust crates carry their respective licenses in their distributions; dependency versions are pinned in `gpui-app/Cargo.lock`. The 0.1.x Tauri builds also used React (MIT), Tauri (MIT/Apache-2.0) and Radix UI (MIT), pinned in bun.lock and src-tauri/Cargo.lock.
