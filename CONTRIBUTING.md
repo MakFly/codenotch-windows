@@ -1,25 +1,26 @@
 # Contributing
 
 Bug reports and pull requests are welcome. This project targets Windows and
-uses Bun, Tauri 2, Rust, React and TypeScript.
+is a native Rust app built with [GPUI](https://www.gpui.rs). The app lives in
+`gpui-app/`; it shares the provider connectors in `src-tauri/src/`, the provider
+glyphs and the English strings in `src/lib/` with the 0.1.x Tauri app, which
+stays in the repository for reference.
 
 1. Fork and clone the repository.
-2. Install the prerequisites listed in the README.
-3. Run `bun install --frozen-lockfile` and `bun run desktop`.
+2. Install the prerequisites listed in the README (Rust stable with the MSVC
+   toolchain, Visual Studio Build Tools with **Desktop development with C++**).
+3. Run `cargo run -- --settings` from `gpui-app/`.
 4. Keep changes focused and describe the behavior being fixed.
 
-Before submitting:
+Before submitting, from `gpui-app/`:
 
 ```powershell
-bun run test
-bun run test:native
-bun run build
+cargo test
+cargo build --release
 ```
 
-For UI changes, run `bun run dev` in another terminal, install Chromium with
-`bunx playwright install chromium`, then run `bun run test:ui`. Use demo data
-for screenshots. Include both English and French translations when adding UI
-text, reuse the shared Select component, and check keyboard navigation.
+Use demo data for screenshots. Include both English and French translations
+when adding UI text, and check keyboard navigation.
 
 Never include credentials, account configuration, personal usage screenshots
 or provider responses containing identifiers in an issue or pull request.
