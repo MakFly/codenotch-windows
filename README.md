@@ -190,10 +190,8 @@ See [Security](SECURITY.md) for private vulnerability reporting.
 ## Build locally
 
 Install Rust stable with the MSVC toolchain and Visual Studio Build Tools with
-**Desktop development with C++**. The app lives in `gpui-app/`; it shares the
-provider connectors in `src-tauri/src/` and the English strings in
-`src/lib/messages.en.json` with the 0.1.x Tauri app, which stays in the
-repository for reference.
+**Desktop development with C++**. The whole app, provider connectors included,
+lives in `gpui-app/`; the English strings are in `gpui-app/assets/messages.en.json`.
 
 ```powershell
 git clone https://github.com/MakFly/codenotch-windows.git
@@ -205,6 +203,9 @@ cargo run -- --settings
 cargo build --release
 ```
 
+With [Bun](https://bun.sh) installed, the same commands run from the repository root:
+`bun desktop`, `bun desktop:settings`, `bun desktop:build`, `bun run test`.
+
 The native binary is generated at `gpui-app/target/release/codenotch-gpui.exe`.
 Internal package and configuration identifiers retain the original `smashtoken`
 name. Release downloads use `CodeNotch.exe`.
@@ -213,13 +214,14 @@ name. Release downloads use `CodeNotch.exe`.
 
 The in-app updater, in the native app and in the 0.1.x Tauri builds, only installs an
 installer signed with the project's key, for the version the feed announces. The
-public key is in `gpui-app/src/updater.rs` and `src-tauri/tauri.conf.json`; keep
-the private key out of the repository.
+public key is in `gpui-app/src/updater.rs`; keep the private key out of the
+repository. Signing uses the Tauri CLI's `signer`, the only Tauri tool still used.
 
 The installer script is `gpui-app/installer/installer.nsi`. It keeps the product
 name, install folder, uninstall entry and `smashtoken.exe` binary name of the
-Tauri builds, so updates install over them. It is built with the `makensis` that
-the Tauri CLI downloads (run `bun run desktop:build` once if it is missing).
+Tauri builds, so updates install over them. It is built with the `makensis` (and
+its `nsis_tauri_utils` plugin) that the Tauri CLI downloads to
+`%LOCALAPPDATA%\tauri\NSIS`.
 
 ```powershell
 cd gpui-app; cargo build --release; cd ..

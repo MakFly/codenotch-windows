@@ -7,6 +7,7 @@
 - **Failed deliveries are shown**: the Telegram and Discord sections say why the last alert did not arrive, until one does.
 - **Quota history**: successful readings are kept for 30 days in `history.jsonl`. The Home page draws a 24 h / 7 d / 30 d line under each quota and exports everything as CSV to Downloads. The limit forecast resumes right after a restart.
 - **Tray icon gauge** of the most used quota, with every account in its tooltip (can be turned off).
+- **Tauri app removed**: the repository is now only the GPUI app. Provider connectors, glyphs, strings and icons moved into `gpui-app/`, and `bun desktop` runs the native app. The 0.1.x Tauri and React sources stay in the git history. Settings from 0.1.x are still imported on first launch, and the installer still installs over 0.1.x.
 - **System-wide shortcut**: Ctrl+Alt+N (or Ctrl+Shift+Alt+N) shows or folds the notch, and the same keys with G toggle game mode. Off by default; a shortcut already taken is reported.
 
 ## 0.2.1 — 2026-10-26

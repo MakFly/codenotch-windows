@@ -70,11 +70,11 @@ await copyFile(join(stage, 'THIRD_PARTY_LICENSES.txt'), join(output, 'THIRD_PART
 // NSIS installer from gpui-app/installer: it installs over the Tauri builds, so 0.1.x users
 // move to this one through their own updater. makensis ships with the Tauri CLI's NSIS kit.
 const makensis = join(process.env.LOCALAPPDATA ?? '', 'tauri/NSIS/Bin/makensis.exe');
-if (!existsSync(makensis)) throw new Error('makensis not found: build the Tauri app once (bun run desktop:build) to download NSIS.');
+if (!existsSync(makensis)) throw new Error(`makensis not found: the installer needs the NSIS kit (with its nsis_tauri_utils plugin) that the Tauri CLI downloads to ${makensis}.`);
 const setupName = `CodeNotch-${version}-windows-x64-setup.exe`;
 const setup = join(output, setupName);
 command(makensis, ['-V2', `-DVERSION=${version}`, `-DMAINBINARYSRCPATH=${source}`, `-DOUTFILE=${setup}`, join(root, 'gpui-app/installer/installer.nsi')]);
-// The updaters only accept an installer signed with the key in updater.rs / tauri.conf.json,
+// The updaters only accept an installer signed with the key in gpui-app/src/updater.rs,
 // for the version the feed announces.
 const key = process.env.TAURI_SIGNING_PRIVATE_KEY_PATH ?? join(homedir(), '.tauri/codenotch.key');
 if (!existsSync(key)) throw new Error('Set TAURI_SIGNING_PRIVATE_KEY_PATH to the updater signing key.');

@@ -5,7 +5,7 @@ use base64::{engine::general_purpose::STANDARD, Engine};
 use serde::Deserialize;
 
 const FEED: &str = "https://github.com/MakFly/codenotch-windows/releases/latest/download/latest.json";
-/// The updater public key from `src-tauri/tauri.conf.json`.
+/// The updater public key, the one the 0.1.x Tauri builds were configured with.
 const PUBLIC_KEY: &str = "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEU5OTZDMDU4N0JCNERDMTIKUldRUzNMUjdXTUNXNlZhS0Q3QkNwblVTaHcrVGFvSmZhT2xWazlNNnpCSHNmbmZVTDloR1lGM1MK";
 
 #[derive(Clone, Debug)]

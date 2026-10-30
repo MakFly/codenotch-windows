@@ -1,42 +1,30 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
-// The provider modules are shared with the Tauri app; not every helper is used here yet.
+// The provider modules come from the 0.1.x Tauri app; not every helper is used yet.
 #![allow(dead_code)]
-
-#[path = "../../src-tauri/src/alerts.rs"]
-mod alerts;
-#[path = "../../src-tauri/src/claude.rs"]
-mod claude;
-#[path = "../../src-tauri/src/codex.rs"]
-mod codex;
-#[path = "../../src-tauri/src/discord.rs"]
-mod discord;
-#[path = "../../src-tauri/src/gemini.rs"]
-mod gemini;
-#[path = "../../src-tauri/src/grok.rs"]
-mod grok;
-#[path = "../../src-tauri/src/login.rs"]
-mod login;
-#[path = "../../src-tauri/src/model.rs"]
-mod model;
-#[path = "../../src-tauri/src/opencode.rs"]
-mod opencode;
-#[path = "../../src-tauri/src/providers.rs"]
-mod providers;
-#[path = "../../src-tauri/src/telegram.rs"]
-mod telegram;
 
 mod account_form;
 mod agents;
+mod alerts;
 mod assets;
 mod autostart;
 mod channels;
+mod claude;
+mod codex;
 mod desktop;
+mod discord;
+mod gemini;
+mod grok;
 mod history;
 mod home;
 mod hotkey;
 mod input;
+mod login;
+mod model;
+mod opencode;
+mod providers;
 mod settings;
 mod store;
+mod telegram;
 mod tray;
 mod updater;
 mod usage;

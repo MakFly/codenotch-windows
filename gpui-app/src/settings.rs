@@ -1274,7 +1274,7 @@ impl SettingsView {
                 para(t(french, "Les quotas sont interrogés périodiquement : il peut donc y avoir un décalage avec le fournisseur. L’activité n’est jamais présentée comme une donnée en direct quand elle ne l’est pas.")).into_any_element(),
             ]))
             .child(section(false, t(french, "Référence"), vec![
-                para(format!("CodeNotch {}", t(french, "est la référence visuelle et fonctionnelle. Cette adaptation Windows est un projet indépendant, développé avec Tauri."))).into_any_element(),
+                para(format!("CodeNotch {}", t(french, "est la référence visuelle et fonctionnelle. Cette adaptation Windows est un projet indépendant, développé en Rust avec GPUI."))).into_any_element(),
             ]))
             .into_any_element()]
     }

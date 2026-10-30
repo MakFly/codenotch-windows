@@ -83,7 +83,7 @@ const BLACK: u32 = 0x000000;
 fn english() -> &'static HashMap<String, String> {
     static TABLE: OnceLock<HashMap<String, String>> = OnceLock::new();
     TABLE.get_or_init(|| {
-        serde_json::from_str(include_str!("../../src/lib/messages.en.json")).unwrap_or_default()
+        serde_json::from_str(include_str!("../assets/messages.en.json")).unwrap_or_default()
     })
 }
 
@@ -403,7 +403,7 @@ fn notch_bounds(area: Bounds<Pixels>, s: &Store) -> Bounds<Pixels> {
 }
 
 /// The point of the notch that a drag saves: the middle of its side against the screen
-/// edge (`offset` in `src-tauri/src/widget.rs`). The open rail and the fold tab share it.
+/// edge (`offset` in the 0.1.x Tauri app). The open rail and the fold tab share it.
 fn anchor_offset(edge: Edge, size: Size<Pixels>) -> Point<Pixels> {
     match edge {
         Edge::Right => point(size.width, size.height / 2.),
@@ -414,7 +414,7 @@ fn anchor_offset(edge: Edge, size: Size<Pixels>) -> Point<Pixels> {
 }
 
 /// Moves `window` so its `part` (relative to it) sits where the grip left the notch along its
-/// edge, kept inside `area` (`restore` in `src-tauri/src/widget.rs`). Unmoved without a
+/// edge, kept inside `area` (`restore` in the 0.1.x Tauri app). Unmoved without a
 /// saved spot. The notch always stays against its edge, even for a spot saved off it.
 fn placed(window: Bounds<Pixels>, part: Bounds<Pixels>, area: Bounds<Pixels>, s: &Store) -> Bounds<Pixels> {
     let Some(saved) = &s.config.settings.widget_placement else {

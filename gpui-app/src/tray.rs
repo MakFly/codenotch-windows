@@ -22,7 +22,7 @@ const TOOLTIP_MAX: usize = 127;
 
 fn base() -> Option<image::RgbaImage> {
     Some(
-        image::load_from_memory(include_bytes!("../../src-tauri/icons/32x32.png"))
+        image::load_from_memory(include_bytes!("../assets/app/32x32.png"))
             .ok()?
             .into_rgba8(),
     )

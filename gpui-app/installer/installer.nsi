@@ -45,10 +45,10 @@ ${StrLoc}
 !define HOMEPAGE ""
 !define INSTALLMODE "currentUser"
 !define LICENSE ""
-!define INSTALLERICON "${__FILEDIR__}\..\..\src-tauri\icons\icon.ico"
+!define INSTALLERICON "${__FILEDIR__}\..\assets\app\icon.ico"
 !define SIDEBARIMAGE ""
 !define HEADERIMAGE ""
-!define UNINSTALLERICON "${__FILEDIR__}\..\..\src-tauri\icons\icon.ico"
+!define UNINSTALLERICON "${__FILEDIR__}\..\assets\app\icon.ico"
 !define UNINSTALLERHEADERIMAGE ""
 !define MAINBINARYNAME "smashtoken"
 !ifndef MAINBINARYSRCPATH

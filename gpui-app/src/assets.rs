@@ -3,7 +3,7 @@ use gpui::{AssetSource, Image, ImageFormat, SharedString};
 use std::{borrow::Cow, collections::HashMap, sync::Arc, sync::OnceLock};
 
 /// The provider logos the Tauri app draws, as unit-square SVG paths.
-const GLYPHS: &str = include_str!("../../src/lib/glyphs.json");
+const GLYPHS: &str = include_str!("../assets/glyphs.json");
 
 fn glyphs() -> &'static HashMap<String, String> {
     static GLYPHS_MAP: OnceLock<HashMap<String, String>> = OnceLock::new();
@@ -88,7 +88,7 @@ pub fn app_icon() -> Arc<Image> {
     ICON.get_or_init(|| {
         Arc::new(Image::from_bytes(
             ImageFormat::Png,
-            include_bytes!("../../src-tauri/icons/128x128.png").to_vec(),
+            include_bytes!("../assets/app/128x128.png").to_vec(),
         ))
     })
     .clone()
