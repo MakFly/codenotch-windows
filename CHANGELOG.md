@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- **Launch at Windows startup** (Appearance → Notch, also offered on the welcome screen). It never opens the settings, and a portable copy that moved updates its own entry at launch.
+- **Telegram alerts are switched on.** A typed chat id is saved when you send a test or turn alerts on. Telegram's short flood-control delays are waited out once.
+- **Failed deliveries are shown**: the Telegram and Discord sections say why the last alert did not arrive, until one does.
+- **Quota history**: successful readings are kept for 30 days in `history.jsonl`. The Home page draws a 24 h / 7 d / 30 d line under each quota and exports everything as CSV to Downloads. The limit forecast resumes right after a restart.
+- **Tray icon gauge** of the most used quota, with every account in its tooltip (can be turned off).
+- **System-wide shortcut**: Ctrl+Alt+N (or Ctrl+Shift+Alt+N) shows or folds the notch, and the same keys with G toggle game mode. Off by default; a shortcut already taken is reported.
+
 ## 0.2.1 — 2026-10-26
 
 - **Alerts are delivered again** by the native app, as in 0.1.x: warning, critical, limit-reached, forecast and “quota available again” alerts show as Windows notifications (held back in full screen and game mode, except urgent ones when that option is on) and are posted to Discord when a webhook is set up.

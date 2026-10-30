@@ -194,7 +194,7 @@ mod tests {
         let webhook =
             std::env::var("CODENOTCH_DISCORD_WEBHOOK").expect("set CODENOTCH_DISCORD_WEBHOOK");
         let now = chrono::Utc::now().timestamp();
-        tauri::async_runtime::block_on(async {
+        tokio::runtime::Runtime::new().unwrap().block_on(async {
             send(&webhook, test_message(true, now)).await.unwrap();
             // One real alert card as well, so the layout of each kind can be checked.
             let alert = Alert {

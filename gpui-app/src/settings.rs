@@ -988,6 +988,23 @@ impl SettingsView {
             130.,
             cx,
         );
+        let off = t(french, "Désactivé");
+        let shortcut = self.select(
+            "hotkey",
+            s.hotkey.clone().unwrap_or_else(|| off.clone()),
+            std::iter::once((off.clone(), s.hotkey.is_none(), self.setting(cx, |s| s.hotkey = None)))
+                .chain(crate::hotkey::PRESETS.into_iter().map(|keys| {
+                    (keys.to_owned(), s.hotkey.as_deref() == Some(keys), self.setting(cx, move |s| s.hotkey = Some(keys.into())))
+                }))
+                .collect(),
+            150.,
+            cx,
+        );
+        let hotkey_error = self.store.read(cx).hotkey_error.clone();
+        let shortcut_help = match hotkey_error {
+            Some(error) => t(french, &error),
+            None => t(french, "Affiche ou replie l’encoche depuis n’importe quelle application. Les mêmes touches avec G basculent le mode jeu."),
+        };
         let notch_item = self.accordion(
             page,
             "notch",
@@ -1020,6 +1037,17 @@ impl SettingsView {
                     t(french, "Mode jeu"),
                     Some(t(french, "Masque l’encoche et ses alertes jusqu’à désactivation. Pour les jeux en fenêtre, active-le depuis l’icône près de l’horloge.")),
                     toggle("game-mode", s.game_mode, self.setting(cx, |s| s.game_mode = !s.game_mode)),
+                ),
+                setting_row(t(french, "Raccourci clavier"), Some(shortcut_help), shortcut),
+                setting_row(
+                    t(french, "Quota dans la barre des tâches"),
+                    Some(t(french, "L’icône près de l’horloge affiche une jauge du quota le plus consommé ; survole-la pour le détail.")),
+                    toggle("tray-usage", s.tray_shows_usage, self.setting(cx, |s| s.tray_shows_usage = !s.tray_shows_usage)),
+                ),
+                setting_row(
+                    t(french, "Lancer au démarrage de Windows"),
+                    Some(t(french, "CodeNotch démarre avec ta session, sans ouvrir les réglages.")),
+                    toggle("launch-at-startup", s.launch_at_startup, self.setting(cx, |s| s.launch_at_startup = !s.launch_at_startup)),
                 ),
             ],
             cx,

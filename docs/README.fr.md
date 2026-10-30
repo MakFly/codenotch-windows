@@ -34,7 +34,8 @@ Une version portable reste disponible : décompressez
 L'installateur et l'application ne sont pas signés. SmartScreen peut afficher
 une alerte et Smart App Control peut bloquer leur exécution selon la configuration
 de sécurité. Voir les [explications de Microsoft](https://learn.microsoft.com/windows/apps/package-and-deploy/smartscreen-reputation).
-Pas de démarrage automatique. Les mises à jour sont intégrées : CodeNotch vérifie
+Pour lancer CodeNotch avec Windows, active **Apparence → Encoche → Lancer au
+démarrage de Windows**. Les mises à jour sont intégrées : CodeNotch vérifie
 au lancement puis deux fois par jour, vérifie la signature du nouvel installateur
 et l'installe en un clic depuis les réglages. Les empreintes des téléchargements
 figurent dans `SHA256SUMS.txt`.
@@ -46,7 +47,9 @@ figurent dans `SHA256SUMS.txt`.
 - Quatre bords possibles (le déplacement par la poignée n'est pas encore porté dans l'app native).
 - Détails au survol et repli automatique au départ de la souris.
 - Masquage en plein écran et mode jeu manuel pour les jeux en fenêtre.
-- Réglages séparés, formulaires en modale et alertes de seuil (notifications Windows, Discord).
+- Réglages séparés, formulaires en modale et alertes de seuil (notifications Windows, Telegram, Discord).
+- Jauge du quota en option sur l'icône près de l'horloge, raccourci global (Ctrl+Alt+N
+  pour l'encoche, Ctrl+Alt+G pour le mode jeu) et lancement au démarrage de Windows.
 - Anglais par défaut, français disponible et choix enregistré.
 - Page **Accueil** : la fenêtre principale de chaque compte, ses échéances et des raccourcis.
 - Consommation CPU, RAM et GPU de l'ordinateur en temps réel dans l'en-tête des réglages.
@@ -84,7 +87,9 @@ validation sur différents comptes.
 
 Un quota représente un pourcentage **consommé**, pas des tokens restants.
 Une mesure absente reste un tiret ; une mesure ancienne est signalée.
-Les relevés restent en mémoire pendant la session, pas entre lancements.
+Les relevés réussis sont gardés 30 jours dans `history.jsonl`, à côté de la
+configuration : courbe 24 h / 7 j / 30 j sur l'accueil, export CSV, et prévision
+qui reprend dès le relancement.
 Les délais des réponses HTTP 429 sont respectés ; Claude est interrogé au
 maximum une fois toutes les deux minutes.
 

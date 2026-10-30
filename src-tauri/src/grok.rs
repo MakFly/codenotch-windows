@@ -175,7 +175,7 @@ mod tests {
             secret_env: String::new(),
             has_secret: false,
         };
-        match tauri::async_runtime::block_on(fetch(&account)) {
+        match tokio::runtime::Runtime::new().unwrap().block_on(fetch(&account)) {
             Ok(r) => r.windows.iter().for_each(|w| {
                 println!(
                     "grok window: {} {:.1}% resets={:?}",

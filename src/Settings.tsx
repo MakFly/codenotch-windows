@@ -38,8 +38,8 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger, useOpenSe
 import * as api from "./lib/bridge";
 import { useLocale } from "./lib/Locale";
 const provider = (id: string) => providers.find((p) => p.id === id)!;
-// Telegram alerts stay switched off until validated end to end (mirrors telegram::AVAILABLE).
-const telegramAvailable = false;
+// Mirrors telegram::AVAILABLE.
+const telegramAvailable = true;
 type Run = <T>(fn: () => Promise<T>, message?: string) => Promise<void>;
 type Notice = {
   kind: "info" | "success" | "error";

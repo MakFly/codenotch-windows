@@ -77,6 +77,15 @@ pub fn forecast(samples: &[(i64, f64)], now: i64) -> Option<i64> {
 }
 
 impl Tracker {
+    /// Restores the readings of a window saved by an earlier session, so the pace (and the
+    /// forecast) does not start from nothing at launch. Alerts already sent are not restored.
+    /// Only the GPUI app keeps a history.
+    #[allow(dead_code)]
+    pub fn seed(&mut self, account_id: &str, label: &str, resets_at: Option<i64>, samples: Vec<(i64, f64)>) {
+        self.samples
+            .insert((account_id.to_owned(), label.to_owned()), (resets_at, samples));
+    }
+
     /// Records a successful reading, stores its forecasts in it, and returns the alerts
     /// it triggers. Each level fires once per window and period; a higher level silences
     /// the lower ones it skipped.
@@ -319,6 +328,21 @@ mod tests {
     }
     fn levels(alerts: &[Alert]) -> Vec<Level> {
         alerts.iter().map(|a| a.level).collect()
+    }
+    #[test]
+    fn seeded_pace_forecasts_from_the_first_reading() {
+        let reset = Some(20_000);
+        let mut tracker = Tracker::default();
+        tracker.seed("a", "5 h", reset, vec![(8_800, 40.0), (9_400, 45.0)]);
+        let mut r = reading(50.0, reset);
+        tracker.observe(&account(), &mut r, &Settings::default(), 10_000);
+        assert!(r.exhausts_at.contains_key("5 h"));
+        // Seeds from another period are dropped by the first reading of the new one.
+        let mut tracker = Tracker::default();
+        tracker.seed("a", "5 h", Some(1), vec![(8_800, 40.0), (9_400, 45.0)]);
+        let mut r = reading(50.0, reset);
+        tracker.observe(&account(), &mut r, &Settings::default(), 10_000);
+        assert!(r.exhausts_at.is_empty());
     }
 
     #[test]

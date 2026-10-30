@@ -58,6 +58,21 @@ pub struct Settings {
     /// Post alerts to a Discord channel; the webhook URL stays in Windows Credential Manager.
     #[serde(default)]
     pub discord_enabled: bool,
+    /// Start with the Windows session (a value under HKCU\…\Run).
+    #[serde(default)]
+    pub launch_at_startup: bool,
+    /// Draw the most used window's gauge on the tray icon.
+    #[serde(default = "default_true")]
+    pub tray_shows_usage: bool,
+    /// System-wide shortcut that shows the notch, e.g. "Ctrl+Alt+N"; `None` when off.
+    #[serde(default)]
+    pub hotkey: Option<String>,
+    /// How far back the Home page history goes, in hours (24, 168 or 720).
+    #[serde(default = "default_history_hours")]
+    pub history_hours: u16,
+}
+fn default_history_hours() -> u16 {
+    168
 }
 fn default_critical() -> u8 {
     95
@@ -103,6 +118,10 @@ impl Default for Settings {
             telegram_enabled: false,
             telegram_chat_id: String::new(),
             discord_enabled: false,
+            launch_at_startup: false,
+            tray_shows_usage: true,
+            hotkey: None,
+            history_hours: default_history_hours(),
         }
     }
 }
@@ -232,6 +251,10 @@ mod tests {
         assert_eq!(Settings::default().onboarding_done, Some(false));
         assert_eq!(s.widget_position, "left");
         assert_eq!(s.poll_seconds, 120);
+        assert!(!s.launch_at_startup);
+        assert!(s.tray_shows_usage);
+        assert_eq!(s.hotkey, None);
+        assert_eq!(s.history_hours, 168);
     }
     #[test]
     fn endpoints_do_not_leak_credentials() {

@@ -4,9 +4,15 @@ use crate::account_form::name;
 use crate::model::Account;
 use crate::settings::{button, icon, position_label, AccountsTab, Kind, Section, SettingsView, MUTED};
 use crate::ui::{
-    freshness, headline, is_fresh, percentage, provider_icon, reset_time, status_label, t, usage_color,
+    freshness, headline, is_fresh, percentage, provider_icon, reset_time, sparkline, status_label, t,
+    usage_color,
 };
 use gpui::{div, prelude::*, px, rgb, rgba, AnyElement, ClickEvent, Context, FontWeight, SharedString};
+
+/// Readings further apart than this leave a gap in the history line.
+const GAP: i64 = 1800;
+/// History spans offered on the Home page, in hours.
+const RANGES: [(u16, &str); 3] = [(24, "24 h"), (168, "7 j"), (720, "30 j")];
 
 fn group_label(text: String) -> AnyElement {
     div()
@@ -96,6 +102,22 @@ impl SettingsView {
             (None, None) => div().text_size(px(13.)).text_color(rgb(0x9a9aa3)).child(freshness(None, now, french)),
         };
         let fill = used.unwrap_or(0.).clamp(0., 100.) as f32 / 100.;
+        let span = s.config.settings.history_hours as i64 * 3600;
+        let samples = quota.map_or(&[][..], |q| s.history.series(&account.id, &q.label, now - span));
+        // Under two readings a line would say more than is known.
+        let trend = (samples.len() >= 2).then(|| {
+            let mut previous: Option<&crate::history::Sample> = None;
+            let points = samples
+                .iter()
+                .map(|p| {
+                    let start = previous.is_none_or(|b| b.resets_at != p.resets_at || p.at - b.at > GAP);
+                    previous = Some(p);
+                    let x = 1. - (now - p.at) as f32 / span as f32;
+                    (x.clamp(0., 1.), (p.used / 100.).clamp(0., 1.) as f32, start)
+                })
+                .collect();
+            sparkline(points, usage_color(used))
+        });
         card()
             .gap(px(10.))
             .child(
@@ -116,6 +138,7 @@ impl SettingsView {
                     .bg(rgba(0xffffff14))
                     .child(div().h_full().w(gpui::relative(fill)).rounded_full().bg(usage_color(used))),
             )
+            .children(trend)
             .child(
                 div()
                     .text_size(px(10.5))
@@ -127,6 +150,68 @@ impl SettingsView {
                     }),
             )
             .into_any_element()
+    }
+
+    /// Segments choosing how far back the history lines go.
+    fn range_toggle(&self, hours: u16, french: bool, cx: &mut Context<Self>) -> AnyElement {
+        div()
+            .flex()
+            .flex_none()
+            .items_center()
+            .gap(px(2.))
+            .h(px(28.))
+            .p(px(2.))
+            .rounded(px(6.))
+            .border_1()
+            .border_color(rgb(0x414147))
+            .bg(rgb(0x1c1c1f))
+            .children(RANGES.map(|(value, label)| {
+                let on = value == hours;
+                div()
+                    .id(SharedString::from(format!("home-range-{value}")))
+                    .flex()
+                    .items_center()
+                    .h_full()
+                    .px(px(8.))
+                    .rounded(px(4.))
+                    .text_size(px(11.))
+                    .font_weight(FontWeight::MEDIUM)
+                    .when(on, |d| d.bg(rgb(0x3a3a3f)).text_color(rgb(0xffffff)))
+                    .when(!on, |d| {
+                        d.text_color(rgb(0x9a9aa3))
+                            .cursor_pointer()
+                            .hover(|d| d.text_color(rgb(0xffffff)))
+                            .on_click(self.setting(cx, move |s| s.history_hours = value))
+                    })
+                    .child(t(french, label))
+            }))
+            .into_any_element()
+    }
+
+    /// Writes the whole history to a CSV file in Downloads and shows it in Explorer.
+    fn export_history(&mut self, french: bool, cx: &mut Context<Self>) {
+        let csv = {
+            let s = self.store.read(cx);
+            let accounts = &s.config.accounts;
+            s.history.csv(|id| match accounts.iter().find(|a| a.id == id) {
+                Some(a) => (a.name.clone(), a.provider.clone()),
+                None => (id.to_owned(), String::new()),
+            })
+        };
+        let Some(dir) = dirs::download_dir().or_else(dirs::document_dir) else {
+            return self.say(false, t(french, "Dossier Téléchargements introuvable."), cx);
+        };
+        let file = dir.join(format!("codenotch-history-{}.csv", chrono::Local::now().format("%Y%m%d")));
+        // A BOM so Excel reads the accents as UTF-8.
+        match std::fs::write(&file, format!("\u{feff}{csv}")) {
+            Ok(()) => {
+                let _ = std::process::Command::new("explorer")
+                    .arg(format!("/select,{}", file.display()))
+                    .spawn();
+                self.say(true, t(french, "Historique exporté : {path}").replace("{path}", &file.display().to_string()), cx);
+            }
+            Err(_) => self.say(false, t(french, "Impossible d’écrire le fichier CSV."), cx),
+        }
     }
 
     fn shortcut(
@@ -232,8 +317,23 @@ impl SettingsView {
             self.shortcut("home-alerts", "bell", t(french, "Alertes"), alerts_detail, |this| this.section = Section::Alerts, cx),
         ];
 
+        let history = div()
+            .mb(px(10.))
+            .flex()
+            .items_center()
+            .gap(px(10.))
+            .child(div().flex_1().text_size(px(11.)).text_color(rgb(MUTED)).child(t(french, "Historique des quotas")))
+            .child(self.range_toggle(settings.history_hours, french, cx))
+            .child(button(
+                "home-export",
+                Kind::Secondary,
+                Some("download"),
+                t(french, "Exporter (CSV)"),
+                Some(Box::new(cx.listener(move |this, _: &ClickEvent, _, cx| this.export_history(french, cx)))),
+            ));
+
         vec![
-            div().pt(px(8.)).child(grid(cards)).into_any_element(),
+            div().pt(px(8.)).when(!accounts.is_empty(), |d| d.child(history)).child(grid(cards)).into_any_element(),
             div().child(group_label(t(french, "Raccourcis"))).child(grid(shortcuts)).into_any_element(),
         ]
     }

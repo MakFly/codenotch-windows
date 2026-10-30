@@ -5,8 +5,10 @@ use std::time::Duration;
 
 /// Windows Credential Manager entry holding the bot token.
 const SECRET: &str = "telegram-bot";
-/// Telegram alerts are switched off until they have been validated end to end.
-pub const AVAILABLE: bool = false;
+/// Lets the Telegram channel be configured and alerts be sent.
+pub const AVAILABLE: bool = true;
+/// Longest `retry_after` worth waiting for once, rather than dropping the message.
+const MAX_RETRY_WAIT: u64 = 30;
 
 pub fn saved_token() -> Option<String> {
     keyring::Entry::new("SmashToken", SECRET)
@@ -63,14 +65,24 @@ async fn call(token: &str, method: &str, body: Value) -> Result<Value, String> {
         .redirect(reqwest::redirect::Policy::none())
         .build()
         .map_err(|_| "Client réseau indisponible.")?;
-    let response = client
-        .post(format!("https://api.telegram.org/bot{token}/{method}"))
-        .json(&body)
-        .send()
-        .await
-        .map_err(|_| "Telegram injoignable. Vérifie la connexion.")?;
-    let status = response.status().as_u16();
-    let value: Value = response.json().await.unwrap_or(Value::Null);
+    let url = format!("https://api.telegram.org/bot{token}/{method}");
+    let post = || async {
+        let response = client
+            .post(&url)
+            .json(&body)
+            .send()
+            .await
+            .map_err(|_| "Telegram injoignable. Vérifie la connexion.")?;
+        let status = response.status().as_u16();
+        let value: Value = response.json().await.unwrap_or(Value::Null);
+        Ok::<_, String>((status, value))
+    };
+    let (mut status, mut value) = post().await?;
+    // Flood control: wait the delay Telegram asks for, once, when it is short.
+    if let Some(wait) = retry_after(status, &value) {
+        tokio::time::sleep(Duration::from_secs(wait)).await;
+        (status, value) = post().await?;
+    }
     if value["ok"] == true {
         return Ok(value["result"].clone());
     }
@@ -86,6 +98,13 @@ async fn call(token: &str, method: &str, body: Value) -> Result<Value, String> {
         _ => "Telegram a refusé le message.",
     }
     .into())
+}
+
+fn retry_after(status: u16, value: &Value) -> Option<u64> {
+    (status == 429)
+        .then(|| value["parameters"]["retry_after"].as_u64())
+        .flatten()
+        .filter(|s| *s <= MAX_RETRY_WAIT)
 }
 
 #[derive(Serialize)]
@@ -301,6 +320,14 @@ pub fn test_message(french: bool, now: i64) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn flood_control_waits_only_for_short_delays() {
+        let asked = |s| json!({"ok": false, "parameters": {"retry_after": s}});
+        assert_eq!(retry_after(429, &asked(5)), Some(5));
+        assert_eq!(retry_after(429, &asked(120)), None);
+        assert_eq!(retry_after(400, &asked(5)), None);
+        assert_eq!(retry_after(429, &json!({"ok": false})), None);
+    }
     #[test]
     fn chat_ids_and_gauge() {
         assert!(valid_chat_id("123456"));

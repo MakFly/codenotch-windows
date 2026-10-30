@@ -3,7 +3,7 @@
 use crate::account_form::name;
 use crate::login::{self, ProviderStatus};
 use crate::model::Account;
-use crate::settings::{button, icon, message, Kind, SettingsView, MUTED};
+use crate::settings::{button, icon, message, toggle, Kind, SettingsView, MUTED};
 use crate::ui::{provider_icon, t};
 use gpui::{
     div, prelude::*, px, rgb, rgba, Animation, AnimationExt, AnyElement, ClickEvent, ClipboardItem, Context,
@@ -846,6 +846,7 @@ impl SettingsView {
 
     pub(crate) fn welcome(&mut self, french: bool, cx: &mut Context<Self>) -> AnyElement {
         let count = self.store.read(cx).enabled().len();
+        let startup = self.store.read(cx).config.settings.launch_at_startup;
         let language = self.language_toggle(french, cx);
         let subscriptions = self.quick_connect(french, "Tes abonnements", false, false, cx);
         let banner = self.message.clone().map(|(ok, text)| message(ok, text));
@@ -939,6 +940,16 @@ impl SettingsView {
                 1 => t(french, "{count} compte suivi").replace("{count}", "1"),
                 n => t(french, "{count} comptes suivis").replace("{count}", &n.to_string()),
             }))
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(8.))
+                    .text_size(px(11.))
+                    .text_color(rgb(0x9999a2))
+                    .child(t(french, "Lancer au démarrage de Windows"))
+                    .child(toggle("welcome-startup", startup, self.setting(cx, |s| s.launch_at_startup = !s.launch_at_startup))),
+            )
             // Once an account is tracked, "Later" would do the same as "Finish".
             .when(count == 0, |d| {
                 d.child(button(

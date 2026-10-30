@@ -28,9 +28,12 @@ mod telegram;
 mod account_form;
 mod agents;
 mod assets;
+mod autostart;
 mod channels;
 mod desktop;
+mod history;
 mod home;
+mod hotkey;
 mod input;
 mod settings;
 mod store;
@@ -61,10 +64,12 @@ fn main() {
             .settings
             .onboarding_done
             .get_or_insert(!config.accounts.is_empty());
+        autostart::reconcile(config.settings.launch_at_startup);
         let store = cx.new(|_| store::Store::new(config, storage_error));
         ui::open_rail(store.clone(), cx);
         input::bind_keys(cx);
         tray::install(store.clone(), cx);
+        hotkey::install(store.clone(), cx);
         if first_run || std::env::args().any(|a| a == "--settings") {
             settings::open(store.clone(), cx);
         }

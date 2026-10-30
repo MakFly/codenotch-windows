@@ -23,13 +23,17 @@ Anthropic or GitHub app.
 
 - Native Rust app: small, fast to start, no browser engine.
 - Compact quota rings for each enabled account and details on hover.
-- A **Home** page with every account's main window, reset times and shortcuts.
+- A **Home** page with every account's main window, reset times, a 24 h / 7 d / 30 d
+  history line and a CSV export.
+- An optional usage gauge on the tray icon, with every account's quota in its tooltip.
+- An optional system-wide shortcut to show the notch (Ctrl+Alt+N) or toggle game mode (Ctrl+Alt+G).
+- Optional launch at Windows startup.
 - The computer's live CPU, RAM and GPU use in the settings header.
 - Automatic collapse when the pointer leaves; four configurable screen edges.
 - Four screen edges; moving the notch by its grip is not ported to the native app yet.
 - Automatic hiding during full-screen games and videos, plus manual game mode.
 - Multiple profiles per provider and local Codex / Claude profile detection.
-- Separate settings, modal account editing and threshold alerts (Windows notifications, Discord).
+- Separate settings, modal account editing and threshold alerts (Windows notifications, Telegram, Discord).
 - **English by default**, with saved English / French selection.
 - Local account handling, Windows Credential Manager storage and no app telemetry.
 
@@ -55,7 +59,7 @@ The installer and portable executable are unsigned. Windows may display a
 SmartScreen warning or block unsigned applications under Smart App Control;
 installation is not guaranteed on every security configuration. See
 [Microsoft's explanation](https://learn.microsoft.com/windows/apps/package-and-deploy/smartscreen-reputation).
-There is no automatic startup. Updates are built in: CodeNotch checks GitHub Releases at launch and twice a day, verifies the signature of the new installer, and installs it in one click from **Settings** (or **Appearance → Updates**).
+To start CodeNotch with Windows, turn on **Appearance → Notch → Launch at Windows startup**. Updates are built in: CodeNotch checks GitHub Releases at launch and twice a day, verifies the signature of the new installer, and installs it in one click from **Settings** (or **Appearance → Updates**).
 
 Verify downloads against `SHA256SUMS.txt` using PowerShell:
 
@@ -142,7 +146,9 @@ with zero.
 
 Refresh intervals are 30, 60, 120 or 300 seconds. Claude enforces a minimum of
 120 seconds, including manual refresh. HTTP 429 responses respect retry delays.
-Readings stay in memory for the session; any history comes from the provider.
+Successful readings are kept for 30 days in `history.jsonl`, next to the
+configuration: a line when a value moves, or every five minutes otherwise. Missing
+readings stay gaps in the history. It also lets the limit forecast resume right after a restart.
 
 ## Alerts (for agents running in the background)
 
@@ -158,7 +164,7 @@ Readings stay in memory for the session; any history comes from the provider.
 - **Quota available again** after a reset, so paused agents can resume.
 - **Full screen**: forecasts, critical and limit alerts still show during games
   and in game mode (can be turned off).
-- **Telegram** (coming soon, switched off in this version): create a bot with @BotFather, send it `/start`, paste its token in
+- **Telegram**: create a bot with @BotFather, send it `/start`, paste its token in
   **Alerts → Telegram**, detect the chat and send a test. Alerts
   arrive as cards with a gauge, the expected limit, the reset time and a link to
   the provider's usage page. The token stays in Windows Credential Manager and is

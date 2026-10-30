@@ -638,6 +638,35 @@ fn paint_arc(window: &mut Window, center: Point<Pixels>, radius: f32, width: f32
     }
 }
 
+/// A thin usage line over time: points are (x, y) in 0..=1, y = 1 at the top; `true` starts
+/// a new segment, so a reset or a gap in the readings is not drawn as a slope.
+pub(crate) fn sparkline(points: Vec<(f32, f32, bool)>, color: Rgba) -> impl IntoElement {
+    canvas(
+        |_, _, _| {},
+        move |bounds, _, window, _| {
+            let at = |x: f32, y: f32| {
+                point(
+                    bounds.origin.x + bounds.size.width * x,
+                    bounds.origin.y + bounds.size.height * (1. - y),
+                )
+            };
+            let mut builder = PathBuilder::stroke(px(1.5));
+            for &(x, y, start) in &points {
+                if start {
+                    builder.move_to(at(x, y));
+                } else {
+                    builder.line_to(at(x, y));
+                }
+            }
+            if let Ok(path) = builder.build() {
+                window.paint_path(path, color);
+            }
+        },
+    )
+    .w_full()
+    .h(px(28.))
+}
+
 /// The provider's logo tinted with the current text color, or its short mark.
 pub(crate) fn provider_icon(provider: &str, size: f32) -> AnyElement {
     match crate::assets::logo(provider) {

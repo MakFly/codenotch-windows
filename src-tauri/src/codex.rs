@@ -258,7 +258,7 @@ mod tests {
     #[test]
     #[ignore = "starts a real Codex login, then abandons it without opening a browser"]
     fn app_server_login_returns_an_openai_url() {
-        let started = tauri::async_runtime::block_on(login("")).unwrap();
+        let started = tokio::runtime::Runtime::new().unwrap().block_on(login("")).unwrap();
         let (start, outcome) = started.expect("this Codex has App Server login");
         assert!(start.url.starts_with("https://auth.openai.com/"));
         drop(outcome); // Kills app-server and its callback listener.
