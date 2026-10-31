@@ -104,7 +104,7 @@ impl History {
                 .entry((reading.account_id.clone(), w.label.clone()))
                 .or_default();
             let due = samples.last().is_none_or(|last| {
-                last.used != w.used_percent || last.resets_at != w.resets_at || now - last.at >= HEARTBEAT
+                last.used != w.used_percent || !crate::alerts::same_period(last.resets_at, w.resets_at) || now - last.at >= HEARTBEAT
             });
             if !due {
                 continue;

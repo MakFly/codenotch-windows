@@ -175,7 +175,7 @@ pub(crate) fn percentage(value: f64, french: bool) -> String {
     format!("{text} %")
 }
 
-fn tokens(n: u64, compact: bool, french: bool) -> String {
+pub(crate) fn tokens(n: u64, compact: bool, french: bool) -> String {
     if compact && n >= 1000 {
         let (value, unit) = if n >= 1_000_000_000 {
             (n as f64 / 1e9, if french { " Md" } else { "B" })
@@ -638,35 +638,6 @@ fn paint_arc(window: &mut Window, center: Point<Pixels>, radius: f32, width: f32
     }
 }
 
-/// A thin usage line over time: points are (x, y) in 0..=1, y = 1 at the top; `true` starts
-/// a new segment, so a reset or a gap in the readings is not drawn as a slope.
-pub(crate) fn sparkline(points: Vec<(f32, f32, bool)>, color: Rgba) -> impl IntoElement {
-    canvas(
-        |_, _, _| {},
-        move |bounds, _, window, _| {
-            let at = |x: f32, y: f32| {
-                point(
-                    bounds.origin.x + bounds.size.width * x,
-                    bounds.origin.y + bounds.size.height * (1. - y),
-                )
-            };
-            let mut builder = PathBuilder::stroke(px(1.5));
-            for &(x, y, start) in &points {
-                if start {
-                    builder.move_to(at(x, y));
-                } else {
-                    builder.line_to(at(x, y));
-                }
-            }
-            if let Ok(path) = builder.build() {
-                window.paint_path(path, color);
-            }
-        },
-    )
-    .w_full()
-    .h(px(28.))
-}
-
 /// The provider's logo tinted with the current text color, or its short mark.
 pub(crate) fn provider_icon(provider: &str, size: f32) -> AnyElement {
     match crate::assets::logo(provider) {
@@ -753,6 +724,55 @@ fn paint_flares(window: &mut Window, bounds: Bounds<Pixels>, edge: Edge, rail: B
         if let Ok(path) = builder.build() {
             window.paint_path(path, rgb(BLACK));
         }
+    }
+}
+
+/// The hairline around the black notch, so it stays visible over a black background.
+const OUTLINE: u32 = 0xffffff38;
+/// The folded tab is small: its hairline is a little brighter.
+const PEEK_OUTLINE: u32 = 0xffffff4d;
+
+/// The hairline along the silhouette of a side rail and its flares: from the screen edge
+/// down the top flare, around the rail's rounded corners, and back up the bottom flare.
+fn paint_outline(window: &mut Window, bounds: Bounds<Pixels>, edge: Edge, rail: Bounds<Pixels>) {
+    let right = edge == Edge::Right;
+    // u: distance from the screen edge; v: position along it (window coordinates).
+    let map = |u: f32, v: f32| -> Point<Pixels> {
+        if right {
+            point(bounds.origin.x + bounds.size.width - px(u), bounds.origin.y + px(v))
+        } else {
+            point(bounds.origin.x + px(u), bounds.origin.y + px(v))
+        }
+    };
+    let width = if right {
+        f32::from(bounds.size.width - rail.origin.x)
+    } else {
+        f32::from(rail.origin.x + rail.size.width)
+    };
+    let (start, end) = (f32::from(rail.origin.y), f32::from(rail.origin.y + rail.size.height));
+    let radius = RAIL_RADIUS.min(width - FLARE).max(0.);
+    // Half a pixel inside, so the line is not cut in two by the window's edge.
+    let mut builder = PathBuilder::stroke(px(1.));
+    builder.move_to(map(0.5, start - FLARE));
+    for i in (0..=24).rev() {
+        let phi = FRAC_PI_2 * i as f32 / 24.;
+        builder.line_to(map(FLARE - FLARE * phi.sin(), start - (FLARE - FLARE * phi.cos()) + 0.5));
+    }
+    for i in 0..=16 {
+        let theta = FRAC_PI_2 * i as f32 / 16.;
+        builder.line_to(map(width - radius + (radius - 0.5) * theta.sin(), start + radius - (radius - 0.5) * theta.cos()));
+    }
+    for i in (0..=16).rev() {
+        let theta = FRAC_PI_2 * i as f32 / 16.;
+        builder.line_to(map(width - radius + (radius - 0.5) * theta.sin(), end - radius + (radius - 0.5) * theta.cos()));
+    }
+    for i in 0..=24 {
+        let phi = FRAC_PI_2 * i as f32 / 24.;
+        builder.line_to(map(FLARE - FLARE * phi.sin(), end + (FLARE - FLARE * phi.cos()) - 0.5));
+    }
+    builder.line_to(map(0.5, end + FLARE));
+    if let Ok(path) = builder.build() {
+        window.paint_path(path, rgba(OUTLINE));
     }
 }
 
@@ -846,7 +866,7 @@ impl Render for Rail {
                 .when(vertical, |d| d.w(px(INDICATOR_THICKNESS)).h(px(INDICATOR_LEN)))
                 .when(!vertical, |d| d.w(px(INDICATOR_LEN)).h(px(INDICATOR_THICKNESS)))
                 .bg(rgb(BLACK))
-                .border_color(rgba(0xffffff28))
+                .border_color(rgba(PEEK_OUTLINE))
                 .map(|d| match edge {
                     Edge::Right => d.border_l_1().border_t_1().border_b_1(),
                     Edge::Left => d.border_r_1().border_t_1().border_b_1(),
@@ -880,7 +900,15 @@ impl Render for Rail {
         let view = cx.entity().downgrade();
         let cells: Vec<AnyElement> = accounts
             .iter()
-            .map(|account| {
+            .enumerate()
+            .map(|(index, account)| {
+                // The ring's center from the start of the rail: cells are laid out from
+                // the rail's start padding, the ring at the top of its cell.
+                let along = px(if vertical {
+                    RAIL_PAD_START + index as f32 * (CELL_LEN + CELL_GAP) + RING / 2.
+                } else {
+                    H_RAIL_PAD + index as f32 * (CELL_WIDTH + H_CELL_GAP) + CELL_WIDTH / 2.
+                });
                 let reading = s.readings.get(&account.id);
                 let value = headline(reading).map(|w| w.used_percent);
                 let stale = reading.is_some() && !is_fresh(reading, interval, now);
@@ -923,12 +951,14 @@ impl Render for Rail {
                                 cx.notify();
                             });
                             if *hovered {
-                                open_popover(&store, id.clone(), window.bounds(), rail_bounds, area, cx)
+                                open_popover(&store, id.clone(), window.bounds(), rail_bounds, along, area, cx)
                             }
                         }
                     })
-                    .on_click(move |_, window, cx| {
-                        open_popover(&store, id.clone(), window.bounds(), rail_bounds, area, cx)
+                    // Hovering shows the popover; a click goes to the account's Analytics.
+                    .on_click(move |_, _, cx| {
+                        close_popover(&store, cx);
+                        crate::settings::open_analytics(store.clone(), id.clone(), cx);
                     })
                     .into_any_element()
             })
@@ -967,6 +997,14 @@ impl Render for Rail {
             .w(rail_bounds.size.width)
             .h(rail_bounds.size.height)
             .bg(rgb(BLACK))
+            // A rail along the top or bottom has no flares: its border is its outline. Side
+            // rails get theirs drawn along the flares (`paint_outline`).
+            .when(!vertical, |d| {
+                d.border_color(rgba(OUTLINE)).map(|d| match edge {
+                    Edge::Top => d.border_b_1().border_l_1().border_r_1(),
+                    _ => d.border_t_1().border_l_1().border_r_1(),
+                })
+            })
             .flex()
             .when(vertical, |d| {
                 d.flex_col()
@@ -1006,6 +1044,8 @@ impl Render for Rail {
                         .h(px(32.))
                         .rounded(px(16.))
                         .bg(rgb(BLACK))
+                        .border_1()
+                        .border_color(rgba(OUTLINE))
                         .flex()
                         .items_center()
                         .justify_center()
@@ -1027,6 +1067,8 @@ impl Render for Rail {
                     .size(px(if auto_hide { 32. } else { 36. }))
                     .rounded_full()
                     .bg(rgb(BLACK))
+                    .border_1()
+                    .border_color(rgba(OUTLINE))
                     .flex()
                     .items_center()
                     .justify_center()
@@ -1041,6 +1083,8 @@ impl Render for Rail {
                     .h(px(32.))
                     .rounded(px(10.))
                     .bg(rgb(BLACK))
+                    .border_1()
+                    .border_color(rgba(OUTLINE))
                     .flex()
                     .items_center()
                     .justify_center()
@@ -1087,6 +1131,15 @@ impl Render for Rail {
                 )
             })
             .child(rail)
+            .when(vertical, |d| {
+                d.child(
+                    canvas(|_, _, _| {}, move |bounds, _, window, _| {
+                        paint_outline(window, bounds, edge, rail_bounds)
+                    })
+                    .absolute()
+                    .size_full(),
+                )
+            })
             .child(tools)
             .with_animation(
                 key,
@@ -1121,7 +1174,7 @@ fn popover_height(s: &Store, id: &str) -> f32 {
     let forecasts = reading.map_or(0, |r| {
         r.windows
             .iter()
-            .filter(|w| r.exhausts_at.contains_key(&w.label))
+            .filter(|w| crate::analytics_page::popover_outlook(r, &w.label, now, s.french()).is_some())
             .count()
     }) as f32;
     let mut h = 19. + 28. + 12. + 15. + 18. + 17. + 10. + 25. + 14.;
@@ -1187,7 +1240,7 @@ fn prepare_popover(store: &Entity<Store>, area: Bounds<Pixels>, cx: &mut App) {
 #[derive(Clone, Copy)]
 struct Anchor {
     edge: Edge,
-    /// Rail center along its edge, in screen coordinates.
+    /// Center of the hovered ring along the edge, in screen coordinates.
     center: Pixels,
     area: Bounds<Pixels>,
 }
@@ -1223,11 +1276,13 @@ impl Anchor {
     }
 }
 
+/// `along`: the hovered ring's center, from the start of the rail along its edge.
 fn open_popover(
     store: &Entity<Store>,
     id: String,
     notch: Bounds<Pixels>,
     rail: Bounds<Pixels>,
+    along: Pixels,
     area: Bounds<Pixels>,
     cx: &mut App,
 ) {
@@ -1236,11 +1291,11 @@ fn open_popover(
         return;
     }
     let edge = Edge::of(store.read(cx));
-    // Like `.vertical .usage-popover { top: 50% }`: centered on the rail, not the cell.
+    // Centered on the hovered ring, so the tail points at it.
     let center = if edge.vertical() {
-        notch.origin.y + rail.origin.y + rail.size.height / 2.
+        notch.origin.y + rail.origin.y + along
     } else {
-        notch.origin.x + rail.origin.x + rail.size.width / 2.
+        notch.origin.x + rail.origin.x + along
     };
     let anchor = Anchor { edge, center, area };
     if store.read(cx).popover.is_none() {
@@ -1258,6 +1313,10 @@ fn open_popover(
         if first {
             popover.shows += 1;
             popover.bounds = anchor.bounds(estimate);
+        } else {
+            // Moving to another ring: same height for now, re-centered on the new one.
+            let tail = if edge.vertical() { 0. } else { TAIL };
+            popover.bounds = anchor.bounds(f32::from(popover.bounds.size.height) - tail);
         }
         popover.shown = true;
         desktop::place(window, popover.bounds, true, cx);
@@ -1331,7 +1390,11 @@ impl Popover {
                 if (f32::from(next.size.height) - f32::from(current.size.height)).abs() > 0.5
                     || next.origin != current.origin
                 {
-                    popover.update(cx, |p, _| p.bounds = next);
+                    // Redrawn so the tail follows the new origin.
+                    popover.update(cx, |p, cx| {
+                        p.bounds = next;
+                        cx.notify();
+                    });
                     desktop::place(window, next, true, cx);
                 }
             },
@@ -1342,29 +1405,33 @@ impl Popover {
     }
 }
 
-/// The triangle pointing from the popover to the rail (`.usage-popover:after`).
-fn paint_tail(window: &mut Window, bounds: Bounds<Pixels>, edge: Edge) {
+/// The triangle pointing from the popover to the rail (`.usage-popover:after`), `at` along
+/// the edge from the window's start: in front of the hovered ring, kept off the corners.
+fn paint_tail(window: &mut Window, bounds: Bounds<Pixels>, edge: Edge, at: Pixels) {
     let o = bounds.origin;
     let (w, h) = (bounds.size.width, bounds.size.height);
+    let len = if edge.vertical() { h } else { w };
+    // Clear of the 18 px rounded corners, half the tail's 26 px base.
+    let at = at.max(px(31.)).min(len - px(31.));
     let points = match edge {
         Edge::Right => {
             let x = o.x + w - px(TAIL) - px(1.);
-            let cy = o.y + h / 2.;
+            let cy = o.y + at;
             [point(x, cy - px(13.)), point(x + px(22.), cy), point(x, cy + px(13.))]
         }
         Edge::Left => {
             let x = o.x + px(TAIL) + px(1.);
-            let cy = o.y + h / 2.;
+            let cy = o.y + at;
             [point(x, cy - px(13.)), point(x - px(22.), cy), point(x, cy + px(13.))]
         }
         Edge::Top => {
             let y = o.y + px(TAIL) + px(1.);
-            let cx = o.x + w / 2.;
+            let cx = o.x + at;
             [point(cx - px(13.), y), point(cx, y - px(22.)), point(cx + px(13.), y)]
         }
         Edge::Bottom => {
             let y = o.y + h - px(TAIL) - px(1.);
-            let cx = o.x + w / 2.;
+            let cx = o.x + at;
             [point(cx - px(13.), y), point(cx, y + px(22.)), point(cx + px(13.), y)]
         }
     };
@@ -1405,23 +1472,39 @@ impl Render for Popover {
         let edge = self.anchor.edge;
 
         let close_store = self.store.clone();
+        let (analytics_store, analytics_id) = (self.store.clone(), account.id.clone());
         let header = div()
             .flex()
             .items_center()
             .gap(px(9.))
             .h(px(28.))
-            .child(provider_icon(&account.provider, 22.))
             .child(
+                // The account's name leads to its Analytics page.
                 div()
+                    .id("open-analytics")
                     .flex()
-                    .gap_1()
-                    .text_size(px(16.))
+                    .items_center()
+                    .gap(px(9.))
+                    .cursor_pointer()
+                    .hover(|d| d.opacity(0.8))
+                    .child(provider_icon(&account.provider, 22.))
                     .child(
                         div()
-                            .font_weight(FontWeight::MEDIUM)
-                            .child(t(french, provider_title(&account.provider))),
+                            .flex()
+                            .gap_1()
+                            .text_size(px(16.))
+                            .child(
+                                div()
+                                    .font_weight(FontWeight::MEDIUM)
+                                    .child(t(french, provider_title(&account.provider))),
+                            )
+                            .child(div().child(t(french, "Usage"))),
                     )
-                    .child(div().child(t(french, "Usage"))),
+                    .on_click(move |_, _, cx| {
+                        close_popover(&analytics_store, cx);
+                        set_hover(&analytics_store, 1, false, cx);
+                        crate::settings::open_analytics(analytics_store.clone(), analytics_id.clone(), cx);
+                    }),
             )
             .child(div().flex_1())
             .child(
@@ -1489,7 +1572,7 @@ impl Render for Popover {
             .map(|w| {
                 let forecast = reading
                     .as_ref()
-                    .and_then(|r| r.exhausts_at.get(&w.label).copied());
+                    .and_then(|r| crate::analytics_page::popover_outlook(r, &w.label, now, french));
                 div()
                     .flex()
                     .flex_col()
@@ -1533,14 +1616,12 @@ impl Render for Popover {
                             .child(percentage(w.used_percent, french))
                             .child(div().text_color(rgb(0xc9c9c9)).child(t(french, "utilisés"))),
                     )
-                    .when_some(forecast, |d, at| {
-                        let text = t(french, "Plafond estimé {time} au rythme actuel")
-                            .replace("{time}", &reset_time(Some(at), now, french));
+                    .when_some(forecast, |d, (text, limit)| {
                         d.child(
                             div()
                                 .mt(px(8.))
                                 .text_size(px(11.))
-                                .text_color(rgb(0xeab778))
+                                .text_color(if limit { rgb(0xeab778) } else { rgb(0xa5a5a5) })
                                 .child(text),
                         )
                     })
@@ -1671,6 +1752,9 @@ impl Render for Popover {
 
         // The window holds the box plus a strip on the rail side for the tail.
         let tail_space = div().flex_none().size(px(TAIL));
+        // The hovered ring, from the window's start; the box may be clamped to the screen.
+        let tail_at = self.anchor.center
+            - if edge.vertical() { self.bounds.origin.y } else { self.bounds.origin.x };
         // `.usage-popover` fades in; keyed by account, so moving to another ring replays it.
         let body = body
             .when(!edge.vertical(), |d| d.flex_1().min_h_0())
@@ -1691,7 +1775,7 @@ impl Render for Popover {
                 Edge::Bottom => d.flex_col().child(body).child(tail_space),
             })
             .child(
-                canvas(|_, _, _| {}, move |bounds, _, window, _| paint_tail(window, bounds, edge))
+                canvas(|_, _, _| {}, move |bounds, _, window, _| paint_tail(window, bounds, edge, tail_at))
                     .absolute()
                     .size_full(),
             )

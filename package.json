@@ -1,6 +1,6 @@
 {
   "name": "smashtoken",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "A Windows desktop notch for local AI account quotas and usage.",
   "license": "MIT",
   "author": "Kev (MakFly)",
@@ -11,6 +11,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "dev": "bun scripts/dev.ts",
     "desktop": "cargo run --manifest-path gpui-app/Cargo.toml",
     "desktop:settings": "cargo run --manifest-path gpui-app/Cargo.toml -- --settings",
     "desktop:build": "cargo build --release --manifest-path gpui-app/Cargo.toml",

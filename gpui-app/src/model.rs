@@ -70,6 +70,21 @@ pub struct Settings {
     /// How far back the Home page history goes, in hours (24, 168 or 720).
     #[serde(default = "default_history_hours")]
     pub history_hours: u16,
+    /// Span of the Analytics page, in days (7 or 30).
+    #[serde(default = "default_analytics_days")]
+    pub analytics_days: u16,
+    /// Converts API list prices, in dollars, to the euros the Analytics page shows.
+    #[serde(default = "default_usd_to_eur")]
+    pub usd_to_eur: f64,
+    /// Monthly subscription price per account id, in euros, as the user set it.
+    #[serde(default)]
+    pub plan_prices_eur: std::collections::BTreeMap<String, f64>,
+}
+fn default_analytics_days() -> u16 {
+    7
+}
+fn default_usd_to_eur() -> f64 {
+    0.92
 }
 fn default_history_hours() -> u16 {
     168
@@ -122,6 +137,9 @@ impl Default for Settings {
             tray_shows_usage: true,
             hotkey: None,
             history_hours: default_history_hours(),
+            analytics_days: default_analytics_days(),
+            usd_to_eur: default_usd_to_eur(),
+            plan_prices_eur: Default::default(),
         }
     }
 }
@@ -166,6 +184,10 @@ pub struct Reading {
     /// Estimated time each window reaches 100 % at the recent pace, when before its reset.
     #[serde(default)]
     pub exhausts_at: std::collections::BTreeMap<String, i64>,
+    /// Where each window should stand at its reset, from the history; computed after each
+    /// successful reading and never saved.
+    #[serde(skip)]
+    pub outlooks: std::collections::BTreeMap<String, crate::analytics::Outlook>,
 }
 
 #[derive(Clone, Serialize)]
@@ -255,6 +277,9 @@ mod tests {
         assert!(s.tray_shows_usage);
         assert_eq!(s.hotkey, None);
         assert_eq!(s.history_hours, 168);
+        assert_eq!(s.analytics_days, 7);
+        assert_eq!(s.usd_to_eur, 0.92);
+        assert!(s.plan_prices_eur.is_empty());
     }
     #[test]
     fn endpoints_do_not_leak_credentials() {

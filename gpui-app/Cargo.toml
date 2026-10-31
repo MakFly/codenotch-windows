@@ -1,6 +1,6 @@
 [package]
 name = "codenotch-gpui"
-version = "0.2.1"
+version = "0.3.0"
 description = "A Windows desktop notch for AI account quotas and usage, built with GPUI"
 authors = ["Kev"]
 license = "MIT"
@@ -42,6 +42,9 @@ embed-resource = "3"
 # Optimize the dependencies in dev builds; our own code stays quick to recompile.
 [profile.dev]
 opt-level = 1
+# Incremental builds at opt-level 1 kept failing to link (LNK2019 on `anon.*.llvm`
+# symbols) after a few rebuilds; a full rebuild of this crate costs only a few seconds more.
+incremental = false
 
 [profile.dev.package."*"]
 opt-level = 3

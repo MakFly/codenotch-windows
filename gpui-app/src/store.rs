@@ -15,6 +15,14 @@ pub struct Store {
     pub storage_error: Option<String>,
     pub tracker: alerts::Tracker,
     pub history: crate::history::History,
+    /// Token usage from the local CLI logs, once the Analytics page asked for it.
+    pub tokens: Option<crate::token_logs::TokenReport>,
+    /// The logs are being read in the background.
+    pub scanning: bool,
+    /// Monthly price in dollars guessed from each account's plan, refreshed with each scan
+    /// (Claude's comes from a file, too slow to read on every frame).
+    pub plan_suggestions_usd: HashMap<String, f64>,
+    pub pricing: crate::analytics::Pricing,
     pub selected: Option<String>,
     pub popover: Option<WindowHandle<crate::ui::Popover>>,
     pub settings_window: Option<WindowHandle<crate::settings::SettingsView>>,
@@ -58,7 +66,7 @@ impl Store {
             };
             let recent = samples
                 .iter()
-                .filter(|s| now - s.at <= 7_200 && s.resets_at == period)
+                .filter(|s| now - s.at <= 7_200 && alerts::same_period(s.resets_at, period))
                 .map(|s| (s.at, s.used))
                 .collect();
             tracker.seed(account, label, period, recent);
@@ -70,6 +78,10 @@ impl Store {
             storage_error,
             tracker,
             history,
+            tokens: None,
+            scanning: false,
+            plan_suggestions_usd: HashMap::new(),
+            pricing: crate::analytics::Pricing::load(),
             selected: None,
             popover: None,
             settings_window: None,
@@ -143,6 +155,9 @@ impl Store {
             || ![30, 60, 120, 300].contains(&settings.poll_seconds)
             || !["top", "bottom", "left", "right"].contains(&settings.widget_position.as_str())
             || ![24, 168, 720].contains(&settings.history_hours)
+            || ![7, 30].contains(&settings.analytics_days)
+            || !(0.5..=2.0).contains(&settings.usd_to_eur)
+            || settings.plan_prices_eur.values().any(|p| !(0.0..=1000.0).contains(p))
             || settings.hotkey.as_deref().is_some_and(|k| !crate::hotkey::PRESETS.contains(&k))
         {
             return Err("Invalid settings.".into());
@@ -370,11 +385,33 @@ impl Store {
                 r.account_id = account.id.clone();
                 r.status = "ok".into();
                 r.updated_at = Some(at);
+                self.history.record(&r, at);
+                r.outlooks = r
+                    .windows
+                    .iter()
+                    .filter_map(|w| {
+                        let samples = self.history.series(&account.id, &w.label, 0);
+                        Some((w.label.clone(), crate::analytics::outlook(&w.label, samples, at)?))
+                    })
+                    .collect();
+                // Windows of a day or more reach their limit when the history says, not
+                // when the last hour's pace would.
+                let planned: HashMap<String, Option<i64>> = r
+                    .outlooks
+                    .iter()
+                    .filter(|(label, _)| crate::analytics::long_window(label))
+                    .map(|(label, o)| (label.clone(), o.exhausts_at))
+                    .collect();
                 let alerts = self
                     .tracker
-                    .observe(&account, &mut r, &self.config.settings, at);
+                    .observe_with(&account, &mut r, &self.config.settings, at, &planned);
+                // Shorter windows keep the alerts' own forecast, from every poll of the hour.
+                for (label, o) in r.outlooks.iter_mut() {
+                    if !crate::analytics::long_window(label) {
+                        o.exhausts_at = r.exhausts_at.get(label).copied();
+                    }
+                }
                 self.deliver(alerts, at);
-                self.history.record(&r, at);
                 r
             }
             Err(f) => {
@@ -392,6 +429,47 @@ impl Store {
         };
         self.readings.insert(account.id, reading);
     }
+}
+
+/// Reads what changed in the Claude Code and Codex logs since the last scan, off the UI
+/// thread, then publishes the report; a scan already running is not doubled.
+pub async fn scan_tokens(store: &Entity<Store>, cx: &mut AsyncApp) {
+    let Ok(Some(sources)) = store.update(cx, |s, cx| {
+        if s.scanning {
+            return None;
+        }
+        s.scanning = true;
+        let suggestions = s
+            .config
+            .accounts
+            .iter()
+            .filter_map(|a| Some((a.id.clone(), crate::analytics::suggested_plan_usd(a, s.readings.get(&a.id))?)))
+            .collect();
+        s.plan_suggestions_usd = suggestions;
+        cx.notify();
+        Some(crate::token_logs::sources(&s.config.accounts))
+    }) else {
+        return;
+    };
+    let runtime = RUNTIME.get().expect("tokio runtime");
+    let report = runtime
+        .spawn_blocking(move || {
+            use crate::token_logs::{scan, Cache};
+            let path = Cache::path();
+            let cache = Cache::load(path.as_deref());
+            let (report, cache) = scan(&sources, cache, chrono::Utc::now().timestamp());
+            cache.save(path.as_deref());
+            report
+        })
+        .await
+        .ok();
+    let _ = store.update(cx, |s, cx| {
+        s.scanning = false;
+        if report.is_some() {
+            s.tokens = report;
+        }
+        cx.notify();
+    });
 }
 
 /// Records how the last delivery to a channel went, for the Alerts page.

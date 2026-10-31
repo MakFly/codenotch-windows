@@ -1,6 +1,6 @@
 # CodeNotch pour Windows
 
-[English](../README.md) · [Télécharger la version 0.2.1](https://github.com/MakFly/codenotch-windows/releases/tag/v0.2.1)
+[English](../README.md) · [Télécharger la version 0.3.0](https://github.com/MakFly/codenotch-windows/releases/tag/v0.3.0)
 
 Une encoche discrète pour suivre les quotas de vos comptes IA sur Windows.
 Survolez un compte pour voir sa consommation et ses échéances de remise à
@@ -16,7 +16,7 @@ application officielle des fournisseurs concernés.
 
 ## Installer
 
-1. Téléchargez `CodeNotch-0.2.1-windows-x64-setup.exe` depuis les releases.
+1. Téléchargez `CodeNotch-0.3.0-windows-x64-setup.exe` depuis les releases.
 2. Lancez l'installateur, puis CodeNotch depuis le menu Démarrer.
 3. Survolez la languette au bord droit ; les réglages s'ouvrent depuis l'encoche ou l'icône près de l'horloge.
 4. Pour le français : **Appearance → Interface language → Français**.
@@ -29,7 +29,7 @@ Windows 10/11 x64 est requis.
 l'installe par-dessus et conserve vos comptes et réglages.
 
 Une version portable reste disponible : décompressez
-`CodeNotch-0.2.1-windows-x64.zip` et lancez `CodeNotch.exe`.
+`CodeNotch-0.3.0-windows-x64.zip` et lancez `CodeNotch.exe`.
 
 L'installateur et l'application ne sont pas signés. SmartScreen peut afficher
 une alerte et Smart App Control peut bloquer leur exécution selon la configuration
@@ -44,17 +44,24 @@ figurent dans `SHA256SUMS.txt`.
 
 - Codex / ChatGPT, Claude Code, Gemini, Copilot, Ollama et endpoints JSON personnalisés.
 - Plusieurs profils par fournisseur ; détection locale des profils Codex, Claude et Gemini.
-- Quatre bords possibles (le déplacement par la poignée n'est pas encore porté dans l'app native).
-- Détails au survol et repli automatique au départ de la souris.
+- Quatre bords possibles ; la poignée déplace l'encoche le long des bords, sur n'importe quel écran.
+- Détails au survol, repli automatique au départ de la souris, et un clic sur un compte ouvre sa page Analytics.
+- Un fin contour clair garde l'encoche visible sur un fond noir.
 - Masquage en plein écran et mode jeu manuel pour les jeux en fenêtre.
 - Réglages séparés, formulaires en modale et alertes de seuil (notifications Windows, Telegram, Discord).
 - Jauge du quota en option sur l'icône près de l'horloge, raccourci global (Ctrl+Alt+N
   pour l'encoche, Ctrl+Alt+G pour le mode jeu) et lancement au démarrage de Windows.
 - Anglais par défaut, français disponible et choix enregistré.
-- Page **Accueil** : la fenêtre principale de chaque compte, ses échéances et des raccourcis.
+- Page **Accueil** : chaque fenêtre de quota de chaque compte en barre, avec un repère
+  du rythme régulier, le délai avant la remise à zéro et des raccourcis.
+- Page **Analytics** : la période en cours de chaque fenêtre, et où elle devrait finir
+  à la remise à zéro d'après vos semaines passées, avec sa fourchette. L'onglet Tokens
+  lit les logs locaux de Claude Code et Codex et chiffre leur coût au tarif API.
 - Consommation CPU, RAM et GPU de l'ordinateur en temps réel dans l'en-tête des réglages.
 
 ![Page d’accueil des réglages](images/home.png)
+
+![Onglet Quotas de la page Analytics](images/analytics.png)
 
 Au premier lancement, un écran de bienvenue s’ouvre pour connecter vos abonnements.
 
@@ -88,8 +95,8 @@ validation sur différents comptes.
 Un quota représente un pourcentage **consommé**, pas des tokens restants.
 Une mesure absente reste un tiret ; une mesure ancienne est signalée.
 Les relevés réussis sont gardés 30 jours dans `history.jsonl`, à côté de la
-configuration : courbe 24 h / 7 j / 30 j sur l'accueil, export CSV, et prévision
-qui reprend dès le relancement.
+configuration : graphiques et prévisions de la page Analytics, export CSV depuis
+l'accueil, et prévision qui reprend dès le relancement.
 Les délais des réponses HTTP 429 sont respectés ; Claude est interrogé au
 maximum une fois toutes les deux minutes.
 

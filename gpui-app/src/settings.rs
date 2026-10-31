@@ -6,12 +6,11 @@ use crate::model::Settings;
 use crate::store::Store;
 use crate::ui::{provider_icon, t};
 use gpui::{
-    anchored, canvas, deferred, div, point, prelude::*, px, rgb, rgba, size, svg, AnyElement, App,
-    Bounds, ClickEvent, Context, Entity, FontWeight, PathBuilder, SharedString,
+    anchored, deferred, div, img, prelude::*, px, rgb, rgba, size, svg, AnyElement, App,
+    Bounds, ClickEvent, Context, Entity, FontWeight, Pixels, SharedString,
     TitlebarOptions, Window, WindowBounds, WindowControlArea, WindowHandle, WindowKind,
     WindowOptions,
 };
-use std::f32::consts::{FRAC_PI_2, TAU};
 
 pub(crate) const SURFACE: u32 = 0x0e0e10;
 const SIDEBAR: u32 = 0x161618;
@@ -31,6 +30,7 @@ pub(crate) enum AccountsTab {
 #[derive(Clone, Copy, PartialEq)]
 pub(crate) enum Section {
     Home,
+    Analytics,
     Accounts,
     Appearance,
     Alerts,
@@ -50,10 +50,15 @@ pub fn open(store: Entity<Store>, cx: &mut App) {
         }
     }
     let french = store.read(cx).french();
+    // Roomy by default, but never more than 90 % of a small screen.
+    let screen = cx.primary_display().map(|d| d.bounds().size);
+    let fit = |want: f32, available: Option<Pixels>| {
+        px(available.map_or(want, |a| want.min(f32::from(a) * 0.9)))
+    };
     let options = WindowOptions {
         window_bounds: Some(WindowBounds::Windowed(Bounds::centered(
             None,
-            size(px(860.), px(690.)),
+            size(fit(1180., screen.map(|s| s.width)), fit(820., screen.map(|s| s.height))),
             cx,
         ))),
         // The header is drawn by the app, as in Tauri; the title still names the window in
@@ -76,6 +81,22 @@ pub fn open(store: Entity<Store>, cx: &mut App) {
         })
         .ok();
     store.update(cx, |s, _| s.settings_window = handle);
+}
+
+/// Opens the settings on the Quotas tab of Analytics for one account.
+pub fn open_analytics(store: Entity<Store>, account_id: String, cx: &mut App) {
+    open(store.clone(), cx);
+    if let Some(handle) = store.read(cx).settings_window {
+        let _ = handle.update(cx, |view, _, cx| {
+            view.section = Section::Analytics;
+            view.analytics_tab = crate::analytics_page::AnalyticsTab::Quotas;
+            view.analytics_account = Some(account_id);
+            view.chart_hover = None;
+            view.message = None;
+            view.open_select = None;
+            cx.notify();
+        });
+    }
 }
 
 fn title(french: bool) -> String {
@@ -111,6 +132,20 @@ pub struct SettingsView {
     usage: crate::usage::Usage,
     /// The "Check" button of the updates section is waiting for the release feed.
     checking: bool,
+    pub(crate) analytics_tab: crate::analytics_page::AnalyticsTab,
+    /// The Tokens tab shows one CLI, or both.
+    pub(crate) analytics_cli: Option<crate::token_logs::Cli>,
+    /// The heatmap cell under the pointer (weekday, hour).
+    pub(crate) heat_hover: Option<(usize, usize)>,
+    /// The quota chart under the pointer (account-window key) and its reading.
+    pub(crate) chart_hover: Option<(String, usize)>,
+    /// The account detailed by the Quotas tab; the first tracked one when unset.
+    pub(crate) analytics_account: Option<String>,
+    /// Window width at the last render: pages lay out in one column when narrow.
+    pub(crate) viewport_width: gpui::Pixels,
+    /// Monthly subscription price fields, by account id.
+    pub(crate) price_inputs: std::collections::HashMap<String, Entity<crate::input::TextInput>>,
+    pub(crate) rate_input: Option<Entity<crate::input::TextInput>>,
 }
 
 impl SettingsView {
@@ -162,6 +197,14 @@ impl SettingsView {
             usage: crate::usage::Usage::default(),
             copied: None,
             checking: false,
+            analytics_tab: crate::analytics_page::AnalyticsTab::Quotas,
+            analytics_cli: None,
+            heat_hover: None,
+            chart_hover: None,
+            analytics_account: None,
+            viewport_width: px(1180.),
+            price_inputs: Default::default(),
+            rate_input: None,
         }
     }
 
@@ -459,32 +502,6 @@ pub(crate) fn message(ok: bool, text: String) -> AnyElement {
         .child(icon(if ok { "check" } else { "circle-alert" }, 16., if ok { 0xb9d9c0 } else { 0xf2b0ac }))
         .child(div().flex_1().min_w_0().child(text))
         .into_any_element()
-}
-
-/// `.mini-notch-icon`: the small black notch with an open ring, drawn in the header.
-fn mini_notch() -> impl IntoElement {
-    div()
-        .w(px(12.))
-        .h(px(17.))
-        .flex_none()
-        .rounded_l(px(7.))
-        .bg(rgb(0x000000))
-        .child(
-            canvas(|_, _, _| {}, |bounds, _, window, _| {
-                let center = point(bounds.origin.x + px(6.), bounds.origin.y + px(6.));
-                let mut b = PathBuilder::stroke(px(1.5));
-                for i in 0..=36 {
-                    // Three quarters of a ring, open on the right like the CSS border.
-                    let a = FRAC_PI_2 * 0.5 + (TAU * 0.75) * i as f32 / 36.;
-                    let p = point(center.x + px(3. * a.cos()), center.y + px(3. * a.sin()));
-                    if i == 0 { b.move_to(p) } else { b.line_to(p) }
-                }
-                if let Ok(path) = b.build() {
-                    window.paint_path(path, rgb(0xe5e5e5));
-                }
-            })
-            .size_full(),
-        )
 }
 
 impl SettingsView {
@@ -1283,7 +1300,8 @@ impl SettingsView {
 // ---- Window ---------------------------------------------------------------------------
 
 impl Render for SettingsView {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.viewport_width = window.viewport_size().width;
         let french = self.store.read(cx).french();
         let dialog = self.account_dialog(french, cx);
         let root = div()
@@ -1306,6 +1324,10 @@ impl Render for SettingsView {
             Section::Home => {
                 let (heading, intro, action) = self.home_heading(french, cx);
                 (heading, intro, Some(action), self.home_page(french, cx))
+            }
+            Section::Analytics => {
+                let (heading, intro) = self.analytics_heading(french);
+                (heading, intro, None, self.analytics_page(french, cx))
             }
             Section::Accounts => (
                 t(french, "Comptes"),
@@ -1373,6 +1395,7 @@ impl Render for SettingsView {
         let count = self.store.read(cx).enabled().len();
         let nav = [
             (Section::Home, "house", "Accueil"),
+            (Section::Analytics, "chart-column", "Analytics"),
             (Section::Accounts, "users-round", "Comptes"),
             (Section::Appearance, "settings-2", "Apparence"),
             (Section::Alerts, "bell", "Alertes"),
@@ -1428,7 +1451,7 @@ impl Render for SettingsView {
                     .gap(px(5.))
                     .pt(px(15.))
                     .px(px(10.))
-                    .text_size(px(10.))
+                    .text_size(px(11.))
                     .text_color(rgb(0x94949b))
                     .child(t(french, "Adaptation Windows"))
                     .child(t(french, "v{version} · locale").replace("{version}", env!("CARGO_PKG_VERSION")))
@@ -1540,7 +1563,7 @@ fn titlebar(usage: String) -> AnyElement {
                 .gap(px(9.))
                 .text_size(px(12.))
                 .font_weight(FontWeight::SEMIBOLD)
-                .child(mini_notch())
+                .child(img(crate::assets::header_logo()).size(px(20.)).flex_none())
                 .child("CodeNotch")
                 .child(
                     div()

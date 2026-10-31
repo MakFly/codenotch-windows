@@ -40,6 +40,16 @@ impl Alert {
 
 type Key = (String, String);
 
+/// Two readings of a window belong to the same period. Providers that report "resets in N
+/// seconds" give a reset time that drifts by a second or so between readings; a new period
+/// moves it by hours.
+pub fn same_period(a: Option<i64>, b: Option<i64>) -> bool {
+    match (a, b) {
+        (Some(a), Some(b)) => (a - b).abs() <= 300,
+        (a, b) => a == b,
+    }
+}
+
 /// Pace history and the alerts already sent, kept in memory for the session.
 #[derive(Default)]
 pub struct Tracker {
@@ -50,13 +60,21 @@ pub struct Tracker {
 
 /// Time at which consumption reaches 100 % if the recent pace continues (least squares).
 pub fn forecast(samples: &[(i64, f64)], now: i64) -> Option<i64> {
+    let slope = pace(samples, now)?;
+    let last = *samples.iter().rfind(|(t, _)| now - t <= PACE_WINDOW)?;
+    (slope > 0.0 && last.1 < 100.0).then(|| last.0 + ((100.0 - last.1) / slope).ceil() as i64)
+}
+
+/// The recent pace in percentage points per second (least squares over the last hour), when
+/// there are enough readings to tell.
+pub fn pace(samples: &[(i64, f64)], now: i64) -> Option<f64> {
     let recent: Vec<(i64, f64)> = samples
         .iter()
         .copied()
         .filter(|(t, _)| now - t <= PACE_WINDOW)
         .collect();
     let (first, last) = (*recent.first()?, *recent.last()?);
-    if recent.len() < MIN_SAMPLES || last.0 - first.0 < MIN_SPAN || last.1 >= 100.0 {
+    if recent.len() < MIN_SAMPLES || last.0 - first.0 < MIN_SPAN {
         return None;
     }
     let n = recent.len() as f64;
@@ -72,8 +90,7 @@ pub fn forecast(samples: &[(i64, f64)], now: i64) -> Option<i64> {
         cov += dt * (u - mean_u);
         var += dt * dt;
     }
-    let slope = cov / var; // percentage points per second
-    (var > 0.0 && slope > 0.0).then(|| last.0 + ((100.0 - last.1) / slope).ceil() as i64)
+    (var > 0.0).then(|| cov / var)
 }
 
 impl Tracker {
@@ -96,6 +113,19 @@ impl Tracker {
         settings: &Settings,
         now: i64,
     ) -> Vec<Alert> {
+        self.observe_with(account, reading, settings, now, &HashMap::new())
+    }
+
+    /// As `observe`, with the time each window in `planned` reaches 100 % (or never) taken
+    /// from the history instead of the pace of the last hour: windows of a day or more.
+    pub fn observe_with(
+        &mut self,
+        account: &Account,
+        reading: &mut Reading,
+        settings: &Settings,
+        now: i64,
+        planned: &HashMap<String, Option<i64>>,
+    ) -> Vec<Alert> {
         let mut alerts = vec![];
         self.sent
             .retain(|k| k.2.is_none_or(|reset| reset > now - 86_400));
@@ -105,14 +135,20 @@ impl Tracker {
                 .samples
                 .entry(key.clone())
                 .or_insert_with(|| (w.resets_at, vec![]));
-            if *period != w.resets_at {
+            if !same_period(*period, w.resets_at) {
                 *period = w.resets_at;
                 samples.clear();
             }
+            // The first reset time seen for this period, so a reset time that drifts by a
+            // second between readings keys the alerts already sent the same way.
+            let period = *period;
             samples.push((now, w.used_percent));
             samples.retain(|(t, _)| now - t <= PACE_WINDOW * 2);
-            let exhausts =
-                forecast(samples, now).filter(|at| w.resets_at.is_none_or(|reset| *at < reset));
+            let exhausts = match planned.get(&w.label) {
+                Some(planned) => *planned,
+                None => forecast(samples, now),
+            }
+            .filter(|at| w.resets_at.is_none_or(|reset| *at < reset));
             if let Some(at) = exhausts {
                 reading.exhausts_at.insert(w.label.clone(), at);
             }
@@ -138,7 +174,7 @@ impl Tracker {
             match level {
                 Some((level, threshold)) => {
                     self.above.insert(key.clone());
-                    let id = (key.0.clone(), key.1.clone(), w.resets_at, level);
+                    let id = (key.0.clone(), key.1.clone(), period, level);
                     if !self.sent.contains(&id) {
                         // The forecast stays useful after a warning, not once critical.
                         for lower in [
@@ -156,7 +192,7 @@ impl Tracker {
                                 self.sent.insert((
                                     key.0.clone(),
                                     key.1.clone(),
-                                    w.resets_at,
+                                    period,
                                     lower,
                                 ));
                             }
@@ -174,7 +210,7 @@ impl Tracker {
                 }
             }
             let horizon = i64::from(settings.forecast_minutes) * 60;
-            let forecast_id = (key.0.clone(), key.1, w.resets_at, Level::Forecast);
+            let forecast_id = (key.0.clone(), key.1, period, Level::Forecast);
             if settings.forecast_alerts
                 && exhausts.is_some_and(|at| at - now <= horizon)
                 && !self.sent.contains(&forecast_id)
@@ -329,6 +365,21 @@ mod tests {
     fn levels(alerts: &[Alert]) -> Vec<Level> {
         alerts.iter().map(|a| a.level).collect()
     }
+    #[test]
+    fn a_drifting_reset_time_keeps_the_period() {
+        let mut tracker = Tracker::default();
+        let settings = Settings::default();
+        let first = tracker.observe(&account(), &mut reading(85.0, Some(20_000)), &settings, 1_000);
+        assert_eq!(levels(&first), vec![Level::Warning]);
+        // The same warning is not sent again because the reset moved by a second.
+        let again = tracker.observe(&account(), &mut reading(86.0, Some(19_999)), &settings, 1_060);
+        assert!(again.is_empty());
+        // The pace survives the drift: a forecast comes from the readings of both.
+        let mut r = reading(90.0, Some(20_001));
+        tracker.observe(&account(), &mut r, &settings, 1_700);
+        assert!(r.exhausts_at.contains_key("5 h"));
+    }
+
     #[test]
     fn seeded_pace_forecasts_from_the_first_reading() {
         let reset = Some(20_000);
