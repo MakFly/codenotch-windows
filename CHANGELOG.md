@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.3.0 — 2026-10-31
+
+- **Launch at Windows startup** (Appearance → Notch, also offered on the welcome screen). It never opens the settings, and a portable copy that moved updates its own entry at launch.
+- **Telegram alerts are switched on.** A typed chat id is saved when you send a test or turn alerts on. Telegram's short flood-control delays are waited out once.
+- **Failed deliveries are shown**: the Telegram and Discord sections say why the last alert did not arrive, until one does.
+- **Quota history**: successful readings are kept for 30 days in `history.jsonl`. The Home page shows every quota window of each account as a bar with a mark where an even pace would stand, and exports the history as CSV to Downloads. The limit forecast resumes right after a restart.
+- **Tray icon gauge** of the most used quota, with every account in its tooltip (can be turned off).
+- **Analytics page** in the settings, computed only on this PC. Clicking an account in the notch, or its name in the popover, opens its page:
+  - The **Quotas** tab shows 7 or 30 days of history per account and window as area charts with a hover tooltip and reset marks, limits reached, time blocked at 100 % and the pace while rising.
+  - The **Tokens** tab reads the local Claude Code and Codex logs incrementally: tokens per day, per weekday × hour heatmap, by model and by project. It compares their cost at API list prices, in euros with an adjustable rate, to your subscriptions, prefilled from the detected plan.
+  - Models without a known price are shown as not estimated, never as zero. Prices can be completed with a local `pricing.json`.
+- **One forecast of where each quota ends its period**, shared by the popover, the alerts and Analytics. A window of a day or more adds what the same stretch of your past periods added, the most recent counting most, and shows the range they give (“≈ 94 %, between 86 and 100 %”). With less than two past periods, the average pace is spread over the hours of the day you usually use the quota in, so nights weigh little. A limit the last hour’s pace reaches within two hours still wins. Windows under a day keep the last hour’s pace. Before, the popover projected the last hour over the whole week and Analytics assumed an even pace day and night, so the two disagreed.
+- **The notch stays visible over a black background**: a light hairline follows the rail, its curved corners and its buttons, and the folded tab has a brighter one. Before, a black notch on a black wallpaper or a dark full window showed only its rings.
+- **Fix**: a reset time that drifts by a second between readings (Claude) no longer counts as a new period. Before, it cleared the forecast pace and could send the same alert twice.
+- **Tauri app removed**: the repository is now only the GPUI app. Provider connectors, glyphs, strings and icons moved into `gpui-app/`, and `bun desktop` runs the native app. The 0.1.x Tauri and React sources stay in the git history. Settings from 0.1.x are still imported on first launch, and the installer still installs over 0.1.x.
+- **System-wide shortcut**: Ctrl+Alt+N (or Ctrl+Shift+Alt+N) shows or folds the notch, and the same keys with G toggle game mode. Off by default; a shortcut already taken is reported.
+
 ## 0.2.1 — 2026-10-26
 
 - **Alerts are delivered again** by the native app, as in 0.1.x: warning, critical, limit-reached, forecast and “quota available again” alerts show as Windows notifications (held back in full screen and game mode, except urgent ones when that option is on) and are posted to Discord when a webhook is set up.

@@ -1,5 +1,5 @@
 {
-  "$comment": "What CodeNotch adds to Orca's catalog: which CLIs it reads quotas for, their logo in src/lib/glyphs.json, and install commands verified for Windows. Agents absent here come from Orca as is. Run `bun run sync:agents` after editing.",
+  "$comment": "What CodeNotch adds to Orca's catalog: which CLIs it reads quotas for, their logo in gpui-app/assets/glyphs.json, and install commands verified for Windows. Agents absent here come from Orca as is. Run `bun run sync:agents` after editing.",
   "exclude": ["claude-agent-teams"],
   "agents": {
     "claude": { "quota": "claude", "logo": "claude", "install": "irm https://claude.ai/install.ps1 | iex" },

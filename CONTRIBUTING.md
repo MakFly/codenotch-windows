@@ -1,10 +1,9 @@
 # Contributing
 
 Bug reports and pull requests are welcome. This project targets Windows and
-is a native Rust app built with [GPUI](https://www.gpui.rs). The app lives in
-`gpui-app/`; it shares the provider connectors in `src-tauri/src/`, the provider
-glyphs and the English strings in `src/lib/` with the 0.1.x Tauri app, which
-stays in the repository for reference.
+is a native Rust app built with [GPUI](https://www.gpui.rs). The whole app lives
+in `gpui-app/`: provider connectors in `src/`, provider glyphs, English strings and
+icons in `assets/`.
 
 1. Fork and clone the repository.
 2. Install the prerequisites listed in the README (Rust stable with the MSVC

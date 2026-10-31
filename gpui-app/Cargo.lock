@@ -988,13 +988,14 @@ dependencies = [
 
 [[package]]
 name = "codenotch-gpui"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
  "chrono",
  "dirs 6.0.0",
  "embed-resource",
+ "global-hotkey",
  "gpui",
  "image",
  "keyring",
@@ -2304,6 +2305,23 @@ name = "glob"
 version = "0.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e4eba85ea1d0a966a983acd07deee566e67395d2d96b6fb39e62b5a833f1eb0b"
+
+[[package]]
+name = "global-hotkey"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "adda8c76a5139df3bae0eb0413c2cd746f66594e0bb66231a4daa0be3172da70"
+dependencies = [
+ "crossbeam-channel",
+ "keyboard-types",
+ "objc2",
+ "objc2-app-kit",
+ "once_cell",
+ "thiserror 2.0.21",
+ "windows-sys 0.59.0",
+ "x11rb",
+ "xkeysym",
+]
 
 [[package]]
 name = "globset"

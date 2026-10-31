@@ -1,6 +1,10 @@
 use crate::{alerts, discord, login, model::*, providers, telegram};
 use gpui::{AsyncApp, Entity, WindowHandle};
-use std::{collections::HashMap, path::PathBuf, sync::OnceLock};
+use std::{
+    collections::HashMap,
+    path::PathBuf,
+    sync::{Arc, Mutex, OnceLock},
+};
 
 pub static RUNTIME: OnceLock<tokio::runtime::Handle> = OnceLock::new();
 
@@ -10,6 +14,15 @@ pub struct Store {
     pub refreshing: bool,
     pub storage_error: Option<String>,
     pub tracker: alerts::Tracker,
+    pub history: crate::history::History,
+    /// Token usage from the local CLI logs, once the Analytics page asked for it.
+    pub tokens: Option<crate::token_logs::TokenReport>,
+    /// The logs are being read in the background.
+    pub scanning: bool,
+    /// Monthly price in dollars guessed from each account's plan, refreshed with each scan
+    /// (Claude's comes from a file, too slow to read on every frame).
+    pub plan_suggestions_usd: HashMap<String, f64>,
+    pub pricing: crate::analytics::Pricing,
     pub selected: Option<String>,
     pub popover: Option<WindowHandle<crate::ui::Popover>>,
     pub settings_window: Option<WindowHandle<crate::settings::SettingsView>>,
@@ -27,6 +40,11 @@ pub struct Store {
     /// A bot token / webhook is stored in Windows Credential Manager.
     pub telegram_saved: bool,
     pub discord_saved: bool,
+    /// The last failed delivery per channel ("telegram", "discord"), cleared by a success.
+    /// Written from the tokio tasks that send the alerts.
+    pub channel_errors: Arc<Mutex<HashMap<&'static str, String>>>,
+    /// Why the chosen system-wide shortcut could not be registered.
+    pub hotkey_error: Option<String>,
     /// A newer signed release, found by the background check or the settings button.
     pub update: Option<crate::updater::Release>,
     /// The installer is downloading; CodeNotch quits once it starts.
@@ -38,12 +56,32 @@ pub struct Store {
 impl Store {
     pub fn new(config: Config, storage_error: Option<String>) -> Self {
         let collapsed = config.settings.auto_hide;
+        let now = chrono::Utc::now().timestamp();
+        let history = crate::history::History::load(crate::history::path(), now);
+        // The last two hours of each window's current period carry the pace over.
+        let mut tracker = alerts::Tracker::default();
+        for (account, label, samples) in history.windows() {
+            let Some(period) = samples.last().map(|s| s.resets_at) else {
+                continue;
+            };
+            let recent = samples
+                .iter()
+                .filter(|s| now - s.at <= 7_200 && alerts::same_period(s.resets_at, period))
+                .map(|s| (s.at, s.used))
+                .collect();
+            tracker.seed(account, label, period, recent);
+        }
         Self {
             config,
             readings: HashMap::new(),
             refreshing: false,
             storage_error,
-            tracker: alerts::Tracker::default(),
+            tracker,
+            history,
+            tokens: None,
+            scanning: false,
+            plan_suggestions_usd: HashMap::new(),
+            pricing: crate::analytics::Pricing::load(),
             selected: None,
             popover: None,
             settings_window: None,
@@ -55,6 +93,8 @@ impl Store {
             fullscreen: false,
             telegram_saved: telegram::saved_token().is_some(),
             discord_saved: discord::saved_webhook().is_some(),
+            channel_errors: Arc::default(),
+            hotkey_error: None,
             update: None,
             installing: false,
             update_notified: None,
@@ -114,6 +154,11 @@ impl Store {
             || ![15, 30, 60].contains(&settings.forecast_minutes)
             || ![30, 60, 120, 300].contains(&settings.poll_seconds)
             || !["top", "bottom", "left", "right"].contains(&settings.widget_position.as_str())
+            || ![24, 168, 720].contains(&settings.history_hours)
+            || ![7, 30].contains(&settings.analytics_days)
+            || !(0.5..=2.0).contains(&settings.usd_to_eur)
+            || settings.plan_prices_eur.values().any(|p| !(0.0..=1000.0).contains(p))
+            || settings.hotkey.as_deref().is_some_and(|k| !crate::hotkey::PRESETS.contains(&k))
         {
             return Err("Invalid settings.".into());
         }
@@ -129,9 +174,20 @@ impl Store {
         }
         let auto_hide = settings.auto_hide;
         let auto_hide_changed = auto_hide != self.config.settings.auto_hide;
+        let startup = settings.launch_at_startup;
+        let startup_changed = startup != self.config.settings.launch_at_startup;
+        if startup_changed {
+            crate::autostart::set(startup)?;
+        }
         let mut next = self.config.clone();
         next.settings = settings;
-        self.commit(next)?;
+        if let Err(error) = self.commit(next) {
+            // Keep the Run key in line with the setting that is still saved.
+            if startup_changed {
+                let _ = crate::autostart::set(!startup);
+            }
+            return Err(error);
+        }
         // Turning auto-hide on folds the notch; turning it off keeps it open.
         if auto_hide_changed {
             self.collapsed = auto_hide;
@@ -293,23 +349,25 @@ impl Store {
         if telegram::AVAILABLE && self.telegram_saved && settings.telegram_enabled && !settings.telegram_chat_id.is_empty() {
             let chat = settings.telegram_chat_id.clone();
             let messages: Vec<_> = alerts.iter().map(|a| telegram::message(a, french, now)).collect();
+            let errors = self.channel_errors.clone();
             runtime.spawn(async move {
                 let Some(token) = telegram::saved_token() else {
                     return;
                 };
                 for message in messages {
-                    let _ = telegram::send(&token, &chat, message).await;
+                    note(&errors, "telegram", telegram::send(&token, &chat, message).await);
                 }
             });
         }
         if self.discord_saved && settings.discord_enabled {
             let messages: Vec<_> = alerts.iter().map(|a| discord::message(a, french)).collect();
+            let errors = self.channel_errors.clone();
             runtime.spawn(async move {
                 let Some(webhook) = discord::saved_webhook() else {
                     return;
                 };
                 for message in messages {
-                    let _ = discord::send(&webhook, message).await;
+                    note(&errors, "discord", discord::send(&webhook, message).await);
                 }
             });
         }
@@ -327,9 +385,32 @@ impl Store {
                 r.account_id = account.id.clone();
                 r.status = "ok".into();
                 r.updated_at = Some(at);
+                self.history.record(&r, at);
+                r.outlooks = r
+                    .windows
+                    .iter()
+                    .filter_map(|w| {
+                        let samples = self.history.series(&account.id, &w.label, 0);
+                        Some((w.label.clone(), crate::analytics::outlook(&w.label, samples, at)?))
+                    })
+                    .collect();
+                // Windows of a day or more reach their limit when the history says, not
+                // when the last hour's pace would.
+                let planned: HashMap<String, Option<i64>> = r
+                    .outlooks
+                    .iter()
+                    .filter(|(label, _)| crate::analytics::long_window(label))
+                    .map(|(label, o)| (label.clone(), o.exhausts_at))
+                    .collect();
                 let alerts = self
                     .tracker
-                    .observe(&account, &mut r, &self.config.settings, at);
+                    .observe_with(&account, &mut r, &self.config.settings, at, &planned);
+                // Shorter windows keep the alerts' own forecast, from every poll of the hour.
+                for (label, o) in r.outlooks.iter_mut() {
+                    if !crate::analytics::long_window(label) {
+                        o.exhausts_at = r.exhausts_at.get(label).copied();
+                    }
+                }
                 self.deliver(alerts, at);
                 r
             }
@@ -347,6 +428,57 @@ impl Store {
             }
         };
         self.readings.insert(account.id, reading);
+    }
+}
+
+/// Reads what changed in the Claude Code and Codex logs since the last scan, off the UI
+/// thread, then publishes the report; a scan already running is not doubled.
+pub async fn scan_tokens(store: &Entity<Store>, cx: &mut AsyncApp) {
+    let Ok(Some(sources)) = store.update(cx, |s, cx| {
+        if s.scanning {
+            return None;
+        }
+        s.scanning = true;
+        let suggestions = s
+            .config
+            .accounts
+            .iter()
+            .filter_map(|a| Some((a.id.clone(), crate::analytics::suggested_plan_usd(a, s.readings.get(&a.id))?)))
+            .collect();
+        s.plan_suggestions_usd = suggestions;
+        cx.notify();
+        Some(crate::token_logs::sources(&s.config.accounts))
+    }) else {
+        return;
+    };
+    let runtime = RUNTIME.get().expect("tokio runtime");
+    let report = runtime
+        .spawn_blocking(move || {
+            use crate::token_logs::{scan, Cache};
+            let path = Cache::path();
+            let cache = Cache::load(path.as_deref());
+            let (report, cache) = scan(&sources, cache, chrono::Utc::now().timestamp());
+            cache.save(path.as_deref());
+            report
+        })
+        .await
+        .ok();
+    let _ = store.update(cx, |s, cx| {
+        s.scanning = false;
+        if report.is_some() {
+            s.tokens = report;
+        }
+        cx.notify();
+    });
+}
+
+/// Records how the last delivery to a channel went, for the Alerts page.
+fn note(errors: &Mutex<HashMap<&'static str, String>>, channel: &'static str, result: Result<(), String>) {
+    if let Ok(mut errors) = errors.lock() {
+        match result {
+            Ok(()) => errors.remove(channel),
+            Err(error) => errors.insert(channel, error),
+        };
     }
 }
 
