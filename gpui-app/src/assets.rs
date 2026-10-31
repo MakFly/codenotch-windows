@@ -3,7 +3,7 @@ use gpui::{AssetSource, Image, ImageFormat, SharedString};
 use std::{borrow::Cow, collections::HashMap, sync::Arc, sync::OnceLock};
 
 /// The provider logos the Tauri app draws, as unit-square SVG paths.
-const GLYPHS: &str = include_str!("../../src/lib/glyphs.json");
+const GLYPHS: &str = include_str!("../assets/glyphs.json");
 
 fn glyphs() -> &'static HashMap<String, String> {
     static GLYPHS_MAP: OnceLock<HashMap<String, String>> = OnceLock::new();
@@ -27,7 +27,7 @@ icons!(
     "circle-alert", "check", "chevrons-right", "bell", "download", "loader-circle", "send",
     "timer", "languages", "webhook", "log-in", "search", "chevron-right", "chevron-down",
     "chevron-up", "shield-check", "trash-2", "monitor", "external-link", "sliders-horizontal",
-    "terminal", "copy", "house",
+    "terminal", "copy", "house", "chart-column",
 );
 
 /// Path of a bundled Lucide icon, for `svg().path(..)`.
@@ -83,12 +83,24 @@ pub fn logo(provider: &str) -> Option<SharedString> {
         .then(|| format!("logos/{key}.svg").into())
 }
 
+/// The app icon drawn from its SVG, rasterized at 40 px so a 20 px header logo stays sharp
+/// up to 200 % scaling (GPUI rasterizes an SVG image at its own width and height).
+pub fn header_logo() -> Arc<Image> {
+    static LOGO: OnceLock<Arc<Image>> = OnceLock::new();
+    LOGO.get_or_init(|| {
+        let svg = include_str!("../assets/app/app-icon.svg")
+            .replacen(r#"width="512" height="512""#, r#"width="40" height="40""#, 1);
+        Arc::new(Image::from_bytes(ImageFormat::Svg, svg.into_bytes()))
+    })
+    .clone()
+}
+
 pub fn app_icon() -> Arc<Image> {
     static ICON: OnceLock<Arc<Image>> = OnceLock::new();
     ICON.get_or_init(|| {
         Arc::new(Image::from_bytes(
             ImageFormat::Png,
-            include_bytes!("../../src-tauri/icons/128x128.png").to_vec(),
+            include_bytes!("../assets/app/128x128.png").to_vec(),
         ))
     })
     .clone()

@@ -1,12 +1,13 @@
 # CodeNotch — GPUI app
 
 Native rewrite of the notch, shipped since 0.2.0, with [GPUI](https://gpui.rs), Zed's GPU UI framework.
-No WebView: the provider code from `src-tauri/src` (`model`, `providers`, `claude`, `codex`,
-`gemini`, `grok`, `opencode`, `login`, `alerts`) is mounted as-is with `#[path]`, so both apps
-read quotas the same way. Provider logos come from the same `src/lib/glyphs.json`.
+No WebView, and since the Tauri app was removed, the whole project is this crate: the provider
+code (`model`, `providers`, `claude`, `codex`, `gemini`, `grok`, `opencode`, `login`, `alerts`,
+`telegram`, `discord`) carried over from 0.1.x, provider logos in `assets/glyphs.json`, English
+strings in `assets/messages.en.json` and app icons in `assets/app/`.
 
 ```bash
-cargo run --manifest-path gpui-app/Cargo.toml
+cargo run --manifest-path gpui-app/Cargo.toml   # or `bun desktop` from the repository root
 ```
 
 Add `-- --settings` to open the settings window at launch.
@@ -38,8 +39,7 @@ Add `-- --settings` to open the settings window at launch.
   sign-in state for each provider, sign in or add a detected session, language choice.
   - Alerts: notifications, warning and critical levels, urgent alerts in full screen,
     limit forecast and its lead time, quota-back notice, Discord webhook and Telegram bot
-    setup (secrets in Credential Manager, chat detection, test message; Telegram sending
-    stays off behind the same flag as the Tauri app).
+    setup (secrets in Credential Manager, chat detection, test message).
 - Polling with the same scheduling rules as the Tauri backend (provider backoff, Claude floor).
 - Configuration: saved to `%APPDATA%\dev.kev.smashtoken\config.gpui.json`, first copied from
   the Tauri app's `config.json`, which is never written; without either, local CLI profiles

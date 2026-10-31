@@ -1,5 +1,5 @@
 //! Win32 pieces GPUI does not expose: topmost placement, show/hide without
-//! activation, and full screen detection (same rules as `src-tauri/src/widget.rs`).
+//! activation, and full screen detection (same rules as the 0.1.x Tauri app).
 use gpui::{App, Bounds, Pixels, Window};
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 

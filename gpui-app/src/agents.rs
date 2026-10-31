@@ -14,7 +14,7 @@ pub struct Agent {
     pub install: Option<String>,
     /// CodeNotch provider that reads this CLI's quotas, if any.
     pub quota: Option<String>,
-    /// Logo key in src/lib/glyphs.json.
+    /// Logo key in assets/glyphs.json.
     pub logo: Option<String>,
 }
 

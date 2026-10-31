@@ -14,7 +14,7 @@ An independent Windows adaptation inspired by
 Since 0.2.0 it no longer needs WebView2. This is not an official OpenAI,
 Anthropic or GitHub app.
 
-[Download v0.2.1](https://github.com/MakFly/codenotch-windows/releases/tag/v0.2.1)
+[Download v0.3.0](https://github.com/MakFly/codenotch-windows/releases/tag/v0.3.0)
 · [Français](docs/README.fr.md) · [Changelog](CHANGELOG.md)
 
 ![Quota details on hover](docs/images/notch.png)
@@ -22,21 +22,31 @@ Anthropic or GitHub app.
 ## Features
 
 - Native Rust app: small, fast to start, no browser engine.
-- Compact quota rings for each enabled account and details on hover.
-- A **Home** page with every account's main window, reset times and shortcuts.
+- Compact quota rings for each enabled account, details on hover, and a click opens the
+  account's Analytics page.
+- A light outline keeps the black notch visible over a black background.
+- A **Home** page with every account and each of its quota windows as a bar, where an
+  even pace would stand, the time to each reset, and a CSV export of the history.
+- An **Analytics** page: quota history with limits reached and time blocked, a forecast of
+  each window at its reset from your past weeks with its range, plus tokens
+  per day, hour, model and project from the local Claude Code and Codex logs, and what they
+  would cost at API prices compared with your subscriptions. Nothing leaves the PC.
+- An optional usage gauge on the tray icon, with every account's quota in its tooltip.
+- An optional system-wide shortcut to show the notch (Ctrl+Alt+N) or toggle game mode (Ctrl+Alt+G).
+- Optional launch at Windows startup.
 - The computer's live CPU, RAM and GPU use in the settings header.
-- Automatic collapse when the pointer leaves; four configurable screen edges.
-- Four screen edges; moving the notch by its grip is not ported to the native app yet.
+- Automatic collapse when the pointer leaves.
+- Drag the grip to move the notch along any screen edge, on any display.
 - Automatic hiding during full-screen games and videos, plus manual game mode.
 - Multiple profiles per provider and local Codex / Claude profile detection.
-- Separate settings, modal account editing and threshold alerts (Windows notifications, Discord).
+- Separate settings, modal account editing and threshold alerts (Windows notifications, Telegram, Discord).
 - **English by default**, with saved English / French selection.
 - Local account handling, Windows Credential Manager storage and no app telemetry.
 
 ## Download and run
 
 1. Open [Releases](https://github.com/MakFly/codenotch-windows/releases/latest).
-2. Download and run `CodeNotch-0.2.1-windows-x64-setup.exe`.
+2. Download and run `CodeNotch-0.3.0-windows-x64-setup.exe`.
 3. Launch CodeNotch from the Start menu. Hover over the small tab on the right edge of the screen.
 4. Open the settings from the notch or the tray icon to configure accounts.
 
@@ -46,7 +56,7 @@ entry to Windows Installed apps for removal.
 **Coming from 0.1.x?** Nothing to do: the built-in updater offers the new version, installs
 it over the previous version, and keeps your accounts and settings.
 
-For portable use, download and extract `CodeNotch-0.2.1-windows-x64.zip`, then run
+For portable use, download and extract `CodeNotch-0.3.0-windows-x64.zip`, then run
 `CodeNotch.exe`. The ZIP includes the license, third-party notices and a
 getting-started guide. A standalone executable is also available.
 
@@ -55,12 +65,12 @@ The installer and portable executable are unsigned. Windows may display a
 SmartScreen warning or block unsigned applications under Smart App Control;
 installation is not guaranteed on every security configuration. See
 [Microsoft's explanation](https://learn.microsoft.com/windows/apps/package-and-deploy/smartscreen-reputation).
-There is no automatic startup. Updates are built in: CodeNotch checks GitHub Releases at launch and twice a day, verifies the signature of the new installer, and installs it in one click from **Settings** (or **Appearance → Updates**).
+To start CodeNotch with Windows, turn on **Appearance → Notch → Launch at Windows startup**. Updates are built in: CodeNotch checks GitHub Releases at launch and twice a day, verifies the signature of the new installer, and installs it in one click from **Settings** (or **Appearance → Updates**).
 
 Verify downloads against `SHA256SUMS.txt` using PowerShell:
 
 ```powershell
-Get-FileHash .\CodeNotch-0.2.1-windows-x64.zip -Algorithm SHA256
+Get-FileHash .\CodeNotch-0.3.0-windows-x64.zip -Algorithm SHA256
 ```
 
 ## Connect your accounts
@@ -117,9 +127,28 @@ This app does not provide native connectors for every AI service.
 
 ![Home page of the settings](docs/images/home.png)
 
-The settings open on **Home**: the main quota window of every account in the
-notch, when it resets, and shortcuts to connect another account, move the notch
-or tune alerts. The header shows the computer's live CPU, RAM and GPU use.
+The settings open on **Home**: every account in the notch with each of its quota
+windows as a bar. A white mark shows where an even pace would stand, so you see at a
+glance whether you are ahead of it. Each line gives the time to the reset, and the
+page exports the history as CSV. Shortcuts lead to connecting another account,
+moving the notch or tuning alerts. The header shows the computer's live CPU, RAM and
+GPU use.
+
+![Quotas tab of the Analytics page](docs/images/analytics.png)
+
+**Analytics** details one account at a time; clicking an account in the notch opens
+it there. Each quota window shows its current period from start to reset, the even
+pace, and where usage should stand at the reset:
+
+- A window of a day or more adds what the same stretch of your past weeks added,
+  the most recent counting most, and shows the range they give.
+- With less than two past periods, the average pace is spread over the hours of the
+  day you usually use the quota in, so nights weigh little.
+- Windows under a day, and a limit the last hour's pace reaches within two hours,
+  follow the pace of the last hour.
+
+The **Tokens** tab reads the local Claude Code and Codex logs: tokens per day and
+hour, by model and project, and their cost at API prices against your subscriptions.
 
 ![Appearance settings with the Updates section open](docs/images/settings.png)
 
@@ -127,7 +156,7 @@ Pages are grouped into collapsible sections (one open at a time, remembered).
 
 - **Appearance → Interface language** switches English / Français.
 - **Appearance → Updates** shows the version and checks for a new one on demand.
-- **Appearance → Notch** sets the screen edge (dragging the grip is not ported to the native app yet).
+- **Appearance → Notch** sets the screen edge; the grip moves the notch anywhere along the edges.
 - **Auto-collapse** controls the idle tab. Details close when the pointer leaves.
 - **Hide in full screen** suppresses the notch and alerts during full-screen apps.
 - **Game mode** keeps them hidden until disabled, including after a restart.
@@ -142,7 +171,9 @@ with zero.
 
 Refresh intervals are 30, 60, 120 or 300 seconds. Claude enforces a minimum of
 120 seconds, including manual refresh. HTTP 429 responses respect retry delays.
-Readings stay in memory for the session; any history comes from the provider.
+Successful readings are kept for 30 days in `history.jsonl`, next to the
+configuration: a line when a value moves, or every five minutes otherwise. Missing
+readings stay gaps in the history. It also lets the limit forecast resume right after a restart.
 
 ## Alerts (for agents running in the background)
 
@@ -151,14 +182,16 @@ Readings stay in memory for the session; any history comes from the provider.
 - **Graded alerts**: warning threshold (80 % by default), critical threshold
   (95 %), and limit reached. Each level fires once per window and period; jumping
   straight to the limit sends a single alert.
-- **Forecast**: CodeNotch measures the recent pace (at least 3 readings over 10
-  minutes) and warns when the limit will arrive **before** the reset, within the
-  chosen lead time (15, 30 or 60 minutes). The usage details show “Limit expected
-  in …”. Near a limit, readings switch to the fastest allowed pace.
+- **Forecast**: CodeNotch warns when the limit will arrive **before** the reset,
+  within the chosen lead time (15, 30 or 60 minutes). Windows under a day use the
+  recent pace (at least 3 readings over 10 minutes); longer ones use the same
+  forecast as Analytics, from your past weeks. The usage details show when the limit
+  is expected, or for a weekly window where it should stand at the reset. Near a
+  limit, readings switch to the fastest allowed pace.
 - **Quota available again** after a reset, so paused agents can resume.
 - **Full screen**: forecasts, critical and limit alerts still show during games
   and in game mode (can be turned off).
-- **Telegram** (coming soon, switched off in this version): create a bot with @BotFather, send it `/start`, paste its token in
+- **Telegram**: create a bot with @BotFather, send it `/start`, paste its token in
   **Alerts → Telegram**, detect the chat and send a test. Alerts
   arrive as cards with a gauge, the expected limit, the reset time and a link to
   the provider's usage page. The token stays in Windows Credential Manager and is
@@ -184,10 +217,8 @@ See [Security](SECURITY.md) for private vulnerability reporting.
 ## Build locally
 
 Install Rust stable with the MSVC toolchain and Visual Studio Build Tools with
-**Desktop development with C++**. The app lives in `gpui-app/`; it shares the
-provider connectors in `src-tauri/src/` and the English strings in
-`src/lib/messages.en.json` with the 0.1.x Tauri app, which stays in the
-repository for reference.
+**Desktop development with C++**. The whole app, provider connectors included,
+lives in `gpui-app/`; the English strings are in `gpui-app/assets/messages.en.json`.
 
 ```powershell
 git clone https://github.com/MakFly/codenotch-windows.git
@@ -199,6 +230,11 @@ cargo run -- --settings
 cargo build --release
 ```
 
+With [Bun](https://bun.sh) installed, the same commands run from the repository root:
+`bun desktop`, `bun desktop:settings`, `bun desktop:build`, `bun run test`.
+While developing, `bun dev` restarts the app after every saved change in `gpui-app/src`
+or `gpui-app/assets` (GPUI has no hot reload; settings carry over through the config file).
+
 The native binary is generated at `gpui-app/target/release/codenotch-gpui.exe`.
 Internal package and configuration identifiers retain the original `smashtoken`
 name. Release downloads use `CodeNotch.exe`.
@@ -207,13 +243,14 @@ name. Release downloads use `CodeNotch.exe`.
 
 The in-app updater, in the native app and in the 0.1.x Tauri builds, only installs an
 installer signed with the project's key, for the version the feed announces. The
-public key is in `gpui-app/src/updater.rs` and `src-tauri/tauri.conf.json`; keep
-the private key out of the repository.
+public key is in `gpui-app/src/updater.rs`; keep the private key out of the
+repository. Signing uses the Tauri CLI's `signer`, the only Tauri tool still used.
 
 The installer script is `gpui-app/installer/installer.nsi`. It keeps the product
 name, install folder, uninstall entry and `smashtoken.exe` binary name of the
-Tauri builds, so updates install over them. It is built with the `makensis` that
-the Tauri CLI downloads (run `bun run desktop:build` once if it is missing).
+Tauri builds, so updates install over them. It is built with the `makensis` (and
+its `nsis_tauri_utils` plugin) that the Tauri CLI downloads to
+`%LOCALAPPDATA%\tauri\NSIS`.
 
 ```powershell
 cd gpui-app; cargo build --release; cd ..

@@ -75,6 +75,26 @@ fn help(text: String) -> AnyElement {
         .into_any_element()
 }
 
+/// Why the last alert sent to this channel did not arrive, until one does.
+fn last_failure(store: &Store, channel: &str, french: bool) -> Option<AnyElement> {
+    let error = store.channel_errors.lock().ok()?.get(channel).cloned()?;
+    Some(
+        div()
+            .flex()
+            .gap(px(7.))
+            .text_size(px(11.5))
+            .text_color(rgb(0xf1a1a1))
+            .child(icon("circle-alert", 14., 0xf1a1a1))
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .child(t(french, "Dernière alerte non envoyée : {error}").replace("{error}", &t(french, &error))),
+            )
+            .into_any_element(),
+    )
+}
+
 /// The trash `.button.ghost.danger-text` next to a saved secret.
 fn erase(id: &'static str, on_click: crate::settings::Click) -> AnyElement {
     div()
@@ -150,6 +170,7 @@ impl SettingsView {
         let s = self.store.read(cx);
         let saved = s.discord_saved;
         let enabled = s.config.settings.discord_enabled;
+        let failure = last_failure(s, "discord", french);
         let busy = self.channels.busy;
         let webhook = self.channels.discord_webhook.clone();
         webhook.update(cx, |i, cx| {
@@ -227,6 +248,7 @@ impl SettingsView {
                 .gap(px(14.))
                 .pt(px(14.))
                 .pb(px(6.))
+                .children(failure)
                 .child(steps([
                     t(french, "Dans Discord, ouvre les paramètres du salon → Intégrations → Webhooks."),
                     t(french, "Crée un webhook, puis copie son URL."),
@@ -268,6 +290,7 @@ impl SettingsView {
         let s = self.store.read(cx);
         let saved = s.telegram_saved;
         let enabled = s.config.settings.telegram_enabled;
+        let failure = last_failure(s, "telegram", french);
         let busy = self.channels.busy;
         let token = self.channels.telegram_token.clone();
         let chat = self.channels.telegram_chat.clone();
@@ -396,6 +419,11 @@ impl SettingsView {
                     let Some(token) = telegram::saved_token() else {
                         return this.say(false, t(french, "Enregistre d’abord le jeton du bot."), cx);
                     };
+                    // A typed chat is saved too, so a successful test means alerts reach it.
+                    if this.store.read(cx).config.settings.telegram_chat_id != chat {
+                        let saved = chat.clone();
+                        this.update_settings(cx, move |s| s.telegram_chat_id = saved);
+                    }
                     let body = telegram::test_message(french, chrono::Utc::now().timestamp());
                     this.run_remote(
                         cx,
@@ -410,7 +438,23 @@ impl SettingsView {
             setting_row(
                 t(french, "Alertes Telegram"),
                 Some(t(french, "Reçois les alertes sur ton téléphone via ton propre bot, même loin du PC. Les messages partent directement de ce PC vers Telegram.")),
-                toggle("telegram-enabled", enabled, self.setting(cx, |s| s.telegram_enabled = !s.telegram_enabled)),
+                toggle(
+                    "telegram-enabled",
+                    enabled,
+                    {
+                        // Turning alerts on also keeps a chat that was typed but not saved.
+                        let typed = chat.clone();
+                        Box::new(cx.listener(move |this, _: &ClickEvent, _, cx| {
+                            let typed = typed.read(cx).text().trim().to_owned();
+                            this.update_settings(cx, move |s| {
+                                s.telegram_enabled = !s.telegram_enabled;
+                                if s.telegram_enabled && telegram::valid_chat_id(&typed) {
+                                    s.telegram_chat_id = typed;
+                                }
+                            })
+                        }))
+                    },
+                ),
             ),
             div()
                 .flex()
@@ -418,6 +462,7 @@ impl SettingsView {
                 .gap(px(14.))
                 .pt(px(14.))
                 .pb(px(6.))
+                .children(failure)
                 .child(steps([
                     t(french, "Dans Telegram, ouvre @BotFather, envoie /newbot et copie le jeton du bot."),
                     t(french, "Ouvre ton bot et envoie-lui /start (ou ajoute-le à un groupe)."),
