@@ -177,7 +177,7 @@ readings stay gaps in the history. It also lets the limit forecast resume right 
 
 ## Alerts (for agents running in the background)
 
-![Alerts with Discord set up](docs/images/alerts.png)
+![Alerts settings with the Discord section open](docs/images/alerts.png)
 
 - **Graded alerts**: warning threshold (80 % by default), critical threshold
   (95 %), and limit reached. Each level fires once per window and period; jumping
