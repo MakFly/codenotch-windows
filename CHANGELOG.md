@@ -1,9 +1,11 @@
 # Changelog
 
-## 1.0.0 — 2026-11-12
+## 0.1.0 — 2026-11-12
 
-A complete rebuild from scratch. It replaces the 0.3.0 reconstruction (kept as the git tag
-`backup-0.3.0`). Design and behaviour follow CodeNotch by Vinz (MIT); no code was copied from it.
+A complete rebuild from scratch, and the first release published from this repository. It
+replaces the 0.3.0 reconstruction (kept as the git tag `backup-0.3.0`); version numbers restart at
+0.1.0 with the rebuild. Design and behaviour follow CodeNotch by Vinz (MIT); no code was copied
+from it.
 
 ### Added
 
@@ -89,9 +91,9 @@ A complete rebuild from scratch. It replaces the 0.3.0 reconstruction (kept as t
 
 - The single `gpui-app` crate is replaced by the workspace. The app package is now `codenotch` in
   `crates/app`.
-- `config.gpui.json` keeps every 0.2/0.3 key with its name and meaning. New 1.0 keys are optional.
-  Unknown keys survive a save. A bad value for a choice setting falls back to its default instead
-  of failing the whole file. An unparsable file is copied to `config.gpui.unreadable.json`.
+- `config.gpui.json` keeps every 0.2/0.3 key with its name and meaning. Keys added by the
+  rebuild are optional. Unknown keys survive a save. A bad value for a choice setting falls back
+  to its default instead of failing the whole file. An unparsable file is copied to `config.gpui.unreadable.json`.
 - `history.jsonl` keeps its format. Old localised labels are mapped to the current ones.
 - A 0.3 file without `showMode` shows the pill on hover, like a fresh install (hidden when
   `widget` is `false`).
@@ -107,7 +109,7 @@ A complete rebuild from scratch. It replaces the 0.3.0 reconstruction (kept as t
 
 ### Known unverified
 
-- The GUI was never shown on screen while 1.0.0 was assembled: notch rendering, hover card,
+- The GUI was never shown on screen while the rebuild was assembled: notch rendering, hover card,
   settings window, tray, hotkey, taskbar mode, toasts and reset cards are unverified visually.
 - Read live against real accounts: Codex and Grok only. Claude was not read live (expired saved
   token, automatic renewal disabled during testing). Cursor's session was rejected by its API.
