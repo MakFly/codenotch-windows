@@ -1,0 +1,23 @@
+[package]
+name = "codenotch-core"
+description = "CodeNotch shared model, config, history, i18n and formatting. No gpui, no Win32."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[lib]
+name = "codenotch_core"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+dirs.workspace = true
+log.workspace = true
+ureq.workspace = true
+native-tls.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

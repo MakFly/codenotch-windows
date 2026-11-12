@@ -1,0 +1,25 @@
+[package]
+name = "codenotch-activity"
+description = "Claude Code hooks server, transcript watcher, hooks installer, agent activity."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[lib]
+name = "codenotch_activity"
+
+[dependencies]
+codenotch-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+log.workspace = true
+rusqlite.workspace = true
+
+# Crate-local dependencies go below this line (owner of this crate only).
+windows-sys = { workspace = true, features = ["Win32_System_Diagnostics_ToolHelp", "Win32_Security_Cryptography"] }
+
+[dev-dependencies]
+tempfile.workspace = true

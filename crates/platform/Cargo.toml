@@ -1,0 +1,36 @@
+[package]
+name = "codenotch-platform"
+description = "Win32 services: full-screen/game detection, monitors, autostart, hotkey, tray, single instance, backdrop."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[lib]
+name = "codenotch_platform"
+
+[dependencies]
+codenotch-core.workspace = true
+log.workspace = true
+# windows-sys: see below (crate-local extra features)
+tray-icon.workspace = true
+
+# Crate-local dependencies go below this line (owner of this crate only).
+
+windows-sys = { workspace = true, features = [
+    "Win32_Globalization",
+    "Win32_Security_Credentials",
+    "Win32_System_Com",
+] }
+
+# Taskbar free-space measurement (`taskbar` module only) needs UI Automation, which windows-sys
+# does not project. Exception granted for this module: the exact `windows` version already in
+# Cargo.lock (pulled by gpui), so no second copy is built. Only extra features are enabled.
+[target.'cfg(windows)'.dependencies]
+windows = { version = "=0.61.3", default-features = false, features = [
+    "std",
+    "Win32_Foundation",
+    "Win32_System_Com",
+    "Win32_UI_Accessibility",
+] }

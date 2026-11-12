@@ -1,0 +1,26 @@
+[package]
+name = "codenotch-providers"
+description = "Claude, Codex, Grok and custom JSON endpoint providers."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[lib]
+name = "codenotch_providers"
+
+[dependencies]
+codenotch-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+log.workspace = true
+
+# Crate-local dependencies go below this line (owner of this crate only).
+rusqlite.workspace = true
+# Job objects; DPAPI + BCrypt AES-GCM to read Electron safeStorage (Claude desktop, Cursor).
+windows-sys = { workspace = true, features = ["Win32_System_JobObjects", "Win32_Security_Cryptography"] }
+
+[dev-dependencies]
+tempfile.workspace = true

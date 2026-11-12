@@ -1,9 +1,0 @@
-pub mod desktop;
-pub mod i18n;
-pub mod model;
-pub mod providers;
-pub mod settings;
-pub mod store;
-pub mod tray;
-pub mod ui;
-pub mod usage;

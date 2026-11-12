@@ -1,0 +1,29 @@
+[package]
+name = "codenotch-notify"
+description = "Threshold/forecast/reset alerts, Telegram, Discord, Windows notifications."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[lib]
+name = "codenotch_notify"
+
+[dependencies]
+codenotch-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+log.workspace = true
+windows-sys.workspace = true
+
+# Crate-local dependencies go below this line (owner of this crate only).
+
+# WinRT toasts. Exception granted for this crate only: the exact `windows` version already in
+# Cargo.lock (pulled by gpui), so no second copy is built. Only extra features are enabled.
+[target.'cfg(windows)'.dependencies]
+windows = { version = "=0.61.3", default-features = false, features = ["std", "Data_Xml_Dom", "UI_Notifications"] }
+
+[dev-dependencies]
+tempfile.workspace = true

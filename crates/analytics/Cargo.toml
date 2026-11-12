@@ -1,0 +1,24 @@
+[package]
+name = "codenotch-analytics"
+description = "Token and cost analytics from local Claude/Codex transcripts."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[lib]
+name = "codenotch_analytics"
+
+[dependencies]
+codenotch-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+log.workspace = true
+
+# Crate-local dependencies go below this line (owner of this crate only).
+memchr = "2"
+
+[dev-dependencies]
+tempfile.workspace = true
