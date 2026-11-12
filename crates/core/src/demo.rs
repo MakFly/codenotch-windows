@@ -324,7 +324,7 @@ impl Snapshot {
         );
 
         snap.update = UpdateState::Available {
-            version: "1.0.1".into(),
+            version: "0.1.1".into(),
             notes: "Fixes and improvements.".into(),
             notes_url: Some("https://github.com/MakFly/codenotch-windows/releases".into()),
             forced: false,

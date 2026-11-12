@@ -25,10 +25,9 @@ authors = ["Kev"]
 repository = "https://github.com/MakFly/codenotch-windows"
 publish = false
 
-# Every dependency shared by more than one crate is pinned here ONCE.
-# Crates refer to them with `foo.workspace = true`.
-# Parallel engineers: do not edit this table. Add crate-local dependencies in
-# your own crate's Cargo.toml instead (see contract.md).
+# Every dependency shared by more than one crate is pinned here once.
+# Crates refer to them with `foo.workspace = true`; a dependency used by one crate only
+# belongs in that crate's own Cargo.toml.
 [workspace.dependencies]
 # --- our crates ---
 codenotch-core = { path = "crates/core" }
