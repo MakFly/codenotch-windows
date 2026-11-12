@@ -2,3 +2,4 @@ target/
 dist/
 *.tmp
 .cargo/config.toml
+.claude/
