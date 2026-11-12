@@ -1,0 +1,82 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  release:
+    name: Build and publish
+    runs-on: windows-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: powershell
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the tag matches the Cargo version
+        id: version
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = & scripts\version.ps1
+          $tag = '${{ github.ref_name }}'
+          if ($tag -ne "v$version") {
+            Write-Host "::error::Tag $tag does not match the workspace version $version (expected v$version)"
+            exit 1
+          }
+          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          Write-Host "Releasing $version"
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: release
+
+      - name: Build
+        run: cargo build --release --locked -p codenotch -p codenotch-hook
+
+      - name: Package
+        run: scripts\dist.ps1 -Version '${{ steps.version.outputs.version }}'
+
+      - name: Checksum, update manifest and release notes
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $v = '${{ steps.version.outputs.version }}'
+          $zip = "dist\CodeNotch-$v.zip"
+          $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $zip).Hash.ToLower()
+          $utf8 = New-Object Text.UTF8Encoding $false
+          $sha = "$hash  CodeNotch-$v.zip`n"
+          [IO.File]::WriteAllText((Join-Path $PWD "$zip.sha256"), $sha, $utf8)
+          scripts\update-manifest.ps1 -Version $v -Zip $zip -Out dist\update.json
+          scripts\release-notes.ps1 -Version $v -Out dist\RELEASE_NOTES.md
+          $extra = "`n---`n`n**Download:** ``CodeNotch-$v.zip`` (Windows 10/11 x64). Unzip and run ``codenotch.exe``.`n`n**SHA-256:** ``$hash```n"
+          [IO.File]::AppendAllText((Join-Path $PWD 'dist\RELEASE_NOTES.md'), $extra, $utf8)
+          Get-Content dist\update.json
+          Get-Content "$zip.sha256"
+
+      - name: Publish the GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: CodeNotch ${{ steps.version.outputs.version }}
+          body_path: dist/RELEASE_NOTES.md
+          draft: false
+          prerelease: false
+          make_latest: true
+          fail_on_unmatched_files: true
+          files: |
+            dist/CodeNotch-${{ steps.version.outputs.version }}.zip
+            dist/CodeNotch-${{ steps.version.outputs.version }}.zip.sha256
+            dist/update.json
