@@ -2,11 +2,11 @@
   "version": "0.1.0",
   "min_version": "0.1.0",
   "published_at": "2026-11-12",
-  "notes": "CodeNotch for Windows 0.1.0.",
+  "notes": "First release of the rebuilt CodeNotch for Windows.",
   "notes_url": "https://github.com/MakFly/codenotch-windows/releases/tag/v0.1.0",
   "windows_x64": {
     "url": "https://github.com/MakFly/codenotch-windows/releases/download/v0.1.0/CodeNotch-0.1.0.zip",
-    "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
-    "size": 0
+    "sha256": "4170ccbb1a0dd8ef41cb76ecf231751078a6eb99210c81d0fe1f7ad6183e7bc9",
+    "size": 7047417
   }
 }
