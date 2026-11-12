@@ -66,12 +66,10 @@ RELEASE_DIR  := $(TARGET_DIR)\release
 DEBUG_EXE    := $(DEBUG_DIR)\codenotch.exe
 RELEASE_EXE  := $(RELEASE_DIR)\codenotch.exe
 RELEASE_HOOK := $(RELEASE_DIR)\codenotch-hook.exe
-GLYPH_NOTICE := crates\ui-notch\assets\glyphs\NOTICE.md
 
 # Workspace version: the first line starting with `version =` in the root Cargo.toml, which is
 # the one in [workspace.package] (dependency versions are never at the start of a line).
-VERSION  := $(subst ",,$(word 3,$(shell findstr /B /R /C:"version *=" Cargo.toml)))
-DIST_DIR := dist\CodeNotch-$(VERSION)
+VERSION := $(subst ",,$(word 3,$(shell findstr /B /R /C:"version *=" Cargo.toml)))
 
 # Same rule as the app (crates/core/src/paths.rs): CODENOTCH_DATA_DIR, else %APPDATA%\dev.kev.smashtoken.
 DATA_DIR    := $(if $(CODENOTCH_DATA_DIR),$(CODENOTCH_DATA_DIR),$(APPDATA)\dev.kev.smashtoken)
@@ -167,47 +165,9 @@ LOC_PS = $(PS_STRICT) \
   foreach ($$r in $$rows | Sort-Object Lines -Descending) { '{0,-18} {1,6} {2,9:N0}' -f $$r.Crate, $$r.Files, $$r.Lines }; \
   '{0,-18} {1,6} {2,9:N0}' -f 'total', ($$rows | Measure-Object Files -Sum).Sum, ($$rows | Measure-Object Lines -Sum).Sum
 
-# The zip contains the CodeNotch-<version> folder itself. Entries are added one by one with a
-# `/` separator: in PowerShell 5.1 both Compress-Archive and ZipFile.CreateFromDirectory write
-# `\`, which the zip format does not allow and some unzip tools turn into odd file names.
-DIST_PS = $(PS_STRICT) \
-  $$d = '$(DIST_DIR)'; $$z = $$d + '.zip'; \
-  if (Test-Path -LiteralPath $$d) { Remove-Item -LiteralPath $$d -Recurse -Force }; \
-  if (Test-Path -LiteralPath $$z) { Remove-Item -LiteralPath $$z -Force }; \
-  New-Item -ItemType Directory -Path $$d | Out-Null; \
-  Copy-Item -LiteralPath '$(RELEASE_EXE)', '$(RELEASE_HOOK)', 'LICENSE', 'README.md' -Destination $$d; \
-  if (Test-Path -LiteralPath '$(GLYPH_NOTICE)') { Copy-Item -LiteralPath '$(GLYPH_NOTICE)' -Destination (Join-Path $$d 'NOTICE.md') } \
-  else { Write-Host 'warning: $(GLYPH_NOTICE) not found, not included' -ForegroundColor Yellow }; \
-  Add-Type -AssemblyName System.IO.Compression, System.IO.Compression.FileSystem; \
-  $$zip = [IO.Compression.ZipFile]::Open([IO.Path]::GetFullPath($$z), 'Create'); \
-  try { foreach ($$f in Get-ChildItem -LiteralPath $$d -File) { \
-    [void][IO.Compression.ZipFileExtensions]::CreateEntryFromFile($$zip, $$f.FullName, (Split-Path -Leaf $$d) + '/' + $$f.Name, 'Optimal') } } \
-  finally { $$zip.Dispose() }; \
-  Write-Host ('Created ' + $$d + '\'); \
-  Get-ChildItem -LiteralPath $$d | ForEach-Object { '  {0,-24} {1,12:N0} bytes' -f $$_.Name, $$_.Length }; \
-  Write-Host ('Created ' + $$z + ' (' + (Get-Item -LiteralPath $$z).Length.ToString('N0') + ' bytes)')
-
-# update.json from dist\CodeNotch-<version>.zip: version, size, SHA-256, the GitHub release URLs
-# and today's date. min_version is kept from the current update.json (the version itself when
-# there is none), notes only when the version did not change.
-REPO := MakFly/codenotch-windows
-MANIFEST_PS = $(PS_STRICT) \
-  $$v = '$(VERSION)'; $$z = '$(DIST_DIR).zip'; \
-  if (-not (Test-Path -LiteralPath $$z)) { Write-Host ('error: ' + $$z + ' not found. Run: make dist') -ForegroundColor Red; exit 1 }; \
-  $$old = $$null; \
-  if (Test-Path -LiteralPath 'update.json') { $$old = Get-Content -LiteralPath 'update.json' -Raw -Encoding UTF8 | ConvertFrom-Json }; \
-  $$min = $$v; if ($$old -and $$old.min_version) { $$min = [string]$$old.min_version }; \
-  $$notes = 'CodeNotch for Windows ' + $$v + '.'; \
-  if ($$old -and $$old.version -eq $$v -and $$old.notes) { $$notes = [string]$$old.notes }; \
-  $$tag = 'v' + $$v; $$base = 'https://github.com/$(REPO)'; \
-  $$asset = [ordered]@{ url = $$base + '/releases/download/' + $$tag + '/CodeNotch-' + $$v + '.zip'; \
-    sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $$z).Hash.ToLower(); size = (Get-Item -LiteralPath $$z).Length }; \
-  $$m = [ordered]@{ version = $$v; min_version = $$min; published_at = (Get-Date -Format 'yyyy-MM-dd'); \
-    notes = $$notes; notes_url = $$base + '/releases/tag/' + $$tag; windows_x64 = $$asset }; \
-  $$json = ($$m | ConvertTo-Json -Depth 4) -replace '\r\n', [string][char]10; \
-  [IO.File]::WriteAllText([IO.Path]::Combine((Get-Location).Path, 'update.json'), $$json + [char]10, (New-Object Text.UTF8Encoding $$false)); \
-  Write-Host ('Wrote update.json for ' + $$v + ': ' + $$asset.size + ' bytes, sha256 ' + $$asset.sha256); \
-  Write-Host ('Upload ' + $$z + ' to the GitHub release ' + $$tag + ' first, then commit and push update.json.')
+# dist and update-manifest run scripts\dist.ps1 and scripts\update-manifest.ps1, which the
+# release workflow (.github\workflows\release.yml) runs too: one packaging path everywhere.
+PS_FILE := powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File
 
 # Fails if a CodeNotch exe is running from INSTALL_DIR (its files would be locked).
 INSTALL_BUSY_PS = \
@@ -279,8 +239,6 @@ run-release: release ## Start the real app (release build)
 settings: build ## Start the app with the settings window open (--settings)
 	$(NO_SPAWN) "$(DEBUG_EXE)" --settings $(ARGS)
 
-capture-settings: build ## PNG of the demo settings window -> target\captures\settings.png (ARGS=--settings-page=analytics)
-	powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts\capture-window.ps1 -Exe "$(DEBUG_EXE)" -Args "--demo --settings $(ARGS)" -Out "$(TARGET_DIR)\captures\settings.png"
 
 once: build ## Fetch every enabled account once and print it (--once, read-only)
 	$(NO_SPAWN) "$(DEBUG_EXE)" --once $(ARGS)
@@ -318,11 +276,11 @@ ci: fmt-check lint test ## fmt-check + lint + test: what must pass before a comm
 ##@ Package
 dist: release ## dist\CodeNotch-<version>\ + .zip (both exes, LICENSE, README, glyph NOTICE)
 	$(if $(VERSION),,$(error Could not read the workspace version from Cargo.toml))
-	@$(PS) "$(DIST_PS)"
+	@$(PS_FILE) scripts\dist.ps1 -Version "$(VERSION)" -TargetDir "$(TARGET_DIR)"
 
 update-manifest: ## Write update.json from dist\CodeNotch-<version>.zip (run make dist first)
 	$(if $(VERSION),,$(error Could not read the workspace version from Cargo.toml))
-	@$(PS) "$(MANIFEST_PS)"
+	@$(PS_FILE) scripts\update-manifest.ps1 -Version "$(VERSION)"
 
 install: release ## Copy both release exes to %LOCALAPPDATA%\Programs\CodeNotch (no admin)
 	$(if $(LOCALAPPDATA),,$(error LOCALAPPDATA is not set))
