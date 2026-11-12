@@ -1623,7 +1623,6 @@ fn analytics_detail_reaches_the_snapshot_summary() {
     assert!(old.detail.facts.is_empty());
 
     // The statistics detail travels with the summary, shared (not copied).
-    let mut report = report;
     report.summary.detail = codenotch_core::SharedDetail::new(codenotch_core::AnalyticsDetail {
         today: "2026-11-12".into(),
         facts: vec![codenotch_core::UsageFact {
