@@ -1,0 +1,100 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/core",
+    "crates/providers",
+    "crates/providers-extra",
+    "crates/notify",
+    "crates/analytics",
+    "crates/activity",
+    "crates/hook",
+    "crates/platform",
+    "crates/ui-kit",
+    "crates/ui-notch",
+    "crates/ui-settings",
+    "crates/engine",
+    "crates/app",
+]
+default-members = ["crates/app"]
+
+[workspace.package]
+version = "1.0.0"
+edition = "2021"
+license = "MIT"
+authors = ["Kev"]
+repository = "https://github.com/MakFly/codenotch-windows"
+publish = false
+
+# Every dependency shared by more than one crate is pinned here ONCE.
+# Crates refer to them with `foo.workspace = true`.
+# Parallel engineers: do not edit this table. Add crate-local dependencies in
+# your own crate's Cargo.toml instead (see contract.md).
+[workspace.dependencies]
+# --- our crates ---
+codenotch-core = { path = "crates/core" }
+codenotch-providers = { path = "crates/providers" }
+codenotch-providers-extra = { path = "crates/providers-extra" }
+codenotch-notify = { path = "crates/notify" }
+codenotch-analytics = { path = "crates/analytics" }
+codenotch-activity = { path = "crates/activity" }
+codenotch-platform = { path = "crates/platform" }
+codenotch-ui-kit = { path = "crates/ui-kit" }
+codenotch-ui-notch = { path = "crates/ui-notch" }
+codenotch-ui-settings = { path = "crates/ui-settings" }
+codenotch-engine = { path = "crates/engine" }
+
+# --- data ---
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std", "serde"] }
+dirs = "6"
+uuid = { version = "1", features = ["v4"] }
+log = { version = "0.4", features = ["std"] }
+
+# --- HTTP (blocking). TLS through Windows SChannel via native-tls. ---
+ureq = { version = "2.12", default-features = false, features = ["json", "native-tls", "proxy-from-env", "gzip"] }
+native-tls = "0.2"
+
+# --- storage ---
+rusqlite = { version = "0.41", features = ["bundled"] }
+
+# --- Win32: windows-sys everywhere (no `windows` crate) ---
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_Graphics_Dwm",
+    "Win32_System_Console",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Registry",
+    "Win32_System_Threading",
+    "Win32_System_ProcessStatus",
+    "Win32_Security",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_Shell",
+    "Win32_UI_HiDpi",
+] }
+
+# --- UI ---
+gpui = "0.2.2"
+raw-window-handle = "0.6"
+tray-icon = "0.25"
+futures = "0.3"
+# Controls library for gpui 0.2.2 (0.5.0 is the last release on gpui 0.2.x; later ones moved to gpui-pre).
+gpui-component = "=0.5.0"
+
+# --- tests ---
+tempfile = "3"
+
+# GPUI lays text out on the CPU every frame. Optimise dependencies in dev builds.
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true

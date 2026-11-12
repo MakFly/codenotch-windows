@@ -1,0 +1,32 @@
+[package]
+name = "codenotch-providers-extra"
+description = "Cursor, Copilot, OpenCode, Command Code, GLM, Antigravity, Qoder providers."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[lib]
+name = "codenotch_providers_extra"
+
+[dependencies]
+codenotch-core.workspace = true
+# Electron safeStorage reader (Cursor encrypts its session at rest), shared with Claude.
+codenotch-providers.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+log.workspace = true
+rusqlite.workspace = true
+
+# Crate-local dependencies go below this line (owner of this crate only).
+# Job objects (process-tree cleanup) and anonymous pipes (Antigravity CLI pseudo-console).
+windows-sys = { workspace = true, features = ["Win32_System_JobObjects", "Win32_System_Pipes"] }
+# Loopback-only client for Antigravity's local language server (self-signed certificate on
+# 127.0.0.1). Same HTTP/TLS stack as core (ureq + native-tls/SChannel), never used off-host.
+ureq.workspace = true
+native-tls.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

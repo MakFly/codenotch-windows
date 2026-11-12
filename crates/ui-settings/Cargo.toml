@@ -1,0 +1,21 @@
+[package]
+name = "codenotch-ui-settings"
+description = "Settings window, onboarding and analytics view."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[lib]
+name = "codenotch_ui_settings"
+
+[dependencies]
+codenotch-core.workspace = true
+codenotch-ui-kit.workspace = true
+gpui.workspace = true
+log.workspace = true
+
+# Crate-local dependencies go below this line (owner of this crate only).
+serde_json.workspace = true
+chrono.workspace = true

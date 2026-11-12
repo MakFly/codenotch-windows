@@ -1,0 +1,33 @@
+[package]
+name = "codenotch-engine"
+description = "Scheduler, back-off, persistence; turns providers + activity + notify into Snapshots."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+publish.workspace = true
+repository.workspace = true
+
+[lib]
+name = "codenotch_engine"
+
+[dependencies]
+codenotch-core.workspace = true
+codenotch-providers.workspace = true
+codenotch-providers-extra.workspace = true
+codenotch-notify.workspace = true
+codenotch-analytics.workspace = true
+codenotch-activity.workspace = true
+log.workspace = true
+serde_json.workspace = true
+
+# Crate-local dependencies go below this line (owner of this crate only).
+chrono.workspace = true
+serde.workspace = true
+# Self-update: package checksum and zip unpacking (all already in the lock file).
+sha2 = "0.10"
+flate2 = "1"
+crc32fast = "1"
+
+[dev-dependencies]
+tempfile.workspace = true

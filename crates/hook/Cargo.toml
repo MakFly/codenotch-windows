@@ -1,0 +1,28 @@
+[package]
+name = "codenotch-hook"
+description = "Tiny helper Claude Code calls on hook events; forwards them to CodeNotch."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[dependencies]
+codenotch-core.workspace = true
+
+# Crate-local dependencies go below this line (owner of this crate only).
+windows-sys = { workspace = true, features = ["Win32_System_Diagnostics_ToolHelp"] }
+
+[lib]
+name = "codenotch_hook"
+path = "src/lib.rs"
+
+[[bin]]
+name = "codenotch-hook"
+path = "src/main.rs"
+
+[dev-dependencies]
+codenotch-activity.workspace = true
+tempfile.workspace = true
+serde_json.workspace = true
+
