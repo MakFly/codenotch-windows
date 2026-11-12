@@ -74,6 +74,8 @@ from it.
 - `make dev`: watch mode that rebuilds and restarts the debug app on save (`scripts\dev.ps1`, no
   extra tool).
 - Rotating log file in `<data folder>\logs\`, with redaction.
+- GitHub Actions: CI (fmt, clippy, tests on Windows) and a tag-triggered release workflow that
+  builds the zip with `scripts\dist.ps1` (shared with `make dist`), its SHA-256 and `update.json`.
 - Provider marks from lobe-icons (MIT), with their notice.
 - Toasts in the manner of react-hot-toast (`ui-kit::toast`): top-centre stack (bottom-right
   possible), success / error / loading / custom, in-place update (loading → result), optional
@@ -109,8 +111,8 @@ from it.
 
 ### Known unverified
 
-- The GUI was never shown on screen while the rebuild was assembled: notch rendering, hover card,
-  settings window, tray, hotkey, taskbar mode, toasts and reset cards are unverified visually.
+- The GUI was checked in demo mode only (notch, hover card, settings pages, toasts). The tray,
+  hotkey, taskbar mode and reset cards were not checked against real use.
 - Read live against real accounts: Codex and Grok only. Claude was not read live (expired saved
   token, automatic renewal disabled during testing). Cursor's session was rejected by its API.
   Copilot's token read was skipped. OpenCode, Command Code, GLM, Antigravity and Qoder were not
@@ -119,7 +121,7 @@ from it.
 - The hooks were never tried against a real Claude Code session.
 - GPT-6-family Codex models have no built-in price; their cost is shown as a lower bound.
 
-What was checked: the workspace builds, 561 tests pass, clippy is clean, `--version`, `doctor` and
+What was checked: the workspace builds, the tests pass, clippy is clean, `--version`, `doctor` and
 `--once` run, and the analytics indexer ran on real transcripts.
 
 ## 0.3.0
