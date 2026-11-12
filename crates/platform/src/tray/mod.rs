@@ -159,7 +159,7 @@ fn icon_size() -> u32 {
     icon::snap_size(if px > 0 { px } else { 16 })
 }
 
-/// Tooltip text (data-spec §13): "CodeNotch — Claude 42% · Codex 10%".
+/// Tooltip text: "CodeNotch — Claude 42% · Codex 10%".
 pub fn tooltip(snapshot: &Snapshot) -> String {
     model::tooltip_text(snapshot)
 }

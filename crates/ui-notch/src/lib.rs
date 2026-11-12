@@ -2,7 +2,7 @@
 //!
 //! The notch: an always-on-top pill on a screen edge with one ring cell per account, the folded
 //! rest pill, the hover card with its tail, the settings orb and drag grip, the right-click menu,
-//! and the reset card window. Spec: visual-spec §0–§8, §10.2, §11; data-spec §6, §7, §11.
+//! and the reset card window.
 //! Depends on `codenotch-core` + `codenotch-ui-kit` (+ gpui) only.
 //!
 //! Inputs: the [`UiModel`] entity (observed for snapshots, subscribed for `ResetDetected` →

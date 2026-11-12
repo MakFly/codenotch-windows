@@ -1,4 +1,4 @@
-//! Logic of `codenotch-hook.exe <event>` (data-spec §9.1 "Hook helper protocol").
+//! Logic of `codenotch-hook.exe <event>` ("Hook helper protocol").
 //!
 //! Claude Code runs the helper on every hook event. It reads its stdin (the hook JSON, at most
 //! `MAX_PAYLOAD` bytes forwarded, read for at most [`STDIN_BUDGET`]), the port from

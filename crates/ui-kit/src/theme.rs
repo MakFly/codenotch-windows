@@ -1,7 +1,7 @@
 //! Theme tokens.
 //!
-//! * Notch pill and rings: visual-spec §6.1 (`pill`, `edge`, `track`, `ink` …) and the grade
-//!   colours of §2.4 (`ample` / `watch` / `crit`). The notch's hover card and the reset card are
+//! * Notch pill and rings (`pill`, `edge`, `track`, `ink` …) and the grade
+//!   colours (`ample` / `watch` / `crit`). The notch's hover card and the reset card are
 //!   drawn in the pill's material (`pill` surface, `edge` hairline, `track` bar tracks) and their
 //!   progress bars use the same grade colours as the rings: one severity palette on the notch.
 //! * The settings window, menus and toasts use the shadcn/ui v4 "neutral" palette (light and dark `:root` / `.dark` variables:
@@ -91,7 +91,7 @@ pub fn fonts() -> Fonts {
 pub struct Theme {
     pub dark: bool,
     pub fonts: Fonts,
-    // --- notch pill & rings (visual-spec §6.1, §2.4) ---
+    // --- notch pill & rings ---
     pub pill: Hsla,
     pub edge: Hsla,
     pub rest_edge: Hsla,
@@ -409,7 +409,7 @@ impl Default for Theme {
     }
 }
 
-/// Per-channel sRGB linear interpolation (visual-spec §2.4 ramp).
+/// Per-channel sRGB linear interpolation (ramp).
 pub fn lerp(a: Hsla, b: Hsla, t: f32) -> Hsla {
     let t = t.clamp(0.0, 1.0);
     let (a, b): (Rgba, Rgba) = (a.into(), b.into());

@@ -1,12 +1,12 @@
-//! # codenotch-activity (owner: agent E)
+//! # codenotch-activity
 //!
-//! "Working" / "waiting on you" detection (data-spec §9):
+//! "Working" / "waiting on you" detection:
 //! * Hook server on `127.0.0.1:settings.hookPort` (protocol: `codenotch_core::hooks`), token in
 //!   `Paths::hook_token()` (32 random bytes, 64 hex chars, created on first start). Runs while
 //!   `settings.hooksEnabled` is on; a taken port is reported by [`ActivityHandle::server_status`].
-//! * Session state machine (§9.2), transcript watcher fallback (§9.3), other providers' busy
-//!   state (§9.4: Codex/Cursor/OpenCode SQLite via `rusqlite`, Antigravity transcript mtime).
-//! * Hooks installer for every Claude profile's `settings.json` (§9.1): merge-only, idempotent,
+//! * Session state machine, transcript watcher fallback, other providers' busy
+//!   state (Codex/Cursor/OpenCode SQLite via `rusqlite`, Antigravity transcript mtime).
+//! * Hooks installer for every Claude profile's `settings.json`: merge-only, idempotent,
 //!   atomic write, one-time `.codenotch.bak` backup, refuses invalid JSON.
 //!
 //! Threading: [`start`] spawns its own threads (hook server + one per connection, Claude

@@ -1,4 +1,4 @@
-//! Other providers' working state (data-spec §9.4, §5.3). Polled every 2 s; SQLite databases are
+//! Other providers' working state. Polled every 2 s; SQLite databases are
 //! opened read-only and re-queried only when the database or its `-wal` file changed.
 //!
 //! * Codex desktop: `thread_history_1.sqlite` turns `inProgress` (fresh = last item ≤ 10 min old

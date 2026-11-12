@@ -21,7 +21,7 @@ codenotch-activity.workspace = true
 log.workspace = true
 serde_json.workspace = true
 
-# Crate-local dependencies go below this line (owner of this crate only).
+# Crate-local dependencies go below this line.
 chrono.workspace = true
 serde.workspace = true
 # Self-update: package checksum and zip unpacking (all already in the lock file).

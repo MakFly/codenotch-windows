@@ -1,4 +1,4 @@
-//! GLM / z.ai coding plan (data-spec §5.5).
+//! GLM / z.ai coding plan.
 //!
 //! Key sources, first found (all read only):
 //! 0. the account's `secretEnv` variable, 1. `GLM_API_KEY` (both: the z.ai console),

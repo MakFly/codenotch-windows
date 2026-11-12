@@ -16,6 +16,6 @@ codenotch-ui-kit.workspace = true
 gpui.workspace = true
 log.workspace = true
 
-# Crate-local dependencies go below this line (owner of this crate only).
+# Crate-local dependencies go below this line.
 serde_json.workspace = true
 chrono.workspace = true

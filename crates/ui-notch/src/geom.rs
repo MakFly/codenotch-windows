@@ -1,4 +1,4 @@
-//! Pure notch geometry (visual-spec §0–§1, §5.2, §11).
+//! Pure notch geometry.
 //!
 //! Everything is laid out once in a **canonical frame** — the right-edge layout seen as
 //! `u` = distance along the edge (top → bottom on upright edges, left → right on flat ones) and
@@ -412,7 +412,7 @@ impl NotchLayout {
         (w, max_h.max(40.0 * s))
     }
 
-    /// Place a `w × h` card for cell `i` (§5.2): beside the pill, centred on the cell along the
+    /// Place a `w × h` card for cell `i`: beside the pill, centred on the cell along the
     /// edge, kept 8 px (+ taskbar insets) inside the window; tail centred on the ring.
     pub fn place_card(&self, i: usize, w: f32, h: f32, insets: Insets) -> Option<CardPlace> {
         let cell = *self.cells.get(i)?;
@@ -444,7 +444,7 @@ impl NotchLayout {
         })
     }
 
-    /// Tail wedge (§5.2) centred at canonical `tail_u`, window coordinates. The base overlaps the
+    /// Tail wedge centred at canonical `tail_u`, window coordinates. The base overlaps the
     /// card by 1 px so the two read as one shape.
     pub fn tail_polygon(&self, tail_u: f32, segments: usize) -> Vec<Pt> {
         let s = self.scale;
@@ -520,7 +520,7 @@ pub fn dist(a: Pt, b: Pt) -> f32 {
     ((a.0 - b.0).powi(2) + (a.1 - b.1).powi(2)).sqrt()
 }
 
-/// The window's hit region (§0): every hot rect padded by `pad`; with two or more rects their
+/// The window's hit region: every hot rect padded by `pad`; with two or more rects their
 /// bounding box counts too. Clipped to `bounds`.
 pub fn hot_region(rects: &[Rect], pad: f32, bounds: Rect) -> Option<Rect> {
     let mut it = rects.iter().map(|r| r.inflate(pad));

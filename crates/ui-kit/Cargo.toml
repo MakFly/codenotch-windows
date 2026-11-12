@@ -19,5 +19,5 @@ futures.workspace = true
 gpui-component.workspace = true
 log.workspace = true
 
-# Crate-local dependencies go below this line (owner of this crate only).
+# Crate-local dependencies go below this line.
 

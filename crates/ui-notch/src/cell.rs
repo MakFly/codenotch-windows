@@ -1,4 +1,4 @@
-//! What one notch cell shows (visual-spec §2–§3, data-spec §6–§7). Pure: colours are applied by
+//! What one notch cell shows. Pure: colours are applied by
 //! the renderer from `used` with `Theme::usage_color`.
 
 use codenotch_core::config::{Settings, WeeklyRing};
@@ -33,8 +33,8 @@ pub struct CellModel {
     pub fetched_at: Option<i64>,
 }
 
-/// Swept fraction: used, or 1 − used in remaining mode (data-spec §7; visual-spec Unknown 2 —
-/// we follow the reference code, which sweeps the remaining share).
+/// Swept fraction: used, or 1 − used in remaining mode (like the reference
+/// app, the remaining mode sweeps the remaining share).
 pub fn sweep(used_percent: f64, show_remaining: bool) -> f32 {
     let f = (used_percent / 100.0).clamp(0.0, 1.0) as f32;
     if show_remaining {
@@ -45,7 +45,7 @@ pub fn sweep(used_percent: f64, show_remaining: bool) -> f32 {
 }
 
 /// Claude numbers count as current only when the reading is live, fresh and the window's reset
-/// has not passed (data-spec §2.5). Other providers are always "current" (stale ones dim).
+/// has not passed. Other providers are always "current" (stale ones dim).
 pub fn is_current(reading: &Reading, w: &LimitWindow, now: i64) -> bool {
     if reading.provider != ProviderKind::Claude {
         return true;

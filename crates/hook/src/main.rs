@@ -1,4 +1,4 @@
-//! `codenotch-hook.exe <event>` (owner: agent E)
+//! `codenotch-hook.exe <event>`
 //!
 //! Called by Claude Code hooks. Reads stdin (≤ `codenotch_core::hooks::MAX_PAYLOAD`), reads the
 //! port from `config.gpui.json` (`settings.hookPort`, default 48666) and the token from

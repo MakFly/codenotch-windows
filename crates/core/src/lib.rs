@@ -1,6 +1,6 @@
 //! # codenotch-core
 //!
-//! The shared contract of CodeNotch for Windows. Every other crate depends on this one.
+//! Shared types and logic of CodeNotch for Windows. Every other crate depends on this one.
 //! It holds plain data and pure logic only: no gpui, no Win32, no threads of its own.
 //!
 //! | module | what |

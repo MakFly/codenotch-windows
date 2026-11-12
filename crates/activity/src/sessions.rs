@@ -1,4 +1,4 @@
-//! Claude session state machine (data-spec §9.2). Pure: every method takes `now` (unix ms).
+//! Claude session state machine. Pure: every method takes `now` (unix ms).
 
 use codenotch_core::hooks::HookEvent;
 use codenotch_core::model::{ActivityState, SessionInfo};
@@ -356,7 +356,7 @@ impl SessionStore {
         }
     }
 
-    /// Timers (§9.2 sweep). Runs at most every [`SWEEP_EVERY_MS`] unless `force`.
+    /// Timers (sweep). Runs at most every [`SWEEP_EVERY_MS`] unless `force`.
     pub fn sweep(&mut self, now: i64, force: bool) -> bool {
         if !force && now - self.last_sweep < SWEEP_EVERY_MS {
             return false;

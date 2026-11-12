@@ -1,4 +1,4 @@
-//! Claude transcript watcher (data-spec §9.3): the fallback when hooks do not fire (desktop app,
+//! Claude transcript watcher: the fallback when hooks do not fire (desktop app,
 //! hooks not installed). Polls file sizes/mtimes; no file-system notification dependency.
 //!
 //! * roots: `<profile>\projects` of every enabled Claude account, plus the desktop app's

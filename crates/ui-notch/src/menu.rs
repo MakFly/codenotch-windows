@@ -1,4 +1,4 @@
-//! Notch right-click menu (visual-spec §10.2): Refresh now · Open <host> · — · ☑ Keep open ·
+//! Notch right-click menu: Refresh now · Open <host> · — · ☑ Keep open ·
 //! Settings… · — · Quit. Built as data here, shown natively by `win32::popup_menu`.
 
 use crate::text::{host, t, tf};

@@ -57,7 +57,7 @@ impl PersistedState {
     }
 
     /// Readings restored at start-up: anything with windows that was Fresh becomes Stale
-    /// (data-spec §6: persisted snapshots are never shown as live).
+    /// (persisted snapshots are never shown as live).
     pub fn restored_readings(&self) -> BTreeMap<String, Reading> {
         self.readings
             .iter()

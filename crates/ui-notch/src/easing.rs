@@ -1,4 +1,4 @@
-//! Timing curves (visual-spec §7). Pure functions of elapsed milliseconds.
+//! Timing curves. Pure functions of elapsed milliseconds.
 
 /// CSS `cubic-bezier(x1, y1, x2, y2)`.
 #[derive(Debug, Clone, Copy, PartialEq)]

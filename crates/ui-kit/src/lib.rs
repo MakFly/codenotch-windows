@@ -6,8 +6,8 @@
 //! | module | what |
 //! |---|---|
 //! | [`model`] | [`UiModel`] entity (snapshot + command sender) and the event pump |
-//! | [`theme`] | [`Theme`] tokens (visual-spec §6), grade colours, colour ramp |
-//! | [`metrics`] | geometry constants from visual-spec §1–§5 (pill, ring, card) |
+//! | [`theme`] | [`Theme`] tokens, grade colours, colour ramp |
+//! | [`metrics`] | geometry constants (pill, ring, card) |
 //! | [`chart`] | [`AreaChart`]: stacked area chart with hover cursor and tooltip (statistics page) |
 //! | [`tooltip`] | instant shadcn chart tooltip card, [`HoverGrid`] (heat grids), [`HoverTip`], [`SideTip`] (sidebar rail labels) |
 //! | [`ring`] | [`ring()`] element and the arc painter ([`paint_arc`], [`arc_polygon`]) |

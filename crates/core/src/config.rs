@@ -881,7 +881,7 @@ mod tests {
         assert_eq!(s.lang(), crate::i18n::system_lang());
     }
 
-    /// Synthetic fixture with exactly the key set of the owner's real 0.3 file (values invented).
+    /// Synthetic fixture with exactly the key set of a real 0.3 config file (values invented).
     pub(crate) const OWNER_SHAPE: &str = r#"{
       "accounts": [
         {"id": "acc-1", "name": "Claude · perso", "provider": "claude", "enabled": true,
@@ -1134,7 +1134,7 @@ mod tests {
         assert_eq!(ids.len(), 200);
     }
 
-    /// Read-only check against the owner's real file, when present. Run explicitly with
+    /// Read-only check against the real config file, when present. Run explicitly with
     /// `cargo test -p codenotch-core -- --ignored real_config`. Prints no values.
     #[test]
     #[ignore]

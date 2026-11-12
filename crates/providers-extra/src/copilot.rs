@@ -1,4 +1,4 @@
-//! GitHub Copilot (data-spec §5.2).
+//! GitHub Copilot.
 //!
 //! Token, first found: the account's `secretEnv` variable, `GH_TOKEN`, `GITHUB_TOKEN`,
 //! `oauth_token` in the `github.com:` block of GitHub CLI's `hosts.yml` (`GH_CONFIG_DIR`,

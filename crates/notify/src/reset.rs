@@ -1,4 +1,4 @@
-//! Reset detection (data-spec §8), one state per account, decisions per window id.
+//! Reset detection, one state per account, decisions per window id.
 //!
 //! * Only fresh readings count: status `Fresh`, `fetched_at > 0`, not more than 60 s in the
 //!   future and at most 5 min old. Any other reading clears that account's state entirely, so
@@ -28,7 +28,8 @@ pub const FRESH_MAX_AGE_SECS: i64 = 5 * 60;
 /// Tolerated clock skew for `fetched_at` in the future.
 pub const FUTURE_SKEW_SECS: i64 = 60;
 
-/// Fresh reading per §8 step 1.
+/// Whether a reading counts for reset detection: status `Fresh`, fetched within
+/// [`FRESH_MAX_AGE_SECS`] and not further in the future than [`FUTURE_SKEW_SECS`].
 pub fn is_fresh(reading: &Reading, now: i64) -> bool {
     reading.status == ReadingStatus::Fresh
         && reading.fetched_at > 0

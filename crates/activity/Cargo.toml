@@ -18,7 +18,7 @@ chrono.workspace = true
 log.workspace = true
 rusqlite.workspace = true
 
-# Crate-local dependencies go below this line (owner of this crate only).
+# Crate-local dependencies go below this line.
 windows-sys = { workspace = true, features = ["Win32_System_Diagnostics_ToolHelp", "Win32_Security_Cryptography"] }
 
 [dev-dependencies]

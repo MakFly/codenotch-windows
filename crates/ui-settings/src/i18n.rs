@@ -361,7 +361,7 @@ mod tests {
     }
 
     /// Every literal passed to `t(lang, "…")` / `tf(lang, "…", …)` in this crate has a French
-    /// entry (here or in core), so the owner never sees an English string in French mode.
+    /// entry (here or in core), so a French user never sees an English string in French mode.
     #[test]
     fn every_ui_string_has_french() {
         let sources = [

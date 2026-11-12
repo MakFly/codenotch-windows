@@ -1,4 +1,4 @@
-//! # codenotch-engine (owner: integration)
+//! # codenotch-engine
 //!
 //! The non-UI heart: owns config + state, schedules fetches with back-off, runs activity,
 //! notify and analytics, persists `state.json` / `history.jsonl`, and publishes [`Snapshot`]s.

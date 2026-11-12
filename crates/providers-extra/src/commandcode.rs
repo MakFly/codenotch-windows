@@ -1,4 +1,4 @@
-//! Command Code (data-spec §5.4).
+//! Command Code.
 //!
 //! Key: the account's `secretEnv` variable, `COMMAND_CODE_API_KEY`, else `apiKey` in
 //! `~\.commandcode\auth.json` (the desktop app's sign-in, read only). Four GETs under

@@ -1,4 +1,4 @@
-//! The provider contract.
+//! The provider trait and what every provider receives and returns.
 //!
 //! A provider turns local credentials/files + HTTP into a [`Reading`]. Providers are called by
 //! the engine on **worker threads** (never the UI thread), may block, and must:

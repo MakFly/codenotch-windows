@@ -1,9 +1,9 @@
-//! # codenotch-providers (owner: agent A)
+//! # codenotch-providers
 //!
-//! Claude, Codex, Grok and the custom JSON endpoint. Spec: data-spec.md §2 (Claude), §3 (Codex),
-//! §4 (Grok), §6 (staleness), §7 (headline ids). Contract: `codenotch_core::provider`.
+//! Claude, Codex, Grok and the custom JSON endpoint, implementing the
+//! `codenotch_core::provider` trait.
 //!
-//! Rules (from the contract):
+//! Rules:
 //! * Files only via `ctx.env` / `env` paths; HTTP only via `ctx.http` (tests use `FakeHttp`).
 //! * Window ids and English `label_key`s:
 //!   - Claude: `session` "Current session", `seven_day` "Weekly limit", `seven_day_opus`

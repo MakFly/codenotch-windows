@@ -1,6 +1,6 @@
 //! The running application: engine + notch + settings + tray + hotkey + desktop polling.
 //!
-//! Threads (contract §7): everything here runs on the gpui main thread, except the engine (its
+//! Threads: everything here runs on the gpui main thread, except the engine (its
 //! own threads), the hotkey and single-instance helper threads (they only send a `Command`), and
 //! the demo command drain. Timers: one 200 ms UI task polls the tray menu; every second tick
 //! (400 ms) it samples the foreground window for full-screen / game state; every 300th tick

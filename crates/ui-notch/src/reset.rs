@@ -1,4 +1,4 @@
-//! Reset card (visual-spec §8): a short card next to the notch saying a quota window renewed.
+//! Reset card: a short card next to the notch saying a quota window renewed.
 //! Shown 6 s or until dismissed; several in a row are queued.
 
 use crate::dims::*;
@@ -105,7 +105,7 @@ pub fn reset_content<Tz: TimeZone>(
     }
 }
 
-/// Card and tail inside the 280 × 150 window (logical px at density 1), per edge (§8).
+/// Card and tail inside the 280 × 150 window (logical px at density 1), per edge.
 /// `None` tail when the notch is hidden.
 pub fn reset_layout(edge: Edge, notch_visible: bool) -> (Rect, Option<Vec<Pt>>) {
     let card = |x: f32, y: f32| Rect::new(x, y, RESET_CARD_W, RESET_CARD_H);

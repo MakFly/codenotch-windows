@@ -1,4 +1,4 @@
-//! Hover card content model (visual-spec §5.3, data-spec §2.5/§6). Pure: built from one
+//! Hover card content model. Pure: built from one
 //! `AccountView`, rendered by `notch.rs`.
 
 use crate::cell::{is_current, sweep};

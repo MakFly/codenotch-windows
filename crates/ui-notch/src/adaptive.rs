@@ -1,4 +1,4 @@
-//! Adaptive rest pill (visual-spec §6.2): while folded, the rest pill flips between the dark and
+//! Adaptive rest pill: while folded, the rest pill flips between the dark and
 //! the light pill depending on what is behind it. The screen sampling lives in
 //! `codenotch-platform` (`backdrop::luminance`), which this crate may not depend on, so the app
 //! installs it with [`set_backdrop_sampler`]. Without a sampler the feature is inert.

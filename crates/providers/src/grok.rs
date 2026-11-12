@@ -1,4 +1,4 @@
-//! Grok (data-spec §4): `~\.grok\auth.json` entries minted by `https://auth.x.ai` only, the
+//! Grok: `~\.grok\auth.json` entries minted by `https://auth.x.ai` only, the
 //! CLI billing endpoint, renewal by running `grok models` hidden.
 
 use crate::util::{
@@ -206,7 +206,7 @@ pub(crate) fn grok_windows(body: &str) -> Result<Option<Vec<LimitWindow>>> {
     Ok(Some(out))
 }
 
-/// Parse the body of `GET /v1/billing?format=credits` (data-spec §4.3). An empty list means
+/// Parse the body of `GET /v1/billing?format=credits`. An empty list means
 /// nothing is metered; a body without `config` is an error.
 pub fn parse_grok_usage(body: &str, _now: i64) -> Result<Vec<LimitWindow>> {
     grok_windows(body)?.ok_or_else(|| Error::other(NOTE_NO_CONFIG))
@@ -404,7 +404,7 @@ impl Provider for GrokProvider {
         self.fetch_inner(account, ctx)
     }
 
-    /// Loop period (data-spec §4.4); no attempt floor on manual refresh.
+    /// Loop period; no attempt floor on manual refresh.
     fn min_interval(&self) -> Duration {
         Duration::from_secs(300)
     }

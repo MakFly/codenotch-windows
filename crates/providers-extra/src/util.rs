@@ -10,7 +10,7 @@ use std::time::Duration;
 
 pub(crate) const FIVE_HOURS: i64 = 5 * 3600;
 pub(crate) const SEVEN_DAYS: i64 = 7 * 86_400;
-/// Request timeout used by every provider of this crate (data-spec §5: 15 s).
+/// Request timeout used by every provider of this crate (15 s).
 pub(crate) const HTTP_TIMEOUT: Duration = Duration::from_secs(15);
 /// `User-Agent` for the endpoints that want ours (OpenCode, GLM).
 pub(crate) const USER_AGENT: &str = concat!("codenotch/", env!("CARGO_PKG_VERSION"), " (Windows)");

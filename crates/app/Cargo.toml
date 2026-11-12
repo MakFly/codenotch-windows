@@ -20,7 +20,7 @@ codenotch-providers-extra.workspace = true
 gpui.workspace = true
 log.workspace = true
 
-# Crate-local dependencies go below this line (owner of this crate only).
+# Crate-local dependencies go below this line.
 codenotch-notify.workspace = true
 codenotch-activity.workspace = true
 

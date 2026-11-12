@@ -1,5 +1,5 @@
-//! Where the notch window goes on screen, and how a drag maps to a new placement
-//! (data-spec §11). Pure functions over device pixels.
+//! Where the notch window goes on screen, and how a drag maps to a new placement.
+//! Pure functions over device pixels.
 
 use crate::geom::Insets;
 use codenotch_core::config::Edge;

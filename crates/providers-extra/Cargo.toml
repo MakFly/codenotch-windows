@@ -20,7 +20,7 @@ chrono.workspace = true
 log.workspace = true
 rusqlite.workspace = true
 
-# Crate-local dependencies go below this line (owner of this crate only).
+# Crate-local dependencies go below this line.
 # Job objects (process-tree cleanup) and anonymous pipes (Antigravity CLI pseudo-console).
 windows-sys = { workspace = true, features = ["Win32_System_JobObjects", "Win32_System_Pipes"] }
 # Loopback-only client for Antigravity's local language server (self-signed certificate on

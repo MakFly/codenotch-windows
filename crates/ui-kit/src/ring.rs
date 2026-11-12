@@ -1,6 +1,6 @@
 //! Circular progress rings painted with gpui paths.
 //!
-//! Angles are in **degrees, clockwise from 12 o'clock** (visual-spec §2.1). A fraction ≤ 0 draws
+//! Angles are in **degrees, clockwise from 12 o'clock**. A fraction ≤ 0 draws
 //! nothing (no zero-length dot); a tiny positive fraction with round caps draws a dot; a
 //! fraction ≥ 1 draws a full annulus.
 //!

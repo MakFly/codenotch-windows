@@ -1,4 +1,4 @@
-//! Provider marks (visual-spec §4).
+//! Provider marks.
 //!
 //! The SVGs under `assets/glyphs/` are lobe-icons (MIT, © LobeHub), copied unmodified with their
 //! `NOTICE.md`. They are embedded and served to gpui through [`Assets`], which the app passes to

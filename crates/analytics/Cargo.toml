@@ -17,7 +17,7 @@ serde_json.workspace = true
 chrono.workspace = true
 log.workspace = true
 
-# Crate-local dependencies go below this line (owner of this crate only).
+# Crate-local dependencies go below this line.
 memchr = "2"
 
 [dev-dependencies]

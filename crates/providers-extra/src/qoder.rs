@@ -1,4 +1,4 @@
-//! Qoder (data-spec §5.7).
+//! Qoder.
 //!
 //! The read goes through a small Node sidecar, `qoder-usage.cjs`, which uses the official
 //! `@qoder-ai/qoder-agent-sdk`: it starts the SDK daemon on the local signed-in `qodercli` session

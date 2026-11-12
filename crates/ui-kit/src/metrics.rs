@@ -1,4 +1,4 @@
-//! Geometry from visual-spec §0–§5, in logical px at Medium size (multiply by
+//! Geometry, in logical px at Medium size (multiply by
 //! `NotchSize::scale()`). Ring geometry is defined in a 56-unit box scaled to [`RING_BOX`].
 
 /// Ring box side (px). 56 units map onto this.

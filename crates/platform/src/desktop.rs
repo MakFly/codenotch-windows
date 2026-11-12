@@ -1,4 +1,4 @@
-//! Full-screen and game detection (data-spec §11 "Full-screen detection"), polled every 400 ms
+//! Full-screen and game detection ("Full-screen detection"), polled every 400 ms
 //! from a UI timer.
 //!
 //! **Full screen** — the foreground window is classified by its class name, rectangle and style:

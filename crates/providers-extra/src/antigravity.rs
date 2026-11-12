@@ -1,4 +1,4 @@
-//! Antigravity (data-spec §5.6; provider id `gemini` is an alias).
+//! Antigravity (provider id `gemini` is an alias).
 //!
 //! Sources, chosen per fetch:
 //! * **Official CLI** (`%LOCALAPPDATA%\agy\bin\agy.exe`, or `agy.exe` on an absolute PATH entry):
@@ -157,7 +157,7 @@ pub(crate) fn order_lanes(windows: &mut [LimitWindow]) {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Lane picker (data-spec §7)
+// Lane picker
 // ---------------------------------------------------------------------------------------------
 
 fn family_of(w: &LimitWindow) -> &'static str {

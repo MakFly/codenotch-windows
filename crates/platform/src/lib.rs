@@ -1,4 +1,4 @@
-//! # codenotch-platform (owner: agent F)
+//! # codenotch-platform
 //!
 //! Win32 services for the app shell. No gpui. Everything here is called by `codenotch` (app):
 //!
@@ -80,7 +80,7 @@ pub mod console {
 }
 
 /// If no proxy env var is set, copy the WinINet proxy (HKCU Internet Settings) into
-/// `HTTPS_PROXY`/`HTTP_PROXY` before the first request (data-spec §0). Call early in `main`,
+/// `HTTPS_PROXY`/`HTTP_PROXY` before the first request. Call early in `main`,
 /// before other threads start. Also sets `NO_PROXY` (loopback + `ProxyOverride`) when unset.
 pub fn apply_system_proxy_env() {
     system::apply_system_proxy_env()

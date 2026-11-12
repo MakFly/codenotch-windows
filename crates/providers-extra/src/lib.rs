@@ -1,8 +1,8 @@
-//! # codenotch-providers-extra (owner: agent B)
+//! # codenotch-providers-extra
 //!
 //! Cursor, GitHub Copilot, OpenCode (Go), Command Code, GLM (z.ai), Antigravity, Qoder.
-//! Spec: data-spec.md §5.1–§5.7, §6, §7. Contract: `codenotch_core::provider` (env/http
-//! injection, 0–100 used, `None` for unknown, no secrets).
+//! They implement the `codenotch_core::provider` trait: env/http injection, 0–100 used, `None`
+//! for unknown, no secrets.
 //!
 //! Headline window ids (core `ProviderKind::headline_candidates`): cursor `included`→`api`,
 //! copilot `premium_interactions`→first, glm `session` (+ weekly `weekly`), opencode `rolling`
@@ -14,7 +14,7 @@
 //! processes (`gh`, `agy`, `node`, `powershell`, `netstat`) run hidden, bounded, in a kill-on-close
 //! job, and not at all when `CODENOTCH_NO_SPAWN=1`.
 //!
-//! Status mapping (data-spec → `ReadingStatus`): needsAuth → `SignedOut` (note = what to do),
+//! Status mapping (provider status → `ReadingStatus`): needsAuth → `SignedOut` (note = what to do),
 //! none → `Empty`, absent → `NotInstalled`, a failed read with an earlier reading → that reading
 //! as `Stale` (original `fetched_at`, `error` set), else `Error`; HTTP 429 → `RateLimited{until}`
 //! carrying the previous windows.
@@ -44,7 +44,7 @@ use std::time::Duration;
 pub use i18n::FR;
 pub use qoder::QODER_SIDECAR_SOURCE;
 
-/// Every provider of this crate polls at most every 5 minutes (data-spec §5).
+/// Every provider of this crate polls at most every 5 minutes.
 const POLL: Duration = Duration::from_secs(300);
 
 /// All providers of this crate, one per kind.
@@ -69,7 +69,7 @@ fn one(found: bool, kind: ProviderKind) -> Vec<Account> {
     }
 }
 
-/// Cursor (data-spec §5.1): session token from Cursor's `state.vscdb`.
+/// Cursor: session token from Cursor's `state.vscdb`.
 pub struct CursorProvider;
 
 impl Provider for CursorProvider {
@@ -90,7 +90,7 @@ impl Provider for CursorProvider {
     }
 }
 
-/// GitHub Copilot (data-spec §5.2): `gh` / Copilot token, premium requests.
+/// GitHub Copilot: `gh` / Copilot token, premium requests.
 pub struct CopilotProvider;
 
 impl Provider for CopilotProvider {
@@ -111,7 +111,7 @@ impl Provider for CopilotProvider {
     }
 }
 
-/// OpenCode / OpenCode Go (data-spec §5.3).
+/// OpenCode / OpenCode Go.
 pub struct OpenCodeProvider;
 
 impl Provider for OpenCodeProvider {
@@ -129,7 +129,7 @@ impl Provider for OpenCodeProvider {
     }
 }
 
-/// Command Code (data-spec §5.4).
+/// Command Code.
 pub struct CommandCodeProvider;
 
 impl Provider for CommandCodeProvider {
@@ -147,7 +147,7 @@ impl Provider for CommandCodeProvider {
     }
 }
 
-/// GLM / z.ai coding plan (data-spec §5.5).
+/// GLM / z.ai coding plan.
 pub struct GlmProvider;
 
 impl Provider for GlmProvider {
@@ -165,7 +165,7 @@ impl Provider for GlmProvider {
     }
 }
 
-/// Antigravity (data-spec §5.6); provider id `gemini` is accepted as an alias.
+/// Antigravity; provider id `gemini` is accepted as an alias.
 pub struct AntigravityProvider;
 
 impl Provider for AntigravityProvider {
@@ -183,7 +183,7 @@ impl Provider for AntigravityProvider {
     }
 }
 
-/// Qoder (data-spec §5.7).
+/// Qoder.
 pub struct QoderProvider;
 
 impl Provider for QoderProvider {
@@ -201,7 +201,7 @@ impl Provider for QoderProvider {
     }
 }
 
-/// Antigravity lane picker (data-spec §7): returns (headline id, weekly id) for the chosen
+/// Antigravity lane picker: returns (headline id, weekly id) for the chosen
 /// model family and limit setting. Pure function; the provider stores the result in
 /// `Reading::headline_window` / `weekly_window`.
 ///

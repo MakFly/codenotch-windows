@@ -1,4 +1,4 @@
-//! # codenotch-notify (owner: agent C)
+//! # codenotch-notify
 //!
 //! Decides when the user should be told something and tells them.
 //!
@@ -12,7 +12,7 @@
 //! * **Forecast alerts** — [`forecast_minutes_left`] (Theil–Sen slope over the last hour of the
 //!   window's history, after its last reset) ≤ `forecastMinutes` and before the window's own
 //!   reset: `AlertKind::Forecast { minutes_left }`, once per window per period.
-//! * **Reset detection** — [`ResetWatcher`] (data-spec §8). Gives `Event::ResetDetected`
+//! * **Reset detection** — [`ResetWatcher`]. Gives `Event::ResetDetected`
 //!   (when `resetCards`) and an `AlertKind::Reset` alert (when `resetAlerts`).
 //! * **Gating** — `notifications` is the master switch for every alert (reset cards are
 //!   governed by `resetCards` alone). While a full-screen app or game is in front
@@ -610,7 +610,7 @@ pub struct ResetEvent {
     pub next_reset_at: Option<i64>,
 }
 
-/// Reset detector for every account (data-spec §8: fresh-only, ≥ 10 % peak, reset time rolled
+/// Reset detector for every account (fresh-only, ≥ 10 % peak, reset time rolled
 /// ≥ 60 s or usage dropped ≥ 10 points, 15 min cool-down per window, grouped and count windows
 /// skipped). In-memory only: after a restart the first fresh reading is a baseline.
 #[derive(Debug, Default)]

@@ -1,4 +1,4 @@
-//! Cursor (data-spec §5.1).
+//! Cursor.
 //!
 //! The editor's own sign-in, borrowed read-only from VS Code's global state database
 //! `%APPDATA%\Cursor\User\globalStorage\state.vscdb` (`ItemTable(key, value)`):

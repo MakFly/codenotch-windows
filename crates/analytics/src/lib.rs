@@ -1,4 +1,4 @@
-//! # codenotch-analytics (owner: agent D)
+//! # codenotch-analytics
 //!
 //! Token and cost analytics from local transcripts:
 //! * Claude Code: `<profile>\projects\**\*.jsonl` (assistant `message.usage` + `message.model`),

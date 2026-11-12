@@ -37,7 +37,7 @@ pub enum ProviderKind {
 }
 
 impl ProviderKind {
-    /// Notch, tray and settings order (data-spec §0, minus DeepSeek).
+    /// Notch, tray and settings order (minus DeepSeek).
     pub const CANONICAL_ORDER: &'static [ProviderKind] = &[
         ProviderKind::Claude,
         ProviderKind::Codex,
@@ -148,7 +148,7 @@ impl ProviderKind {
         }
     }
 
-    /// Declared headline window ids, in preference order (data-spec §7).
+    /// Declared headline window ids, in preference order.
     pub fn headline_candidates(&self) -> &'static [&'static str] {
         match self {
             Self::Claude => &["session", "spend"],

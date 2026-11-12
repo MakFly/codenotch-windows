@@ -1,7 +1,7 @@
 //! Per-account fetch scheduling as pure functions (no clock, no I/O).
 //!
 //! The engine keeps one [`AccountSched`] per enabled account and asks [`next_action`] on every
-//! tick. Rules (agreed with the providers' authors, data-spec §2.4, §3.6, §4.4):
+//! tick. Rules:
 //!
 //! | kind | automatic period | manual floor | 429 handling |
 //! |---|---|---|---|
@@ -15,9 +15,9 @@ use codenotch_core::model::{ProviderKind, Reading, ReadingStatus};
 use codenotch_core::{Account, Settings};
 use std::time::Duration;
 
-/// Claude: minimum gap between two attempts on one account (data-spec §2.4 `MIN_FETCH_SECS`).
+/// Claude: minimum gap between two attempts on one account (`MIN_FETCH_SECS`).
 pub const CLAUDE_FLOOR_SECS: i64 = 300;
-/// Claude loop period while a Claude session is active (data-spec §2.4 `POLL_ACTIVE_SECS`).
+/// Claude loop period while a Claude session is active (`POLL_ACTIVE_SECS`).
 /// Never below [`CLAUDE_FLOOR_SECS`] per account, so it cannot fetch more often.
 pub const CLAUDE_ACTIVE_SECS: i64 = 60;
 /// providers-extra: minimum gap before a manual refresh.

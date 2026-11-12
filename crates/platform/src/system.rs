@@ -111,7 +111,7 @@ pub(crate) fn open_path(path: &Path) -> Result<()> {
 const PROXY_VARS: [&str; 4] = ["HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy"];
 const INTERNET_SETTINGS: &str = "Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings";
 
-/// Proxy URL from WinINet settings (data-spec §0): `ProxyServer` is `host:port` or
+/// Proxy URL from WinINet settings: `ProxyServer` is `host:port` or
 /// `http=..;https=..` (the `https=` entry wins, then `http=`); `http://` is prefixed when no
 /// scheme is given. `None` when disabled or unusable.
 pub fn proxy_from_settings(enabled: bool, server: &str) -> Option<String> {

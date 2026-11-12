@@ -1,5 +1,5 @@
-//! Mean relative luminance (0–1) of a screen rectangle in device px, for the adaptive pill
-//! (visual-spec §6.2). GDI capture into a small 32-bit DIB; nothing is stored or logged.
+//! Mean relative luminance (0–1) of a screen rectangle in device px, for the adaptive pill.
+//! GDI capture into a small 32-bit DIB; nothing is stored or logged.
 //!
 //! The capture is a `BitBlt` from the screen DC (desktop composition result, *including* our
 //! own topmost windows if they overlap the rectangle — callers probe a strip next to the pill).

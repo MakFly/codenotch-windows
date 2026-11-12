@@ -1,4 +1,4 @@
-//! Loopback hook server (data-spec §9.1 "Local server"): a small HTTP/1.1 listener on
+//! Loopback hook server ("Local server"): a small HTTP/1.1 listener on
 //! `127.0.0.1:<hookPort>` for the POSTs of `codenotch-hook.exe`.
 //!
 //! Checks on `/event`, in order: method POST (405); at most one `Origin`, and it must be a

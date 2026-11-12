@@ -17,7 +17,7 @@ serde_json.workspace = true
 chrono.workspace = true
 log.workspace = true
 
-# Crate-local dependencies go below this line (owner of this crate only).
+# Crate-local dependencies go below this line.
 rusqlite.workspace = true
 # Job objects; DPAPI + BCrypt AES-GCM to read Electron safeStorage (Claude desktop, Cursor).
 windows-sys = { workspace = true, features = ["Win32_System_JobObjects", "Win32_Security_Cryptography"] }

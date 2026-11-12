@@ -18,7 +18,7 @@ chrono.workspace = true
 log.workspace = true
 windows-sys.workspace = true
 
-# Crate-local dependencies go below this line (owner of this crate only).
+# Crate-local dependencies go below this line.
 
 # WinRT toasts. Exception granted for this crate only: the exact `windows` version already in
 # Cargo.lock (pulled by gpui), so no second copy is built. Only extra features are enabled.

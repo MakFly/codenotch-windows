@@ -1,4 +1,4 @@
-//! OpenCode / OpenCode Go (data-spec §5.3).
+//! OpenCode / OpenCode Go.
 //!
 //! The credential is borrowed from OpenCode's data folder (`$XDG_DATA_HOME\opencode`, then
 //! `~\.local\share\opencode`), read only, and its kind decides the route (each refuses the other):

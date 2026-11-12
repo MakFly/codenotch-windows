@@ -1,4 +1,4 @@
-//! Claude Code hooks installer (data-spec §9.1).
+//! Claude Code hooks installer.
 //!
 //! `settings.json` belongs to the user and usually carries other tools' hooks on the same
 //! events. Rules:

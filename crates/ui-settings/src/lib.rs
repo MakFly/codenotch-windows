@@ -1,8 +1,7 @@
-//! # codenotch-ui-settings (owner: agent H)
+//! # codenotch-ui-settings
 //!
 //! Settings window (Accounts / Appearance / Notifications / Analytics / General), first-run
-//! onboarding and the analytics view. Spec: visual-spec.md §9, §12; config keys:
-//! `codenotch_core::config::Settings`.
+//! onboarding and the analytics view. Config keys: `codenotch_core::config::Settings`.
 //!
 //! Inputs: the [`UiModel`] entity. Outputs: `UiModel::send(Command)`. The window never mutates
 //! config directly: it keeps a local edited copy of the snapshot's `Config` and sends

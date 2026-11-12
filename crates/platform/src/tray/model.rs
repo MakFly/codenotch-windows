@@ -1,5 +1,5 @@
-//! Pure tray content: menu entries, tooltip and menu-id ↔ event mapping (data-spec §13,
-//! visual-spec §10.1). No Win32 here; everything is unit-tested.
+//! Pure tray content: menu entries, tooltip and menu-id ↔ event mapping. No Win32 here;
+//! everything is unit-tested.
 //!
 //! The menu is fixed: Refresh all, Settings…, Game mode (check mark = `settings.game_mode`),
 //! a separator, Quit CodeNotch. Usage figures live in the tooltip and the notch.

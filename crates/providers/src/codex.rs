@@ -1,4 +1,4 @@
-//! Codex (data-spec §3): `auth.json` (never refreshed or written), `GET wham/usage`, then the
+//! Codex: `auth.json` (never refreshed or written), `GET wham/usage`, then the
 //! recovery paths: a native `codex.exe app-server` and the newest rollout snapshot.
 
 use crate::i18n::{t, tf};
@@ -222,7 +222,7 @@ fn plan_label(plan: &str) -> String {
 // Windows
 // ---------------------------------------------------------------------------------------------
 
-/// Label and kind from the window length in minutes (data-spec §3.3; a 5-hour window is the
+/// Label and kind from the window length in minutes (a 5-hour window is the
 /// canonical "Current session").
 fn label_for(minutes: Option<i64>, primary: bool) -> (String, WindowKind) {
     let Some(m) = minutes.filter(|m| *m > 0) else {
@@ -291,7 +291,7 @@ fn push_unique(out: &mut Vec<LimitWindow>, w: Option<LimitWindow>) {
     }
 }
 
-/// Parse the body of `GET wham/usage` (data-spec §3.3).
+/// Parse the body of `GET wham/usage`.
 pub fn parse_codex_usage(body: &str, now: i64) -> Result<Vec<LimitWindow>> {
     let v: Value = serde_json::from_str(body)?;
     if !v.is_object() {
@@ -351,7 +351,7 @@ pub fn parse_codex_usage(body: &str, now: i64) -> Result<Vec<LimitWindow>> {
     Ok(out)
 }
 
-/// `account/rateLimits/read` result → `primary` / `secondary` (data-spec §3.4). `None` when no
+/// `account/rateLimits/read` result → `primary` / `secondary`. `None` when no
 /// codex bucket or no window.
 pub(crate) fn parse_app_server_limits(result: &Value) -> Option<Vec<LimitWindow>> {
     let bucket = match result.get("rateLimitsByLimitId").filter(|b| !b.is_null()) {
@@ -572,7 +572,7 @@ pub(crate) fn rollout_snapshot(profile: &Path, now: i64) -> Option<RolloutSnapsh
         .find_map(|p| snapshot_from_file(p, now))
 }
 
-/// Latest rate-limit snapshot from the newest rollout under `profile` (data-spec §3.5):
+/// Latest rate-limit snapshot from the newest rollout under `profile`:
 /// `(snapshot time from the line's own timestamp, windows)`. Any age is returned; the caller
 /// marks it stale when older than [`ROLLOUT_FRESH_SECS`]. `None` when nothing is found.
 pub fn codex_rollout_windows(profile: &Path, now: i64) -> Option<(i64, Vec<LimitWindow>)> {
@@ -615,7 +615,7 @@ fn files_matching(dir: &Path, pred: impl Fn(&str) -> bool) -> Vec<PathBuf> {
     v
 }
 
-/// A Codex executable (data-spec §3.4): the native app's `%LOCALAPPDATA%\OpenAI\Codex\bin\<newest>\codex.exe`,
+/// A Codex executable: the native app's `%LOCALAPPDATA%\OpenAI\Codex\bin\<newest>\codex.exe`,
 /// then npm's platform binary, npm vendor folders, `%APPDATA%\npm`, `~\.codex\bin`, PATH. With
 /// `exe_only`, `.cmd` wrappers are never returned (the app-server is only launched natively).
 pub fn find_codex(env: &Env, exe_only: bool) -> Option<PathBuf> {
@@ -983,7 +983,7 @@ impl Provider for CodexProvider {
         self.fetch_inner(account, ctx)
     }
 
-    /// Loop period (data-spec §3.6). Manual refreshes are not floored for Codex.
+    /// Loop period. Manual refreshes are not floored for Codex.
     fn min_interval(&self) -> Duration {
         Duration::from_secs(300)
     }

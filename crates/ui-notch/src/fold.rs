@@ -1,4 +1,4 @@
-//! Fold state machine and fold/unfold choreography (visual-spec §1.3, §7, §11).
+//! Fold state machine and fold/unfold choreography.
 //!
 //! Time is a monotonic `f64` of milliseconds supplied by the caller, so everything here is pure.
 

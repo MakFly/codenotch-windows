@@ -432,7 +432,7 @@ pub fn monitors() -> Vec<MonitorInfo> {
     Vec::new()
 }
 
-/// Monitor by device name, else the primary one (data-spec §11).
+/// Monitor by device name, else the primary one.
 pub fn monitor_or_primary(name: &str) -> Option<MonitorInfo> {
     let all = monitors();
     all.iter()

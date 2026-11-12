@@ -1,4 +1,4 @@
-//! Claude (data-spec §2): Claude Code OAuth credentials, `GET /api/oauth/usage`, renewal by the
+//! Claude: Claude Code OAuth credentials, `GET /api/oauth/usage`, renewal by the
 //! standalone CLI, interactive sign-in and extra profiles (`~\.claude-<n>`).
 //!
 //! Two read-only credential stores, the freshest non-expired token wins:
@@ -534,7 +534,7 @@ fn domain_label(email: &str) -> Option<String> {
         .then(|| capitalise(&first.to_lowercase()))
 }
 
-/// Display names per data-spec §2.1: one profile → "Claude"; otherwise "Claude <Domain>",
+/// Display names: one profile → "Claude"; otherwise "Claude <Domain>",
 /// "Claude (<id>)" without e-mail ("Claude" for default); colliding names → "Claude <e-mail>".
 pub fn claude_names(profiles: &[ClaudeProfile]) -> Vec<String> {
     if profiles.len() == 1 {
@@ -676,7 +676,7 @@ fn extra_usage_window(v: &Value) -> Option<LimitWindow> {
     )
 }
 
-/// Parse the body of `GET /api/oauth/usage` (data-spec §2.3). Windows: `limits[]` first (an
+/// Parse the body of `GET /api/oauth/usage`. Windows: `limits[]` first (an
 /// entry without kind, percent or a parsable reset is dropped), then the named fields merged
 /// in unless they duplicate an existing window, then `spend` / `extra_usage`; `session` first.
 pub fn parse_claude_usage(body: &str, _now: i64) -> Result<Vec<LimitWindow>> {
@@ -1136,7 +1136,7 @@ impl Provider for ClaudeProvider {
     }
 
     /// Default `~\.claude` profile (when the folder exists) plus every `~\.claude-<id>` profile
-    /// holding a credential (and the `CLAUDE_CONFIG_DIR` folder), named per data-spec §2.1.
+    /// holding a credential (and the `CLAUDE_CONFIG_DIR` folder), each with its display name.
     fn discover(&self, env: &Env) -> Vec<Account> {
         let profiles = claude_profiles(env);
         let names = claude_names(&profiles);
@@ -1161,13 +1161,13 @@ impl Provider for ClaudeProvider {
         self.fetch_inner(account, ctx)
     }
 
-    /// Per-account attempt floor (data-spec §2.4 `MIN_FETCH_SECS`).
+    /// Per-account attempt floor (`MIN_FETCH_SECS`).
     fn min_interval(&self) -> Duration {
         Duration::from_secs(300)
     }
 
     /// Opens `claude auth login --claudeai` in a new visible console with `CLAUDE_CONFIG_DIR`
-    /// set to the account's profile folder (data-spec §2.6). Returns once the console is open.
+    /// set to the account's profile folder. Returns once the console is open.
     fn sign_in(&self, account: &Account, env: &Env) -> Result<()> {
         claude_sign_in(account, env, Box::new(|_| {}))
     }
