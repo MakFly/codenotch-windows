@@ -74,8 +74,9 @@ from it.
 - `make dev`: watch mode that rebuilds and restarts the debug app on save (`scripts\dev.ps1`, no
   extra tool).
 - Rotating log file in `<data folder>\logs\`, with redaction.
-- GitHub Actions: CI (fmt, clippy, tests on Windows) and a tag-triggered release workflow that
-  builds the zip with `scripts\dist.ps1` (shared with `make dist`), its SHA-256 and `update.json`.
+- GitHub Actions: CI (fmt and clippy on Windows; tests run locally with `make ci`) and a
+  tag-triggered release workflow that builds the zip with `scripts\dist.ps1` (shared with
+  `make dist`), its SHA-256 and `update.json`.
 - Provider marks from lobe-icons (MIT), with their notice.
 - Toasts in the manner of react-hot-toast (`ui-kit::toast`): top-centre stack (bottom-right
   possible), success / error / loading / custom, in-place update (loading → result), optional

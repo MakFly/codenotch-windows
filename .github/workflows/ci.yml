@@ -20,7 +20,7 @@ env:
 
 jobs:
   check:
-    name: fmt, clippy, test
+    name: fmt, clippy
     runs-on: windows-latest
     timeout-minutes: 60
     steps:
@@ -38,5 +38,5 @@ jobs:
       - name: cargo clippy
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
-      - name: cargo test
-        run: cargo test --workspace --locked
+      # Tests are not run here: a full GPUI workspace test build is slow on hosted runners.
+      # Run them locally before pushing with `make ci` (fmt-check + lint + test) or `make test`.

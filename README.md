@@ -717,7 +717,7 @@ optionally GNU Make 4.x for Windows (`winget install ezwinports.make`) for the `
 ```powershell
 make demo        # debug build, then the GUI on made-up figures (no engine, no network)
 make dev         # rebuild and restart the debug app on every save (Ctrl+C to stop)
-make ci          # fmt-check + clippy -D warnings + tests: what CI runs
+make ci          # fmt-check + clippy -D warnings + tests: run before every push
 ```
 
 `cargo build` alone builds only the app (the workspace's default member). Build both executables
@@ -781,7 +781,7 @@ changes the install folder, `CARGO=` the cargo executable.
 | [`crates/engine`](crates/engine) | `codenotch-engine` | Scheduler, back-off, persistence, self-update; turns providers, activity and alerts into snapshots. |
 | [`crates/app`](crates/app) | `codenotch` | `codenotch.exe`: CLI and wiring. |
 
-Tests that read the real machine are `#[ignore]`d and never run in CI. Run them by hand (read-only,
+Tests that read the real machine are `#[ignore]`d and never run by default. Run them by hand (read-only,
 aggregate output only):
 
 ```powershell
@@ -793,15 +793,16 @@ cargo run -p codenotch-providers-extra --example live_check
 ### Continuous integration
 
 [`ci.yml`](.github/workflows/ci.yml) runs on every push to `main` and every pull request, on
-`windows-latest`: `cargo fmt --check`, `cargo clippy --workspace --all-targets -D warnings` and
-`cargo test --workspace`.
+`windows-latest`: `cargo fmt --check` and `cargo clippy --workspace --all-targets -D warnings`.
+The test suite is not run in CI (it is slow to build on hosted runners): run `make ci` (or
+`make test`) locally before pushing.
 
 ## Releasing
 
 1. Set the new version in [`Cargo.toml`](Cargo.toml) (`[workspace.package] version`), run
    `cargo check` so `Cargo.lock` follows, and add a `## X.Y.Z — YYYY-MM-DD` section to
    [`CHANGELOG.md`](CHANGELOG.md).
-2. Commit, push to `main` and wait for CI to pass.
+2. Run `make ci` (the tests run locally only), commit, push to `main` and wait for CI to pass.
 3. Tag and push: `git tag -a vX.Y.Z -m "CodeNotch X.Y.Z"` then `git push origin vX.Y.Z`.
 4. [`release.yml`](.github/workflows/release.yml) checks that the tag matches the Cargo version,
    builds the release, packages it with [`scripts/dist.ps1`](scripts/dist.ps1) (the same script
@@ -827,8 +828,8 @@ the first commit of this repository. Version numbers restart at 0.1.0 with the r
 
 What has been checked:
 
-- The workspace builds; the test suite (several hundred unit and integration tests) and clippy pass
-  in CI.
+- The workspace builds and clippy passes in CI; the test suite (several hundred unit and
+  integration tests) passes locally.
 - The GUI was checked in demo mode (the screenshots above), and the headless modes `--version`,
   `doctor` and `--once` run.
 - Existing 0.3 settings files round-trip without losing any key; the analytics indexer was run on
