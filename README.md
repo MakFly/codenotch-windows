@@ -201,7 +201,33 @@ an error that names the variable.
 
 ## Install
 
-**Requirements:** Windows 10 or 11 (x64). Each provider needs its own tool installed and signed in.
+**Requirements:** Windows 10 or 11 (x64; ARM64 runs the x64 build through emulation). Each
+provider needs its own tool installed and signed in.
+
+**One-line install** (PowerShell, no admin):
+
+```powershell
+irm https://raw.githubusercontent.com/MakFly/codenotch-windows/main/install.ps1 | iex
+```
+
+It downloads the latest release, checks its size and SHA-256, copies `codenotch.exe` and
+`codenotch-hook.exe` to `%LOCALAPPDATA%\Programs\CodeNotch`, adds a "CodeNotch" Start Menu shortcut
+and starts the app. The binaries are not code-signed; the script clears their "downloaded from the
+internet" mark, which keeps SmartScreen prompts to a minimum. Running it again updates or repairs the install (the app also updates itself).
+Options are environment variables set before the command: `CODENOTCH_VERSION=0.1.0` (a specific
+release), `CODENOTCH_INSTALL_DIR`, `CODENOTCH_NO_SHORTCUT=1`, `CODENOTCH_NO_LAUNCH=1`. Downloaded
+as a file, it takes the same options as parameters:
+`powershell -ExecutionPolicy Bypass -File install.ps1 -Version 0.1.0 -NoLaunch`.
+
+**Uninstall** (your settings in `%APPDATA%\dev.kev.smashtoken` are kept):
+
+```powershell
+$env:CODENOTCH_UNINSTALL=1; irm https://raw.githubusercontent.com/MakFly/codenotch-windows/main/install.ps1 | iex
+```
+
+It closes the app, removes its files, the shortcut and the "Open at login" entry.
+
+**Manual install** from the zip:
 
 1. Download `CodeNotch-<version>.zip` from the
    [latest release](https://github.com/MakFly/codenotch-windows/releases/latest). Its SHA-256 is

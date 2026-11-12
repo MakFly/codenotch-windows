@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- One-line PowerShell installer (`install.ps1`): `irm …/install.ps1 | iex` installs or updates to
+  `%LOCALAPPDATA%\Programs\CodeNotch` after checking size and SHA-256, adds a Start Menu shortcut
+  and starts the app; `CODENOTCH_UNINSTALL=1` removes it again (data kept).
+
 ## 0.1.0 — 2026-11-12
 
 A complete rebuild from scratch, and the first release published from this repository. It
