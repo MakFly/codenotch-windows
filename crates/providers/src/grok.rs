@@ -394,7 +394,10 @@ impl Provider for GrokProvider {
     }
 
     fn local_identity(&self, account: &Account, env: &Env) -> LocalIdentity {
-        local_identity(&env.profile_dir(account, ".grok"), codenotch_core::now_secs())
+        local_identity(
+            &env.profile_dir(account, ".grok"),
+            codenotch_core::now_secs(),
+        )
     }
 
     fn fetch(&self, account: &Account, ctx: &FetchContext) -> Reading {

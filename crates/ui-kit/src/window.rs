@@ -218,10 +218,10 @@ mod front {
         keybd_event, SetActiveWindow, SetFocus, KEYEVENTF_KEYUP, VK_MENU,
     };
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        AllowSetForegroundWindow, BringWindowToTop, GetForegroundWindow,
-        GetWindowThreadProcessId, IsIconic, IsWindow, IsWindowVisible, SetForegroundWindow,
-        SetWindowPos, ShowWindow, ASFW_ANY, HWND_NOTOPMOST, HWND_TOPMOST, SWP_NOMOVE,
-        SWP_NOSIZE, SWP_SHOWWINDOW, SW_RESTORE, SW_SHOW,
+        AllowSetForegroundWindow, BringWindowToTop, GetForegroundWindow, GetWindowThreadProcessId,
+        IsIconic, IsWindow, IsWindowVisible, SetForegroundWindow, SetWindowPos, ShowWindow,
+        ASFW_ANY, HWND_NOTOPMOST, HWND_TOPMOST, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW, SW_RESTORE,
+        SW_SHOW,
     };
 
     pub fn bring_to_front(raw: isize) -> bool {

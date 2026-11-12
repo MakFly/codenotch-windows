@@ -27,10 +27,9 @@ use crate::ring::{paint_arc, paint_disc, Cap};
 use crate::Theme;
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    canvas, div, hsla, point, px, AnyElement, App, BoxShadow, ClickEvent, Context,
-    Entity, FontWeight, Global, Hsla, InteractiveElement, IntoElement, ParentElement,
-    PathBuilder, Pixels, Point, Render, SharedString, StatefulInteractiveElement, Styled, Task,
-    WeakEntity, Window,
+    canvas, div, hsla, point, px, AnyElement, App, BoxShadow, ClickEvent, Context, Entity,
+    FontWeight, Global, Hsla, InteractiveElement, IntoElement, ParentElement, PathBuilder, Pixels,
+    Point, Render, SharedString, StatefulInteractiveElement, Styled, Task, WeakEntity, Window,
 };
 use std::rc::Rc;
 use std::time::{Duration, Instant};
@@ -275,11 +274,7 @@ impl<A> ToastQueue<A> {
     ) -> bool {
         let duration = duration.unwrap_or_else(|| kind.default_duration());
         let deadline = self.deadline_for(duration, now);
-        let Some(e) = self
-            .entries
-            .iter_mut()
-            .find(|e| e.id == id && !e.leaving())
-        else {
+        let Some(e) = self.entries.iter_mut().find(|e| e.id == id && !e.leaving()) else {
             return false;
         };
         if e.kind != kind {
@@ -298,11 +293,7 @@ impl<A> ToastQueue<A> {
     /// Restart a toast's timer with `duration` (e.g. "Saved" shown again).
     pub fn extend(&mut self, id: ToastId, duration: Option<u64>, now: u64) -> bool {
         let deadline = self.deadline_for(duration, now);
-        match self
-            .entries
-            .iter_mut()
-            .find(|e| e.id == id && !e.leaving())
-        {
+        match self.entries.iter_mut().find(|e| e.id == id && !e.leaving()) {
             Some(e) => {
                 e.deadline = deadline;
                 true
@@ -313,11 +304,7 @@ impl<A> ToastQueue<A> {
 
     /// Start the exit animation. False when unknown or already leaving.
     pub fn dismiss(&mut self, id: ToastId, now: u64) -> bool {
-        let Some(e) = self
-            .entries
-            .iter_mut()
-            .find(|e| e.id == id && !e.leaving())
-        else {
+        let Some(e) = self.entries.iter_mut().find(|e| e.id == id && !e.leaving()) else {
             return false;
         };
         e.leaving_at = Some(now);
@@ -614,7 +601,10 @@ pub fn polyline_prefix(points: &[(f32, f32)], fraction: f32) -> Vec<(f32, f32)> 
             left -= len;
         } else {
             let k = left / len;
-            out.push((w[0].0 + (w[1].0 - w[0].0) * k, w[0].1 + (w[1].1 - w[0].1) * k));
+            out.push((
+                w[0].0 + (w[1].0 - w[0].0) * k,
+                w[0].1 + (w[1].1 - w[0].1) * k,
+            ));
             left = 0.0;
         }
     }
@@ -972,11 +962,10 @@ impl Toaster {
         let s = look.scale;
         let (ix, iy) = ((1.0 - s) * w / 2.0, (1.0 - s) * h / 2.0);
         // Text and icon fade in with the growing card (the card itself cannot be scaled).
-        let content = ((s - 0.6) / 0.4).clamp(0.0, 1.0).max(if entry.leaving() {
-            1.0
-        } else {
-            0.0
-        });
+        let content =
+            ((s - 0.6) / 0.4)
+                .clamp(0.0, 1.0)
+                .max(if entry.leaving() { 1.0 } else { 0.0 });
         let shadow = if t.dark {
             vec![BoxShadow {
                 color: hsla(0., 0., 0., 0.35),
@@ -1118,7 +1107,9 @@ impl Toaster {
                     .child(entry.message.clone()),
             )
             .children(actions.map(|a| a.opacity(content)))
-            .when(dismissible && hovered && !entry.leaving(), |d| d.child(close))
+            .when(dismissible && hovered && !entry.leaving(), |d| {
+                d.child(close)
+            })
             .into_any_element()
     }
 }
@@ -1161,9 +1152,9 @@ impl Render for Toaster {
                     .right_0()
                     .justify_center()
                     .top(px(margin + offset + look.dy)),
-                ToastPosition::BottomRight => row
-                    .right(px(margin))
-                    .bottom(px(margin + offset - look.dy)),
+                ToastPosition::BottomRight => {
+                    row.right(px(margin)).bottom(px(margin + offset - look.dy))
+                }
             };
             layer = layer.child(row);
         }
@@ -1229,7 +1220,10 @@ fn toast_icon(
                         return;
                     }
                     let lines: Vec<Vec<(f32, f32)>> = if success {
-                        vec![polyline_prefix(&[(-4.5, 0.2), (-1.4, 3.3), (4.6, -3.0)], draw)]
+                        vec![polyline_prefix(
+                            &[(-4.5, 0.2), (-1.4, 3.3), (4.6, -3.0)],
+                            draw,
+                        )]
                     } else {
                         let k = 3.4;
                         vec![
@@ -1296,7 +1290,10 @@ pub fn host(cx: &mut App) -> Option<Entity<Toaster>> {
     cx.default_global::<ToastHost>().0.as_ref()?.upgrade()
 }
 
-fn with_host<R>(cx: &mut App, f: impl FnOnce(&mut Toaster, &mut Context<Toaster>) -> R) -> Option<R> {
+fn with_host<R>(
+    cx: &mut App,
+    f: impl FnOnce(&mut Toaster, &mut Context<Toaster>) -> R,
+) -> Option<R> {
     let toaster = host(cx)?;
     Some(toaster.update(cx, f))
 }
@@ -1351,7 +1348,10 @@ mod tests {
         assert_eq!(ToastKind::Error.default_duration(), Some(4000));
         assert_eq!(ToastKind::Loading.default_duration(), None);
         assert_eq!(ToastKind::Blank.default_duration(), Some(4000));
-        assert_eq!(ToastKind::Custom("🔥".into()).default_duration(), Some(4000));
+        assert_eq!(
+            ToastKind::Custom("🔥".into()).default_duration(),
+            Some(4000)
+        );
     }
 
     #[test]
@@ -1493,7 +1493,10 @@ mod tests {
 
     #[test]
     fn offsets_stack_with_gap() {
-        assert_eq!(stack_offsets(&[40.0, 30.0, 20.0], 8.0), vec![0.0, 48.0, 86.0]);
+        assert_eq!(
+            stack_offsets(&[40.0, 30.0, 20.0], 8.0),
+            vec![0.0, 48.0, 86.0]
+        );
         assert!(stack_offsets(&[], 8.0).is_empty());
     }
 

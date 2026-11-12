@@ -574,8 +574,9 @@ impl HttpClient for UreqHttp {
             if received > max_bytes {
                 return Err(HttpError::TooLarge);
             }
-            sink.write_all(&buf[..n])
-                .map_err(|e| HttpError::Other(format!("cannot write the download: {}", e.kind())))?;
+            sink.write_all(&buf[..n]).map_err(|e| {
+                HttpError::Other(format!("cannot write the download: {}", e.kind()))
+            })?;
             progress(received, total);
         }
         Ok(HttpResponse {

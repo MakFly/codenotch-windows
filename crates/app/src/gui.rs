@@ -7,8 +7,8 @@
 //! (60 s) it refreshes the tray's countdowns.
 
 use crate::i18n::tf;
-use codenotch_core::model::{Command, Event, EventSink, ProviderKind, Snapshot};
 use codenotch_core::config::ThemeMode;
+use codenotch_core::model::{Command, Event, EventSink, ProviderKind, Snapshot};
 use codenotch_core::{Config, Paths};
 use codenotch_engine::{EngineHandle, EngineOptions};
 use codenotch_platform::hotkey::{self, HotkeyHandle};
@@ -234,7 +234,10 @@ fn demo_updater(
 ) -> Option<codenotch_engine::update::Updater> {
     let env = codenotch_core::Env::system();
     env.var(codenotch_engine::update::UPDATE_URL_ENV)?;
-    log::info!("demo: updater on ({} is set)", codenotch_engine::update::UPDATE_URL_ENV);
+    log::info!(
+        "demo: updater on ({} is set)",
+        codenotch_engine::update::UPDATE_URL_ENV
+    );
     let tuning = codenotch_engine::Tuning {
         update_delay: Some(DEMO_UPDATE_DELAY),
         ..codenotch_engine::Tuning::default()

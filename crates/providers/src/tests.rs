@@ -389,11 +389,15 @@ mod claude_tests {
     fn claude_config_dir_is_a_profile_when_it_holds_a_credential() {
         let root = tempfile::tempdir().unwrap();
         let elsewhere = root.path().join("cfg").join(".claude-perso");
-        let env = Env::for_test(root.path())
-            .with_var("CLAUDE_CONFIG_DIR", &elsewhere.to_string_lossy());
+        let env =
+            Env::for_test(root.path()).with_var("CLAUDE_CONFIG_DIR", &elsewhere.to_string_lossy());
         std::fs::create_dir_all(env.home_path(".claude")).unwrap();
         std::fs::create_dir_all(&elsewhere).unwrap();
-        assert_eq!(claude_profiles(&env).len(), 1, "no credential: not a profile");
+        assert_eq!(
+            claude_profiles(&env).len(),
+            1,
+            "no credential: not a profile"
+        );
         write(&elsewhere.join(".credentials.json"), &cred_json("p", None));
         let accounts = ClaudeProvider.discover(&env);
         assert_eq!(
@@ -434,7 +438,11 @@ mod claude_tests {
             r#"{"claudeAiOauth":{"accessToken":"t","subscriptionType":"max","rateLimitTier":"default_claude_max_20x"}}"#,
         );
         let local = ClaudeProvider.local_identity(&a, &env);
-        assert_eq!(local.plan.as_deref(), Some("Max 20x"), "the credential wins");
+        assert_eq!(
+            local.plan.as_deref(),
+            Some("Max 20x"),
+            "the credential wins"
+        );
         assert_eq!(
             claude::meta_from_claude_json(
                 r#"{"oauthAccount":{"organizationType":"claude_enterprise"}}"#
@@ -443,7 +451,10 @@ mod claude_tests {
             .as_deref(),
             Some("Enterprise")
         );
-        assert_eq!(claude::meta_from_claude_json("not json"), Default::default());
+        assert_eq!(
+            claude::meta_from_claude_json("not json"),
+            Default::default()
+        );
     }
 
     // ---- fetch ----------------------------------------------------------------------------
@@ -1016,7 +1027,10 @@ mod codex_tests {
         write(&env.home_path(".codex-bad id/auth.json"), "{}");
         let one = CodexProvider.discover(&env);
         assert_eq!(one.len(), 1);
-        assert_eq!(one[0].name, "Codex", "a single profile keeps the plain name");
+        assert_eq!(
+            one[0].name, "Codex",
+            "a single profile keeps the plain name"
+        );
         assert!(one[0].profile_path.ends_with(".codex-work"));
 
         write(&env.home_path(".codex/auth.json"), "{}");

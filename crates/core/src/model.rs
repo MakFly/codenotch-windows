@@ -759,8 +759,13 @@ pub enum UpdateState {
     #[default]
     Idle,
     /// Reading the update manifest.
-    Checking { manual: bool },
-    UpToDate { checked_at: i64, manual: bool },
+    Checking {
+        manual: bool,
+    },
+    UpToDate {
+        checked_at: i64,
+        manual: bool,
+    },
     /// A newer version is published. `forced`: the running version is below the manifest's
     /// `min_version` (installed without asking).
     Available {
@@ -779,11 +784,19 @@ pub enum UpdateState {
         forced: bool,
     },
     /// Downloaded, verified and unpacked; waiting to be installed.
-    Ready { version: String, forced: bool },
+    Ready {
+        version: String,
+        forced: bool,
+    },
     /// Files swapped; the new version is starting and this process is about to quit.
-    Installing { version: String },
+    Installing {
+        version: String,
+    },
     /// `message`: English i18n key or short technical reason.
-    Failed { message: String, manual: bool },
+    Failed {
+        message: String,
+        manual: bool,
+    },
 }
 
 impl UpdateState {

@@ -4,12 +4,12 @@
 use crate::i18n::tr;
 use crate::schedule::{self, AccountSched, Decision, Policy, Restored};
 use crate::{discovery, provider_for, update, Clock, EngineOptions, Registry, Tuning};
-use codenotch_core::config::UpdateMode;
-use codenotch_core::model::ActivityState;
 use codenotch_activity::{ActivityHandle, ActivityReport};
 use codenotch_analytics::AnalyticsReport;
+use codenotch_core::config::UpdateMode;
 use codenotch_core::forecast::ActivityProfile;
 use codenotch_core::history::{retain_for_forecast, History, HistoryPoint, PERIOD_KEEP_SECS};
+use codenotch_core::model::ActivityState;
 use codenotch_core::model::{
     AccountView, Command, Event, EventSink, Reading, ReadingStatus, Snapshot, UpdateState,
 };
@@ -1453,7 +1453,11 @@ impl AnalyticsWhy {
 ///   removed it); any other is kept, at its former position as far as possible (it was added by
 ///   discovery or sign-in after the UI's snapshot);
 /// * everything else — including unknown keys — comes from `incoming`.
-pub(crate) fn keep_engine_owned(current: &Config, incoming: &mut Config, env: &codenotch_core::Env) {
+pub(crate) fn keep_engine_owned(
+    current: &Config,
+    incoming: &mut Config,
+    env: &codenotch_core::Env,
+) {
     incoming.settings.hooks_enabled = current.settings.hooks_enabled;
     for (index, account) in current.accounts.iter().enumerate() {
         if account.uses_custom_endpoint()

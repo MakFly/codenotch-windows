@@ -462,18 +462,12 @@ impl SettingsView {
             }
         }));
 
-        let toaster = cx.new(|_| {
-            Toaster::new(Theme::resolve(
-                edited.settings.theme,
-                window.appearance(),
-            ))
-        });
+        let toaster =
+            cx.new(|_| Toaster::new(Theme::resolve(edited.settings.theme, window.appearance())));
         toast::set_host(&toaster, cx);
         {
             let id = toaster.entity_id();
-            subs.push(cx.on_release(move |_: &mut Self, cx: &mut App| {
-                toast::clear_host(id, cx)
-            }));
+            subs.push(cx.on_release(move |_: &mut Self, cx: &mut App| toast::clear_host(id, cx)));
         }
 
         let root_focus = cx.focus_handle();
@@ -853,7 +847,12 @@ impl SettingsView {
 
     /// Keys while the dialog is open (capture phase, before any button): Escape cancels,
     /// Enter confirms; nothing else reaches the page behind.
-    fn on_key_capture(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
+    fn on_key_capture(
+        &mut self,
+        event: &KeyDownEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         if self.confirm_remove.is_none() || event.keystroke.modifiers.modified() {
             return;
         }
@@ -956,7 +955,9 @@ impl SettingsView {
                 .flex()
                 .items_center()
                 .justify_center()
-                .on_mouse_down(MouseButton::Left, move |_, window, cx| backdrop_click(window, cx))
+                .on_mouse_down(MouseButton::Left, move |_, window, cx| {
+                    backdrop_click(window, cx)
+                })
                 .child(card)
                 .into_any_element(),
         )

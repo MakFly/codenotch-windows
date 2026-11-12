@@ -421,7 +421,11 @@ impl Render for ResetCardView {
         let line = t.edge;
 
         let glyph_el = crate::notch::glyph_element(&self.glyph, 21.0 * s, t.foreground, 15.0 * s);
-        let x_color = if self.dismiss_hover { t.foreground } else { muted };
+        let x_color = if self.dismiss_hover {
+            t.foreground
+        } else {
+            muted
+        };
         let body = div()
             .flex()
             .flex_col()

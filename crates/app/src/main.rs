@@ -27,9 +27,9 @@ mod icon;
 mod taskbar;
 mod updates;
 
+use codenotch_core::config::ThemeMode;
 use codenotch_core::format::{age, percent, reset_in};
 use codenotch_core::logging::redact;
-use codenotch_core::config::ThemeMode;
 use codenotch_core::{i18n::tr, Config, Env, Paths};
 use codenotch_engine::EngineOptions;
 use codenotch_ui_settings::Page;
@@ -37,7 +37,10 @@ use std::sync::Arc;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Mode {
-    Gui { settings: bool, page: Option<Page> },
+    Gui {
+        settings: bool,
+        page: Option<Page>,
+    },
     Demo {
         settings: bool,
         page: Option<Page>,
@@ -183,9 +186,7 @@ fn main() {
             page,
             launch,
         ),
-        Mode::Gui { settings, page } => {
-            gui::run(paths, gui::Run::Normal, settings, page, launch)
-        }
+        Mode::Gui { settings, page } => gui::run(paths, gui::Run::Normal, settings, page, launch),
     }
 }
 
@@ -364,7 +365,11 @@ mod tests {
         assert_eq!(parse_args(&args(&["-h"])), Mode::Help);
         // Restart flags do not change the mode.
         assert_eq!(
-            parse_args(&args(&["--silent", "--updated-from=1.0.0", "--wait-pid=12"])),
+            parse_args(&args(&[
+                "--silent",
+                "--updated-from=1.0.0",
+                "--wait-pid=12"
+            ])),
             gui(false, None)
         );
     }

@@ -517,10 +517,7 @@ mod tests {
         let r = fetch(&account, &FetchContext::new(5, http.clone(), env.clone()));
         assert_eq!(r.status, ReadingStatus::Fresh);
         assert_eq!(r.headline().unwrap().id, "premium_interactions");
-        assert_eq!(
-            r.note.as_deref(),
-            Some("octocat · Pro · via GitHub CLI")
-        );
+        assert_eq!(r.note.as_deref(), Some("octocat · Pro · via GitHub CLI"));
         assert_eq!(
             local_identity(&env),
             LocalIdentity {

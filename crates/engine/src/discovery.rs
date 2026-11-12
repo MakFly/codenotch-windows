@@ -1,7 +1,7 @@
 //! Merging discovered accounts into the config (add only; never remove or rename).
 
-use codenotch_core::provider::Provider;
 use codenotch_core::config::RemovedAccount;
+use codenotch_core::provider::Provider;
 use codenotch_core::{Account, Config, Env};
 use std::path::PathBuf;
 

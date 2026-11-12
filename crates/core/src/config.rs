@@ -1044,7 +1044,10 @@ mod tests {
         assert!(fresh.update_checks);
         let out = serde_json::to_value(&fresh).unwrap();
         assert_eq!(out["updateMode"], "auto");
-        assert!(out.get("updateManifestUrl").is_none(), "empty URL not written");
+        assert!(
+            out.get("updateManifestUrl").is_none(),
+            "empty URL not written"
+        );
         // Manifest URL: default unless set.
         assert_eq!(fresh.update_manifest_url(), DEFAULT_UPDATE_MANIFEST_URL);
         fresh.update_manifest_url = " https://example.com/u.json ".into();

@@ -3,8 +3,8 @@
 
 use crate::i18n::{t, tf};
 use codenotch_core::config::{
-    Account, AntigravityLimit, AntigravityModel, ColorTransition, Config, Edge, NotchSize, RemovedAccount,
-    Settings, ShowMode, TaskbarMode, ThemeMode, UpdateMode, WeeklyRing,
+    Account, AntigravityLimit, AntigravityModel, ColorTransition, Config, Edge, NotchSize,
+    RemovedAccount, Settings, ShowMode, TaskbarMode, ThemeMode, UpdateMode, WeeklyRing,
 };
 use codenotch_core::format;
 use codenotch_core::model::{
@@ -1143,9 +1143,7 @@ pub fn update_line(
             tf(lang, "Version {v} is ready to install", &[("v", version)]),
             UpdateAction::Install,
         ),
-        UpdateState::Installing { .. } => {
-            (t(lang, "Installing…").to_string(), UpdateAction::Busy)
-        }
+        UpdateState::Installing { .. } => (t(lang, "Installing…").to_string(), UpdateAction::Busy),
         UpdateState::Failed { message, .. } => (
             with_check(tf(
                 lang,
@@ -1683,7 +1681,11 @@ mod tests {
 
     #[test]
     fn remove_marks_discovered_accounts_and_undo_restores_exactly() {
-        let mut c = config_with(&[ProviderKind::Claude, ProviderKind::Claude, ProviderKind::Codex]);
+        let mut c = config_with(&[
+            ProviderKind::Claude,
+            ProviderKind::Claude,
+            ProviderKind::Codex,
+        ]);
         c.accounts[1].profile_path = "C:\\Users\\x\\.claude-2".into();
         c.accounts[1].name = "Claude (2)".into();
         apply(
@@ -1732,7 +1734,11 @@ mod tests {
         apply(&mut c, &Edit::RemoveAccount(id)).unwrap();
         assert!(c.settings.removed_accounts.is_empty());
 
-        apply(&mut c, &Edit::AddAccount(Box::new(Account::new(ProviderKind::Codex, "Codex")))).unwrap();
+        apply(
+            &mut c,
+            &Edit::AddAccount(Box::new(Account::new(ProviderKind::Codex, "Codex"))),
+        )
+        .unwrap();
         let codex = c.accounts.last().unwrap().id.clone();
         apply(&mut c, &Edit::RemoveAccount(codex)).unwrap();
         assert_eq!(c.settings.removed_accounts.len(), 1);
@@ -2182,7 +2188,11 @@ mod tests {
             "example.com/u.json",
             "https://exa mple.com/u.json",
         ] {
-            assert_eq!(validate_update_url(bad), Err(FieldError::HttpsOnly), "{bad}");
+            assert_eq!(
+                validate_update_url(bad),
+                Err(FieldError::HttpsOnly),
+                "{bad}"
+            );
         }
         let mut c = Config::default();
         apply(&mut c, &Edit::UpdateMode(UpdateMode::Off)).unwrap();

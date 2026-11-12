@@ -647,9 +647,7 @@ impl SettingsView {
         entries.push(MenuEntry::destructive(
             t(lang, "Remove account…").to_string(),
             !row.removable,
-            (!row.removable).then(|| {
-                s(t(lang, "The last account on the notch cannot be removed"))
-            }),
+            (!row.removable).then(|| s(t(lang, "The last account on the notch cannot be removed"))),
             self.on_view(cx, move |this, window, cx| {
                 this.open_remove_confirm(did.clone(), window, cx)
             }),
@@ -1036,7 +1034,10 @@ impl SettingsView {
                     model.read(cx).send(Command::Recentre);
                     let _ = view.update(cx, |this, cx| {
                         let lang = this.lang();
-                        this.toast_success(t(lang, "The notch is back in the middle").to_string(), cx);
+                        this.toast_success(
+                            t(lang, "The notch is back in the middle").to_string(),
+                            cx,
+                        );
                     });
                 })
         };
@@ -1654,15 +1655,11 @@ impl SettingsView {
             }
         };
         let update_btn = match action {
-            UpdateAction::Install => div()
-                .flex()
-                .gap(px(8.))
-                .child(check_btn(false))
-                .child(
-                    Btn::new("update-install", t(lang, "Install update").to_string(), *t_)
-                        .primary()
-                        .on_click(self.on_command(Command::InstallUpdate)),
-                ),
+            UpdateAction::Install => div().flex().gap(px(8.)).child(check_btn(false)).child(
+                Btn::new("update-install", t(lang, "Install update").to_string(), *t_)
+                    .primary()
+                    .on_click(self.on_command(Command::InstallUpdate)),
+            ),
             UpdateAction::Check => div().child(check_btn(false)),
             UpdateAction::Busy => div().child(check_btn(true)),
         };
@@ -1670,7 +1667,10 @@ impl SettingsView {
             "update-mode",
             vec![
                 (UpdateMode::Notify, t(lang, "Propose").to_string()),
-                (UpdateMode::Auto, t(lang, "Install automatically").to_string()),
+                (
+                    UpdateMode::Auto,
+                    t(lang, "Install automatically").to_string(),
+                ),
                 (UpdateMode::Off, t(lang, "Off").to_string()),
             ],
             &st.update_mode(),
