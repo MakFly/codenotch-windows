@@ -1,0 +1,43 @@
+[package]
+name = "codenotch-gpui"
+version = "0.3.0"
+description = "A Windows desktop notch for AI account quotas and usage, built with GPUI"
+authors = ["Kev"]
+license = "MIT"
+repository = "https://github.com/MakFly/codenotch-windows"
+publish = false
+edition = "2021"
+
+[lib]
+name = "codenotch"
+path = "src/lib.rs"
+
+[[bin]]
+name = "codenotch-gpui"
+path = "src/main.rs"
+
+[dependencies]
+gpui = "0.2.2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
+chrono = { version = "0.4", features = ["serde"] }
+dirs = "6"
+raw-window-handle = "0.6"
+tray-icon = "0.25"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_UI_WindowsAndMessaging"] }
+
+# GPUI lays text out on the CPU every frame. Optimize dependencies in dev builds.
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true
