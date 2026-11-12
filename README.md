@@ -822,7 +822,7 @@ update fail.
 
 0.1.0 is the first release of a complete rebuild. The original `MakFly/codenotch-windows`
 repository (last version 0.2.1) was lost; a short-lived partial reconstruction, 0.3.0, is kept as
-the git tag `backup-0.3.0`. Version numbers restart at 0.1.0 with the rebuild. See
+the first commit of this repository. Version numbers restart at 0.1.0 with the rebuild. See
 [`CHANGELOG.md`](CHANGELOG.md).
 
 What has been checked:

@@ -3,8 +3,8 @@
 ## 0.1.0 — 2026-11-12
 
 A complete rebuild from scratch, and the first release published from this repository. It
-replaces the 0.3.0 reconstruction (kept as the git tag `backup-0.3.0`); version numbers restart at
-0.1.0 with the rebuild. Design and behaviour follow CodeNotch by Vinz (MIT); no code was copied
+replaces the 0.3.0 reconstruction (kept as the first commit of the repository); version numbers
+restart at 0.1.0 with the rebuild. Design and behaviour follow CodeNotch by Vinz (MIT); no code was copied
 from it.
 
 ### Added
