@@ -1,6 +1,6 @@
 //! # codenotch-ui-settings
 //!
-//! Settings window (Accounts / Appearance / Notifications / Analytics / General), first-run
+//! Settings window (Accounts / Appearance / Notifications / Analytics / Teams / General), first-run
 //! onboarding and the analytics view. Config keys: `codenotch_core::config::Settings`.
 //!
 //! Inputs: the [`UiModel`] entity. Outputs: `UiModel::send(Command)`. The window never mutates
@@ -14,7 +14,8 @@
 //! * `widgets` — Windows 11 (WinUI 3) toggle switch, combo box, buttons and settings cards
 //!   drawn with gpui primitives.
 //! * `view` — window state, editing model, chrome. `pages` — page bodies (`pages_stats`: the
-//!   statistics page body, over the pure `stats` model). `i18n` — French.
+//!   statistics page body, over the pure `stats` model; `pages_teams`: the Teams page).
+//!   `i18n` — French.
 //!
 //! The window is a normal, activating, taskbar-visible window with a custom-drawn 32 px title
 //! bar (drag region) whose minimise / maximise / close caption buttons are native hit-test
@@ -25,6 +26,7 @@ mod i18n;
 mod logic;
 mod pages;
 mod pages_stats;
+mod pages_teams;
 mod stats;
 mod view;
 mod widgets;
@@ -79,6 +81,8 @@ pub enum Page {
     Notifications,
     General,
     Analytics,
+    /// Opt-in sync with a CodeNotch Teams server.
+    Teams,
 }
 
 /// The single settings window of the process, and the last page shown.

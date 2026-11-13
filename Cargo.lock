@@ -1006,6 +1006,7 @@ dependencies = [
  "codenotch-platform",
  "codenotch-providers",
  "codenotch-providers-extra",
+ "codenotch-teams",
  "codenotch-ui-kit",
  "codenotch-ui-notch",
  "codenotch-ui-settings",

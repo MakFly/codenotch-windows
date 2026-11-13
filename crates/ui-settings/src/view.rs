@@ -47,6 +47,8 @@ pub(crate) enum Field {
     CustomToken,
     Rename,
     UpdateUrl,
+    TeamsEndpoint,
+    TeamsInvite,
 }
 
 pub(crate) struct Inputs {
@@ -60,6 +62,8 @@ pub(crate) struct Inputs {
     pub custom_token: Entity<InputState>,
     pub rename: Entity<InputState>,
     pub update_url: Entity<InputState>,
+    pub teams_endpoint: Entity<InputState>,
+    pub teams_invite: Entity<InputState>,
 }
 
 impl Inputs {
@@ -75,6 +79,8 @@ impl Inputs {
             Field::CustomToken => &self.custom_token,
             Field::Rename => &self.rename,
             Field::UpdateUrl => &self.update_url,
+            Field::TeamsEndpoint => &self.teams_endpoint,
+            Field::TeamsInvite => &self.teams_invite,
         }
     }
 }
@@ -146,6 +152,13 @@ impl DevUi {
     }
 }
 
+/// A Teams action that asks for a second click.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum TeamsConfirm {
+    Detach,
+    Erase,
+}
+
 /// An account card being dragged on the Accounts page.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Reorder {
@@ -212,6 +225,13 @@ pub(crate) struct SettingsView {
     /// Auto-scroll speed while dragging near the pane's edge (px per frame, 0 = none).
     pub drag_scroll: f32,
     pub drag_scroll_task: Option<Task<()>>,
+    /// Teams page: payer chosen per shared account (not saved; sent with "Declare").
+    pub teams_payer: HashMap<String, codenotch_core::TeamsPayer>,
+    /// Teams page: monthly price field per shared account (created on first use).
+    pub teams_price_inputs: BTreeMap<String, Entity<InputState>>,
+    pub teams_price_errors: HashMap<String, &'static str>,
+    /// Teams page: the destructive action waiting for a second click.
+    pub teams_confirm: Option<TeamsConfirm>,
     /// Sidebar toggle button (header bar).
     toggle_focus: FocusHandle,
     /// The window is narrower than [`SETTINGS_AUTO_COLLAPSE_W`] (sidebar auto-collapsed,
@@ -255,7 +275,7 @@ pub(crate) fn sidebar_progress(outer_w: f32) -> f32 {
 }
 
 /// Every fixed text field.
-const FIELDS: [Field; 10] = [
+const FIELDS: [Field; 12] = [
     Field::ChatId,
     Field::TelegramToken,
     Field::DiscordWebhook,
@@ -266,14 +286,17 @@ const FIELDS: [Field; 10] = [
     Field::CustomToken,
     Field::Rename,
     Field::UpdateUrl,
+    Field::TeamsEndpoint,
+    Field::TeamsInvite,
 ];
 
 /// Sidebar pages, in order.
-pub(crate) const NAV: [Page; 5] = [
+pub(crate) const NAV: [Page; 6] = [
     Page::Accounts,
     Page::Appearance,
     Page::Notifications,
     Page::Analytics,
+    Page::Teams,
     Page::General,
 ];
 
@@ -284,6 +307,7 @@ pub(crate) fn page_title(page: Page) -> &'static str {
         Page::Appearance => "Appearance",
         Page::Notifications => "Notifications",
         Page::Analytics => "Analytics",
+        Page::Teams => "Teams",
         Page::General => "General",
     }
 }
@@ -295,6 +319,7 @@ fn page_glyph(page: Page) -> &'static str {
         Page::Appearance => glyph::APPEARANCE,
         Page::Notifications => glyph::NOTIFICATIONS,
         Page::Analytics => glyph::ANALYTICS,
+        Page::Teams => glyph::TEAMS,
         Page::General | Page::Onboarding => glyph::GENERAL,
     }
 }
@@ -403,6 +428,9 @@ impl SettingsView {
                 s.update_manifest_url.clone(),
                 codenotch_core::DEFAULT_UPDATE_MANIFEST_URL,
             ),
+            teams_endpoint: text(window, cx, s.teams_endpoint.clone(), "https://"),
+            // An invite link is a secret until used: masked like the token fields.
+            teams_invite: secret(window, cx, t(lang, "Paste your invite link")),
         };
         let warn = cx.new(|_| {
             SliderState::new()
@@ -511,6 +539,10 @@ impl SettingsView {
             reorder: None,
             drag_scroll: 0.0,
             drag_scroll_task: None,
+            teams_payer: HashMap::new(),
+            teams_price_inputs: BTreeMap::new(),
+            teams_price_errors: HashMap::new(),
+            teams_confirm: None,
             toggle_focus: cx.focus_handle(),
             narrow: false,
             narrow_expanded: false,
@@ -1041,6 +1073,7 @@ impl SettingsView {
             .iter()
             .map(|f| self.inputs.get(*f))
             .chain(self.plan_inputs.values())
+            .chain(self.teams_price_inputs.values())
             .find(|input| self.focused(input, window, cx))
             .map(|input| input.entity_id())
     }
@@ -1086,6 +1119,14 @@ impl SettingsView {
             cx,
         ) {
             self.errors.remove(&Field::UpdateUrl);
+        }
+        if self.set_if_idle(
+            &self.inputs.teams_endpoint.clone(),
+            s.teams_endpoint.clone(),
+            window,
+            cx,
+        ) {
+            self.errors.remove(&Field::TeamsEndpoint);
         }
         let rate_text = self.inputs.rate.read(cx).value().to_string();
         if logic::parse_rate(&rate_text).ok() != Some(s.usd_to_eur)
@@ -1180,6 +1221,13 @@ impl SettingsView {
                         }
                         Err(e) => self.set_error(field, Err(e)),
                     },
+                    Field::TeamsEndpoint => match logic::validate_teams_endpoint(&text) {
+                        Ok(url) => {
+                            self.set_error(field, Ok(()));
+                            self.stage(Edit::TeamsEndpoint(url), cx);
+                        }
+                        Err(e) => self.set_error(field, Err(e)),
+                    },
                     _ => {
                         self.errors.remove(&field);
                     }
@@ -1190,6 +1238,7 @@ impl SettingsView {
                 Field::TelegramToken => self.save_secret(SecretKey::TelegramToken, window, cx),
                 Field::DiscordWebhook => self.save_secret(SecretKey::DiscordWebhook, window, cx),
                 Field::Rename => self.commit_rename(window, cx),
+                Field::TeamsInvite => self.teams_preview(cx),
                 Field::CustomName | Field::CustomUrl | Field::CustomToken => {
                     self.add_custom(window, cx)
                 }
@@ -1402,6 +1451,40 @@ impl SettingsView {
         if std::mem::take(&mut self.dev.focus_plan) {
             input.update(cx, |s, cx| s.focus(window, cx));
         }
+        input
+    }
+
+    /// Monthly price field of a shared account on the Teams page (created on first use; its
+    /// value is only sent with "Declare", never saved in the config).
+    pub fn ensure_teams_price_input(
+        &mut self,
+        id: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Entity<InputState> {
+        if let Some(input) = self.teams_price_inputs.get(id).cloned() {
+            return input;
+        }
+        let input = cx.new(|cx| InputState::new(window, cx).placeholder("0"));
+        let key = id.to_string();
+        self.subs.push(cx.subscribe_in(
+            &input,
+            window,
+            move |this, _, event: &InputEvent, window, cx| match event {
+                InputEvent::Change => {
+                    if this.teams_price_errors.remove(&key).is_some() {
+                        cx.notify();
+                    }
+                }
+                InputEvent::PressEnter { .. } => {
+                    this.teams_declare(&key, cx);
+                    this.release_input_focus(window, cx);
+                }
+                InputEvent::Blur | InputEvent::Focus => {}
+            },
+        ));
+        self.teams_price_inputs
+            .insert(id.to_string(), input.clone());
         input
     }
 

@@ -8,7 +8,8 @@ use codenotch_core::config::{
 };
 use codenotch_core::format;
 use codenotch_core::model::{
-    AccountView, AnalyticsSummary, ProviderKind, ReadingStatus, UpdateState,
+    AccountView, AnalyticsSummary, ProviderKind, ReadingStatus, TeamsState, TeamsStatus,
+    UpdateState,
 };
 use codenotch_core::Lang;
 use serde_json::Value;
@@ -106,6 +107,15 @@ pub enum Edit {
     MarkOnboarded,
     /// Settings window sidebar collapsed to its icon rail (`settingsSidebarCollapsed`).
     SidebarCollapsed(bool),
+    /// `teamsSyncEnabled`.
+    TeamsSyncEnabled(bool),
+    /// `teamsEndpoint` (already validated; empty = the official server).
+    TeamsEndpoint(String),
+    /// Share an account with the team (`teamsExcludedAccounts` lists the ones not shared).
+    TeamsShared {
+        id: String,
+        on: bool,
+    },
 }
 
 /// Why an edit was not applied. `message()` is an English i18n key.
@@ -219,6 +229,14 @@ pub fn apply(config: &mut Config, edit: &Edit) -> Result<(), Refusal> {
             Edit::AntigravityModel(v) => s.antigravity_model = *v,
             Edit::MarkOnboarded => s.onboarding_done = Some(true),
             Edit::SidebarCollapsed(v) => s.settings_sidebar_collapsed = *v,
+            Edit::TeamsSyncEnabled(v) => s.teams_sync_enabled = *v,
+            Edit::TeamsEndpoint(v) => s.teams_endpoint = v.trim().to_string(),
+            Edit::TeamsShared { id, on } => {
+                s.teams_excluded_accounts.retain(|x| x != id);
+                if !*on {
+                    s.teams_excluded_accounts.push(id.clone());
+                }
+            }
             Edit::AccountVisible { id, on } => {
                 if !next.accounts.iter().any(|a| &a.id == id) {
                     return Err(Refusal::UnknownAccount);
@@ -1153,6 +1171,92 @@ pub fn update_line(
             UpdateAction::Check,
         ),
     }
+}
+
+/// Validate the Teams server address: empty (the official server), `https://host[:port]`, or
+/// `http://` to localhost only. An origin: no user info, path, query or fragment. The engine
+/// checks it again before any request.
+pub fn validate_teams_endpoint(text: &str) -> Result<String, FieldError> {
+    let url = text.trim().trim_end_matches('/');
+    if url.is_empty() {
+        return Ok(String::new());
+    }
+    let lower = url.to_ascii_lowercase();
+    let (host, local_only) = match (
+        lower.strip_prefix("https://"),
+        lower.strip_prefix("http://"),
+    ) {
+        (Some(h), _) => (h, false),
+        (None, Some(h)) => (h, true),
+        _ => return Err(FieldError::Url),
+    };
+    let name = if host.starts_with('[') {
+        host.split(']')
+            .next()
+            .map(|h| format!("{h}]"))
+            .unwrap_or_default()
+    } else {
+        host.split(':').next().unwrap_or("").to_string()
+    };
+    let bad = host.is_empty()
+        || name.is_empty()
+        || host.contains(['/', '?', '#', '@', '\\'])
+        || url.chars().any(|c| c.is_whitespace() || c.is_control())
+        || (local_only && !matches!(name.as_str(), "localhost" | "127.0.0.1" | "[::1]"));
+    if bad {
+        return Err(FieldError::Url);
+    }
+    Ok(url.to_string())
+}
+
+/// Accounts that can be shared with a team: enabled Claude and Codex accounts (others never
+/// leave the PC). `(account, shared)` in config order.
+pub fn teams_accounts(config: &Config) -> Vec<(&Account, bool)> {
+    config
+        .ordered_accounts()
+        .into_iter()
+        .filter(|a| {
+            a.enabled
+                && !a.uses_custom_endpoint()
+                && matches!(a.provider, ProviderKind::Claude | ProviderKind::Codex)
+        })
+        .map(|a| (a, !config.settings.teams_excludes(&a.id)))
+        .collect()
+}
+
+/// Status line of the Teams page.
+pub fn teams_status_line(lang: Lang, status: &TeamsStatus) -> (String, Tone) {
+    let team = status.team_name.as_deref().unwrap_or("");
+    let error =
+        |default: &str| t(lang, status.last_error.as_deref().unwrap_or(default)).to_string();
+    match status.state {
+        TeamsState::Off => (t(lang, "Turned off").to_string(), Tone::Muted),
+        TeamsState::NotPaired => (t(lang, "Not connected to a team").to_string(), Tone::Normal),
+        TeamsState::Active => {
+            let mut line = tf(lang, "Connected to {team}", &[("team", team)]);
+            if status.queued > 0 {
+                line.push_str(" · ");
+                line.push_str(&tf(
+                    lang,
+                    "{n} events waiting",
+                    &[("n", &status.queued.to_string())],
+                ));
+            }
+            (line, Tone::Normal)
+        }
+        TeamsState::Paused => (error("Sync paused, retrying"), Tone::Warn),
+        TeamsState::Revoked => (error("Device revoked by the team"), Tone::Error),
+        TeamsState::ConsentNeeded => (
+            error("The team changed what it sees. Review and accept to resume."),
+            Tone::Error,
+        ),
+        TeamsState::Error => (error("Cannot save Teams sync data"), Tone::Error),
+    }
+}
+
+/// The device is paired (whatever the sync state).
+pub fn teams_paired(status: &TeamsStatus) -> bool {
+    status.team_name.is_some() && !matches!(status.state, TeamsState::Off | TeamsState::NotPaired)
 }
 
 /// Validate the update manifest address: empty (the official one) or `https://…`.
@@ -2171,6 +2275,89 @@ mod tests {
         );
         assert!(text.contains("offline"));
         assert_eq!(action, UpdateAction::Check);
+    }
+
+    #[test]
+    fn teams_endpoint_edits_and_shared_accounts() {
+        assert_eq!(validate_teams_endpoint("  "), Ok(String::new()));
+        assert_eq!(
+            validate_teams_endpoint(" https://teams.example.test/ "),
+            Ok("https://teams.example.test".into())
+        );
+        assert_eq!(
+            validate_teams_endpoint("http://127.0.0.1:8080"),
+            Ok("http://127.0.0.1:8080".into())
+        );
+        assert!(validate_teams_endpoint("http://[::1]:9").is_ok());
+        for bad in [
+            "http://teams.example.test",
+            "ftp://x",
+            "https://user@x.test",
+            "https://x.test/path",
+            "https://x.test?q=1",
+            "https://",
+            "https://a b",
+        ] {
+            assert_eq!(validate_teams_endpoint(bad), Err(FieldError::Url), "{bad}");
+        }
+        let mut c = Config::default();
+        let claude = Account::new(ProviderKind::Claude, "C");
+        let cursor = Account::new(ProviderKind::Cursor, "Cu");
+        c.accounts = vec![claude.clone(), cursor];
+        assert!(!c.settings.teams_sync_enabled);
+        apply(&mut c, &Edit::TeamsSyncEnabled(true)).unwrap();
+        apply(&mut c, &Edit::TeamsEndpoint(" https://t.test ".into())).unwrap();
+        assert!(c.settings.teams_sync_enabled);
+        assert_eq!(c.settings.teams_endpoint, "https://t.test");
+        let only = teams_accounts(&c);
+        assert_eq!(only.len(), 1, "only Claude and Codex accounts");
+        assert!(only[0].1);
+        let off = Edit::TeamsShared {
+            id: claude.id.clone(),
+            on: false,
+        };
+        apply(&mut c, &off).unwrap();
+        apply(&mut c, &off).unwrap();
+        assert_eq!(c.settings.teams_excluded_accounts, vec![claude.id.clone()]);
+        assert!(!teams_accounts(&c)[0].1);
+        apply(
+            &mut c,
+            &Edit::TeamsShared {
+                id: claude.id.clone(),
+                on: true,
+            },
+        )
+        .unwrap();
+        assert!(c.settings.teams_excluded_accounts.is_empty());
+    }
+
+    #[test]
+    fn teams_status_lines() {
+        let mut st = TeamsStatus::default();
+        assert_eq!(teams_status_line(Lang::En, &st).1, Tone::Muted);
+        assert!(!teams_paired(&st));
+        st.state = TeamsState::NotPaired;
+        assert_eq!(
+            teams_status_line(Lang::En, &st).0,
+            "Not connected to a team"
+        );
+        st.state = TeamsState::Active;
+        st.team_name = Some("Acme".into());
+        st.queued = 3;
+        assert!(teams_paired(&st));
+        assert_eq!(
+            teams_status_line(Lang::En, &st).0,
+            "Connected to Acme · 3 events waiting"
+        );
+        assert_eq!(
+            teams_status_line(Lang::Fr, &st).0,
+            "Connecté à Acme · 3 événements en attente"
+        );
+        st.state = TeamsState::Revoked;
+        st.last_error = Some("Device revoked by the team".into());
+        let (line, tone) = teams_status_line(Lang::Fr, &st);
+        assert_eq!(tone, Tone::Error);
+        assert_eq!(line, "Appareil révoqué par l'équipe");
     }
 
     #[test]

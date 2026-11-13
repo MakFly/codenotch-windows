@@ -198,6 +198,36 @@ fn account_lines(out: &mut String, a: &Account, p: &Probe, state: &PersistedStat
     }
 }
 
+/// `teams:` sync switch, server, pairing, token presence and queue file. Reads `teams.json`
+/// only (no file is created); never prints the token, the team id or the device id.
+fn teams_line(out: &mut String, config: &Config, p: &Probe) {
+    let s = &config.settings;
+    let server = s.teams_origin().unwrap_or("not set");
+    let token = p
+        .secrets
+        .get(&SecretKey::TeamsDeviceToken)
+        .is_some_and(|v| !v.is_empty());
+    let pairing = match codenotch_teams::state::StateFile::load(&p.paths.teams_state()) {
+        Ok(Some(state)) => format!(
+            "paired with \"{}\" ({})",
+            state.team_name, state.binding.origin
+        ),
+        Ok(None) => "not paired".to_string(),
+        Err(_) => "pairing file UNREADABLE".to_string(),
+    };
+    let _ = writeln!(
+        out,
+        "teams: sync {}; server {server}; {pairing}; device token: {}; outbox: {}",
+        if s.teams_sync_enabled { "on" } else { "off" },
+        if token { "stored" } else { "absent" },
+        if p.paths.teams_outbox().is_file() {
+            "present"
+        } else {
+            "absent"
+        }
+    );
+}
+
 /// The whole report.
 pub fn report(p: &Probe) -> String {
     let mut out = String::new();
@@ -345,6 +375,8 @@ pub fn report(p: &Probe) -> String {
         if discord { "present" } else { "absent" }
     );
 
+    teams_line(&mut out, &config, p);
+
     // Hooks.
     let hook_exe = p
         .exe
@@ -484,6 +516,7 @@ mod tests {
             "endpoint: http://127.0.0.1:8080\n",
             "last reading: signed out",
             "telegram token: present",
+            "teams: sync off; server not set; not paired; device token: absent; outbox: absent",
             "hook helper: ",
             "MISSING",
             "hooks installed: no",

@@ -94,6 +94,9 @@ addresses are made up.</sub>
 - **Stays out of the way**: folds while a full-screen app or game is in front, game mode, global
   shortcut, tray menu, open at login without admin rights.
 - **Self-update** from a JSON manifest, checksum-verified, with notify, automatic and forced modes.
+- **Team sync (opt-in, off by default)**: share quota figures and hourly token counts of the
+  Claude and Codex accounts you choose with a CodeNotch Teams server. See
+  [Team sync](#team-sync).
 
 ## Supported providers
 
@@ -274,7 +277,7 @@ codenotch [--settings | --settings-page=<page> | --demo [--theme=<mode>] | --onc
 | (none) | Start the notch. |
 | `--silent` | Same as no argument. This is what "Open at login" registers. |
 | `--settings` | Start and open the settings window. |
-| `--settings-page=<page>` | Open the settings on `accounts`, `appearance`, `notifications`, `analytics` or `general`. |
+| `--settings-page=<page>` | Open the settings on `accounts`, `appearance`, `notifications`, `analytics`, `teams` or `general`. |
 | `--demo` | GUI on made-up figures for the providers found on this PC. No engine, no network, no single-instance lock. `--theme=light\|dark\|system` forces the theme. |
 | `--once` | Fetch every enabled account once, print one line each, exit. Writes nothing. |
 | `doctor` (or `--doctor`) | Print what the app sees on this machine (presence only, never a secret), exit. |
@@ -306,8 +309,9 @@ Antigravity CLI); set `CODENOTCH_NO_SPAWN=1` to prevent that.
 data folder; `config.gpui.json` status, accounts, language, refresh period, onboarding;
 `state.json`, history samples, log path; each provider (detected or not, configured accounts);
 each account (profile folder, credential file, endpoint host, token variable, stored token, last
-reading, back-off); Telegram and Discord secrets present or absent; hook helper, hooks installed,
-hook port and token file; open at login and the global shortcut.
+reading, back-off); Telegram and Discord secrets present or absent; Teams sync (switch, server,
+paired team, device token stored or absent, outbox present or absent); hook helper, hooks
+installed, hook port and token file; open at login and the global shortcut.
 
 </details>
 
@@ -502,6 +506,8 @@ The data folder is `%APPDATA%\dev.kev.smashtoken` (the folder earlier versions a
 | `auth_token` | app | The hook server token (64 hex characters). |
 | `logs\codenotch.log` | app | The log, rotated at 1 MiB to `codenotch.1.log` … `codenotch.3.log`. |
 | `updates\` | app | Downloaded update packages, removed after a successful update. |
+| `teams.json` | app | Only once paired with a team ([Team sync](#team-sync)): server origin, team id and name, device id, consent version, data epoch, first hour that may be sent, backfill agreement, last send, and the counters needed to send each figure once. No token. |
+| `teams-outbox.jsonl` | app | Only while paired and Team sync is on: events waiting to be sent, first line binding the file to one pairing. Deleted when you detach, and when the pairing it is bound to changes. Capped at 10 000 events / 20 MB. |
 | `pricing.json` | you (optional) | Model price overrides for analytics. |
 | `glm.json` | you (optional) | A z.ai key file. |
 | `glyphs\<provider id>.svg` or `.png` | you (optional) | Replaces the built-in provider mark. |
@@ -515,7 +521,8 @@ back to its default instead of failing the whole file.
 Outside the data folder, the app writes only:
 
 - Windows Credential Manager generic credentials `CodeNotch/telegram-token`,
-  `CodeNotch/discord-webhook` and `CodeNotch/account/<account id>`, when you save a secret;
+  `CodeNotch/discord-webhook` and `CodeNotch/account/<account id>`, when you save a secret, and
+  `CodeNotch/teams-device-token` while the PC is paired with a team;
 - `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`, value `CodeNotch` = `"<exe>" --silent`,
   when "Open CodeNotch at login" is on (turning it on also clears a "disabled" flag Task Manager
   may have set under `…\Explorer\StartupApproved\Run`);
@@ -594,6 +601,9 @@ All settings live under `settings` in `config.gpui.json`. Keys are camelCase.
 | `antigravityLimit` | Antigravity lane: `automatic`, `5h`, `weekly`. | `"automatic"` |
 | `antigravityModel` | Antigravity model family: `gemini` or `3p` (Claude and GPT models). | `"gemini"` |
 | `settingsSidebarCollapsed` | Settings window: sidebar collapsed to its icon rail (toggle button or Ctrl+B). A window narrower than 900 px shows the rail without changing this key. | `false` |
+| `teamsSyncEnabled` | [Team sync](#team-sync). While `false`, nothing is sent, no Teams file is created and no Teams thread runs. Not written while `false`. | `false` |
+| `teamsEndpoint` | Teams server origin, `https://host[:port]` (`http://` only to `localhost`, `127.0.0.1` or `[::1]`); no path, query or user info. Empty: the official server — none is built in yet, so pairing needs this key. Not written while empty. | `""` |
+| `teamsExcludedAccounts` | Account ids never shared with the team. Not written while empty. | `[]` |
 
 Default provider order: `claude`, `codex`, `glm`, `opencode`, `commandcode`, `cursor`, `grok`,
 `copilot`, `antigravity`, `qoder`, `custom`.
@@ -688,9 +698,54 @@ content), and the app's own history, state and analytics index.
   read through its CLI or a loopback address; the Qoder SDK makes its own requests;
 - alerts to `api.telegram.org` and your Discord webhook, only when you turn them on;
 - the update manifest (`raw.githubusercontent.com` by default) and, when you update, the package
-  from the address it gives (GitHub release assets by default).
+  from the address it gives (GitHub release assets by default);
+- quota figures and hourly token counts to your team's CodeNotch Teams server, only when you turn
+  on [Team sync](#team-sync) and pair this PC.
 
 There is no telemetry, analytics beacon or crash reporting.
+
+### Team sync
+
+Off by default. While it is off, or while the PC is not paired, CodeNotch makes no Teams request,
+creates no Teams file and runs no Teams thread. `--demo` and `--once` never use it.
+
+**Pairing.** Settings > Teams: turn on Team sync, set the server address (`teamsEndpoint`), paste
+the invite link your team admin sent and press Connect. The app first shows the team name, what the
+team sees (usage by member name) and the server, with the lists below; nothing is paired until you
+press "Accept and connect". An invite link is only accepted for the configured server: a link to
+any other host is refused before any request. The device token the server returns is stored in
+Credential Manager (`CodeNotch/teams-device-token`) and only ever sent to that server, which must
+answer directly (redirects are not followed).
+
+**What leaves this PC**, for the Claude and Codex accounts you share (each can be excluded):
+
+- tool, plan code, quota windows (closed ids such as `session` or `seven_day`) with percent used,
+  reset time and length;
+- token counts per model and UTC hour (input, output, cache read, cache write), from scan roots
+  that belong to exactly one shared account; hours before pairing only with the separate "Include
+  the 45 days before pairing" agreement;
+- an account reference derived on this PC from a random device id (not an account name or
+  e-mail), the app version, and queue counters;
+- when you declare it: who pays for a shared account's plan (your company, or you without
+  reimbursement) and, if you pay, the monthly price you enter.
+
+Every value sent is checked against a closed list; an unknown model or plan is sent as
+`unknown`.
+
+**What never leaves this PC**: prompts, code and model responses; file paths, folder, project and
+repository names; sign-in e-mails, logins and provider tokens; accounts you do not share and every
+other provider.
+
+**Sending.** One background thread, started only while Team sync is on and the PC is paired, keeps
+a durable queue (`teams-outbox.jsonl`) and sends batches of at most 100 events / 64 KiB at most
+once a minute, with back-off (30 s doubling to 15 min, `Retry-After` honoured). It never triggers a
+provider refresh of its own. A revoked device, or a team that changed what it sees, stops sending
+until you act; a server that asks for a newer app pauses sending for 6 hours. The Teams page shows
+why.
+
+**Detach this device** deletes the device token, `teams.json` and the queue from this PC (and tells
+the server when Team sync is on). **Delete my data on the server** asks the server to erase what
+this member sent; sync goes on from then.
 
 <details>
 <summary><b>Security details</b></summary>
@@ -803,8 +858,10 @@ changes the install folder, `CARGO=` the cargo executable.
 | [`crates/platform`](crates/platform) | `codenotch-platform` | Win32 services: full-screen detection, autostart, hotkey, tray, single instance, Credential Manager, taskbar measurement. |
 | [`crates/ui-kit`](crates/ui-kit) | `codenotch-ui-kit` | GPUI shared kit: UI model, theme, ring painter, controls, toasts, overlay windows. |
 | [`crates/ui-notch`](crates/ui-notch) | `codenotch-ui-notch` | Notch pill, hover card, reset card, taskbar strip, provider marks. |
-| [`crates/ui-settings`](crates/ui-settings) | `codenotch-ui-settings` | Settings window, onboarding, analytics view. |
-| [`crates/engine`](crates/engine) | `codenotch-engine` | Scheduler, back-off, persistence, self-update; turns providers, activity and alerts into snapshots. |
+| [`crates/ui-settings`](crates/ui-settings) | `codenotch-ui-settings` | Settings window (including the Teams page), onboarding, analytics view. |
+| [`crates/teams-schema`](crates/teams-schema) | `codenotch-teams-schema` | Team sync event contract: closed value sets, validation, JSON schema. |
+| [`crates/teams`](crates/teams) | `codenotch-teams` | Team sync client: privacy filter, durable outbox, revisions, pairing. No UI, no thread of its own. |
+| [`crates/engine`](crates/engine) | `codenotch-engine` | Scheduler, back-off, persistence, self-update, the Team sync worker; turns providers, activity and alerts into snapshots. |
 | [`crates/app`](crates/app) | `codenotch` | `codenotch.exe`: CLI and wiring. |
 
 Tests that read the real machine are `#[ignore]`d and never run by default. Run them by hand (read-only,

@@ -23,6 +23,7 @@ log.workspace = true
 # Crate-local dependencies go below this line.
 codenotch-notify.workspace = true
 codenotch-activity.workspace = true
+codenotch-teams.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

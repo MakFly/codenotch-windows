@@ -52,6 +52,8 @@ pub mod glyph {
     pub const APPEARANCE: &str = "\u{E790}";
     pub const NOTIFICATIONS: &str = "\u{EA8F}";
     pub const ANALYTICS: &str = "\u{E9D2}";
+    /// People.
+    pub const TEAMS: &str = "\u{E716}";
     pub const GENERAL: &str = "\u{E713}";
     pub const QUIT: &str = "\u{E7E8}";
     pub const CHEVRON_DOWN: &str = "\u{E70D}";
