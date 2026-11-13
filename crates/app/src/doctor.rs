@@ -199,7 +199,8 @@ fn account_lines(out: &mut String, a: &Account, p: &Probe, state: &PersistedStat
 }
 
 /// `teams:` sync switch, server, pairing, token presence and queue file. Reads `teams.json`
-/// only (no file is created); never prints the token, the team id or the device id.
+/// only (no file is created); never prints the token, the team id, the team name (free text
+/// from the server) or the device id.
 fn teams_line(out: &mut String, config: &Config, p: &Probe) {
     let s = &config.settings;
     let server = s.teams_origin().unwrap_or("not set");
@@ -208,10 +209,7 @@ fn teams_line(out: &mut String, config: &Config, p: &Probe) {
         .get(&SecretKey::TeamsDeviceToken)
         .is_some_and(|v| !v.is_empty());
     let pairing = match codenotch_teams::state::StateFile::load(&p.paths.teams_state()) {
-        Ok(Some(state)) => format!(
-            "paired with \"{}\" ({})",
-            state.team_name, state.binding.origin
-        ),
+        Ok(Some(state)) => format!("paired with a team ({})", state.binding.origin),
         Ok(None) => "not paired".to_string(),
         Err(_) => "pairing file UNREADABLE".to_string(),
     };
@@ -530,5 +528,42 @@ mod tests {
         ] {
             assert!(text.contains(needle), "missing {needle:?} in:\n{text}");
         }
+    }
+
+    #[test]
+    fn teams_line_never_prints_the_team_name_or_id() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = Paths::at(dir.path().join("data"));
+        paths.ensure().unwrap();
+        let env = Env::for_test(dir.path());
+        let binding = codenotch_teams::journal::Binding {
+            origin: "https://teams.example.test".into(),
+            team_id: "3b2f0c4e-5d6a-4b7c-8d9e-0f1a2b3c4d5e".into(),
+            device_id: "6f1c2a9e-0b7d-4a51-9c7e-2f0d7b1a4e11".into(),
+            generation: 1,
+            consent_version: 1,
+            data_epoch: 1,
+        };
+        codenotch_teams::state::StateFile::new(binding, "kevin@mail.example".into(), 0)
+            .save(&paths.teams_state())
+            .unwrap();
+        let store = MemorySecrets::new();
+        let text = report(&Probe {
+            paths: &paths,
+            env: &env,
+            secrets: &store,
+            exe: None,
+            autostart: None,
+            data_dir_overridden: false,
+            now: 160,
+        });
+        assert!(
+            !text.contains("kevin@") && !text.contains("3b2f0c4e") && !text.contains("6f1c2a9e"),
+            "{text}"
+        );
+        assert!(
+            text.contains("paired with a team (https://teams.example.test)"),
+            "{text}"
+        );
     }
 }

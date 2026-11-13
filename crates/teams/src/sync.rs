@@ -45,12 +45,15 @@ pub const LONG_PAUSE_SECS: i64 = 6 * 3600;
 const CURSOR_KEEP_SECS: i64 = 46 * 86_400;
 /// `resetsAt` moves smaller than this are not a change.
 const RESET_TOLERANCE_SECS: i64 = 60;
+/// A date from the server may be ahead of this device's clock by at most this much.
+pub const MAX_CLOCK_SKEW_SECS: i64 = 86_400;
 /// Backoff: 30 s × 2ⁿ, ±20 %, at most 15 min.
 const BACKOFF_BASE_SECS: i64 = 30;
 const BACKOFF_MAX_SECS: i64 = 15 * 60;
 
-/// What the server said at pairing (see [`crate::pairing::pair`]).
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// What the server said at pairing (see [`crate::pairing::pair`]). `Debug` leaves out the team
+/// id and name.
+#[derive(Clone, PartialEq, Eq)]
 pub struct PairingInfo {
     pub origin: Origin,
     pub team_id: String,
@@ -60,8 +63,27 @@ pub struct PairingInfo {
     pub generation: u64,
     pub consent_version: u32,
     pub data_epoch: u32,
-    /// First hour that may be sent (unix secs).
+    /// First hour that may be sent (unix secs), already checked by [`raise_floor`].
     pub floor_at: i64,
+}
+
+impl std::fmt::Debug for PairingInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PairingInfo")
+            .field("origin", &self.origin)
+            .field("generation", &self.generation)
+            .field("consent_version", &self.consent_version)
+            .field("data_epoch", &self.data_epoch)
+            .field("floor_at", &self.floor_at)
+            .finish_non_exhaustive()
+    }
+}
+
+/// The floor after the server sent `server`: never earlier than `local` (the member's consent,
+/// or the current floor), which the server cannot lower. `None` when `server` lies more than
+/// [`MAX_CLOCK_SKEW_SECS`] ahead of `now` (not a date this contract produces).
+pub fn raise_floor(local: i64, server: i64, now: i64) -> Option<i64> {
+    (server <= now.saturating_add(MAX_CLOCK_SKEW_SECS)).then(|| server.max(local))
 }
 
 /// Why sending paused for a long time.
@@ -230,7 +252,7 @@ impl TeamsSync {
                         model: u.model,
                         hour_start: u.hour_start,
                         rev: u.rev,
-                        tokens: u.tokens,
+                        tokens: Some(u.tokens),
                     };
                     let key = cursor.key();
                     if self
@@ -288,10 +310,11 @@ impl TeamsSync {
 
     /// First hour that may be sent now (the pairing floor, 45 days earlier with backfill).
     pub fn effective_floor(&self) -> i64 {
+        let floor = self.state.floor_at;
         if self.state.backfill {
-            self.state.floor_at - BACKFILL_SECS
+            floor.checked_sub(BACKFILL_SECS).unwrap_or(floor)
         } else {
-            self.state.floor_at
+            floor
         }
     }
 
@@ -370,12 +393,37 @@ impl TeamsSync {
         self.compact()
     }
 
-    /// Purge queued events the current policy no longer allows.
+    /// Purge queued events the current policy no longer allows. A purged hour was never
+    /// delivered: its cursor keeps the revision number (never reused) but forgets the value,
+    /// so the hour is queued again once it is allowed again.
     fn refilter(&mut self) -> usize {
         let Some(policy) = self.policy.as_ref() else {
             return 0;
         };
-        self.journal.retain(|r| allowed(policy, r))
+        let mut purged = Vec::new();
+        let removed = self.journal.retain(|r| {
+            let keep = allowed(policy, r);
+            if !keep {
+                purged.push(r.event.clone());
+            }
+            keep
+        });
+        for event in purged {
+            let Ok(EventPayload::UsageHour(u)) = event.payload() else {
+                continue;
+            };
+            let key = UsageKey {
+                account_ref: u.account_ref,
+                provider: u.provider,
+                model: u.model,
+                hour_start: u.hour_start,
+            };
+            if let Some(c) = self.cursors.usage.get_mut(&key).filter(|c| c.rev == u.rev) {
+                c.tokens = None;
+                self.dirty = true;
+            }
+        }
+        removed
     }
 
     // -----------------------------------------------------------------------------------------
@@ -440,7 +488,7 @@ impl TeamsSync {
                     model: key.model,
                     hour_start: key.hour_start,
                     rev,
-                    tokens,
+                    tokens: Some(tokens),
                 },
             );
             events.push(EventPayload::UsageHour(hour));
@@ -449,7 +497,9 @@ impl TeamsSync {
             match cursors.usage.get(key) {
                 None if tokens.is_zero() => {}
                 None => revise(&mut cursors, key, *tokens),
-                Some(c) if key.hour_start >= mutable_from && c.tokens != *tokens => {
+                // Purged before delivery: queued again, under a new revision, at any age.
+                Some(c) if c.tokens.is_none() => revise(&mut cursors, key, *tokens),
+                Some(c) if key.hour_start >= mutable_from && c.tokens != Some(*tokens) => {
                     revise(&mut cursors, key, *tokens)
                 }
                 Some(_) => {}
@@ -461,7 +511,7 @@ impl TeamsSync {
             .filter(|(k, c)| {
                 k.hour_start >= mutable_from
                     && k.hour_start >= policy.floor()
-                    && !c.tokens.is_zero()
+                    && c.tokens.is_some_and(|t| !t.is_zero())
                     && !current.contains_key(k)
                     && policy.by_ref(&k.account_ref).is_some_and(|a| a.usage)
             })
@@ -644,7 +694,7 @@ impl TeamsSync {
                         data_epoch: Some(epoch),
                         floor_at,
                     }) if error == "epoch_changed" => {
-                        match self.epoch_changed(epoch, floor_at.unwrap_or(now)) {
+                        match self.epoch_changed(epoch, floor_at, now) {
                             Ok(()) => SendOutcome::EpochChanged,
                             Err(_) => SendOutcome::StorageError,
                         }
@@ -747,15 +797,24 @@ impl TeamsSync {
     }
 
     /// The member's server data was erased: purge the outbox (bound to the old epoch), move
-    /// the floor, forget the backfill agreement, and send full snapshots again.
-    fn epoch_changed(&mut self, epoch: u32, floor_at: i64) -> io::Result<()> {
+    /// the floor (only ever later; to now when the server's is missing or unusable), forget the
+    /// backfill agreement, and send full snapshots and the hours from the new floor again.
+    fn epoch_changed(&mut self, epoch: u32, floor_at: Option<i64>, now: i64) -> io::Result<()> {
+        let local = self.state.floor_at;
+        let floor = floor_at
+            .and_then(|server| raise_floor(local, server, now))
+            .unwrap_or(local.max(now));
         Journal::destroy(&self.outbox_path)?;
         self.state.binding.data_epoch = epoch;
-        self.state.floor_at = floor_at;
+        self.state.floor_at = floor;
         self.state.backfill = false;
         for c in self.cursors.snapshots.values_mut() {
             c.windows.clear();
             c.tombstone = true;
+        }
+        // The server holds none of them any more (revision numbers are still never reused).
+        for c in self.cursors.usage.values_mut() {
+            c.tokens = None;
         }
         self.journal = Journal::open(&self.outbox_path, &self.state.binding)?;
         let floor = self.effective_floor();

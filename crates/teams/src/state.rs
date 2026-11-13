@@ -30,7 +30,7 @@ pub struct SnapshotCursor {
     pub tombstone: bool,
 }
 
-/// Last revision queued for one `usage.hour` key.
+/// Last revision reserved for one `usage.hour` key, and the value the server has or will get.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UsageCursor {
@@ -38,8 +38,12 @@ pub struct UsageCursor {
     pub provider: Provider,
     pub model: ModelId,
     pub hour_start: i64,
+    /// Highest revision used for this key: the next one is `rev + 1`, even after a purge.
     pub rev: u64,
-    pub tokens: Tokens,
+    /// Totals of revision `rev`, queued or delivered. `None` when that revision was purged
+    /// before delivery (the server's value is unknown): the hour is queued again once allowed.
+    #[serde(default)]
+    pub tokens: Option<Tokens>,
 }
 
 impl UsageCursor {
@@ -53,15 +57,18 @@ impl UsageCursor {
     }
 }
 
-/// Everything Teams remembers between runs.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// Everything Teams remembers between runs. `Debug` leaves out the team name and the binding's
+/// team id.
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StateFile {
     pub version: u32,
     pub binding: Binding,
-    /// Team name as the server reported it at pairing (shown in the settings window).
+    /// Team name as the server reported it at pairing: free text chosen by the team admin,
+    /// shown in the settings window (see [`crate::pairing`]).
     pub team_name: String,
-    /// First hour that may be sent (pairing or erase time, from the server).
+    /// First hour that may be sent: the member's local pairing time, or a later erase time
+    /// from the server. A server value never moves it earlier (see [`crate::sync::raise_floor`]).
     pub floor_at: i64,
     /// The member agreed to send the 45 days before `floor_at`.
     #[serde(default)]
@@ -77,6 +84,20 @@ pub struct StateFile {
     pub snapshots: Vec<SnapshotCursor>,
     #[serde(default)]
     pub usage: Vec<UsageCursor>,
+}
+
+impl std::fmt::Debug for StateFile {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("StateFile")
+            .field("version", &self.version)
+            .field("binding", &self.binding)
+            .field("floor_at", &self.floor_at)
+            .field("backfill", &self.backfill)
+            .field("journal_seq", &self.journal_seq)
+            .field("snapshots", &self.snapshots.len())
+            .field("usage", &self.usage.len())
+            .finish_non_exhaustive()
+    }
 }
 
 impl StateFile {

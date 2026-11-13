@@ -13,6 +13,7 @@ use codenotch_core::{
 use codenotch_teams::{Origin, PairingInfo, TeamsSync};
 
 pub const DEVICE: &str = "6f1c2a9e-0b7d-4a51-9c7e-2f0d7b1a4e11";
+pub const TEAM_ID: &str = "3b2f0c4e-5d6a-4b7c-8d9e-0f1a2b3c4d5e";
 pub const ORIGIN: &str = "https://teams.example.test";
 /// Aligned hour: the pairing floor.
 pub const H0: i64 = 1_794_553_200;

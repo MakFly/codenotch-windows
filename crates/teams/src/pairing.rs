@@ -1,13 +1,21 @@
 //! Pairing client: invite preview, pairing, account declaration, detach, erase. All POST,
 //! all to the admitted [`Origin`] only; the invite code and the device token never go
 //! anywhere else, and redirects are not followed (a 3xx is "not a Teams server").
+//!
+//! Replies are held to a closed contract: the visibility is a value of a closed set, the team
+//! id a lower-case uuid, the floor a checked date. The team name is the one free text kept: it
+//! is shown in the settings window and stored in `teams.json`, never logged (`Debug` leaves it
+//! out) and refused when it repeats the invite code or the device token.
 
-use codenotch_core::{HttpClient, HttpRequest, HttpResponse, SecretValue, TeamsPayer};
+use codenotch_core::{
+    HttpClient, HttpRequest, HttpResponse, SecretValue, TeamsPayer, TeamsVisibility,
+};
 use serde::Deserialize;
 use serde_json::{json, Value};
 
 use crate::filter::Policy;
 use crate::origin::{InviteCode, Origin};
+use crate::sync::raise_floor;
 use crate::{i18n, APP_VERSION};
 
 /// Why a pairing call failed. Carries no value from the server or the user.
@@ -47,23 +55,42 @@ impl PairError {
     }
 }
 
-/// What an invite shows before the member accepts it.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// What an invite shows before the member accepts it. `Debug` leaves out the team name.
+#[derive(Clone, PartialEq, Eq)]
 pub struct InvitePreview {
     pub team_name: String,
-    /// What the team sees, as the server names it (`named` in version 1).
-    pub visibility: String,
+    pub visibility: TeamsVisibility,
     pub consent_version: u32,
 }
 
-/// Result of a successful pairing. `device_token` goes to the Credential Manager.
-#[derive(Debug, Clone)]
+/// Result of a successful pairing. `device_token` goes to the Credential Manager. `Debug`
+/// shows neither the token, the team id nor the team name.
+#[derive(Clone)]
 pub struct Paired {
     pub device_token: SecretValue,
     pub team_id: String,
     pub team_name: String,
     pub data_epoch: u32,
+    /// First hour that may be sent: the server's floor, never before the local pairing time.
     pub floor_at: i64,
+}
+
+impl std::fmt::Debug for InvitePreview {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("InvitePreview")
+            .field("visibility", &self.visibility)
+            .field("consent_version", &self.consent_version)
+            .finish_non_exhaustive()
+    }
+}
+
+impl std::fmt::Debug for Paired {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Paired")
+            .field("data_epoch", &self.data_epoch)
+            .field("floor_at", &self.floor_at)
+            .finish_non_exhaustive()
+    }
 }
 
 #[derive(Deserialize)]
@@ -98,21 +125,25 @@ pub fn preview(
     let body = json!({ "inviteCode": code.expose() });
     let reply = post(http, origin, "/v1/invites/preview", None, &body).map_err(invite_error)?;
     let r: PreviewReply = reply.json().map_err(|_| PairError::NotATeamsServer)?;
+    // A visibility outside the closed set cannot be shown to the member: a newer contract.
+    let visibility = TeamsVisibility::parse(&r.visibility).ok_or(PairError::UpdateRequired)?;
     Ok(InvitePreview {
-        team_name: clean(&r.team_name),
-        visibility: clean(&r.visibility),
+        team_name: team_name(&r.team_name, &[code.expose()])?,
+        visibility,
         consent_version: r.consent_version,
     })
 }
 
 /// `POST /v1/devices/pair`, after the member confirmed the preview (`consent_version` is the
-/// one the preview showed).
+/// one the preview showed). `now` is the member's consent: no hour before it is ever sent
+/// unless they also agree to the backfill, whatever `floorAt` the server returns.
 pub fn pair(
     http: &dyn HttpClient,
     origin: &Origin,
     code: &InviteCode,
     device_id: &str,
     consent_version: u32,
+    now: i64,
 ) -> Result<Paired, PairError> {
     let body = json!({
         "inviteCode": code.expose(),
@@ -122,15 +153,17 @@ pub fn pair(
     });
     let reply = post(http, origin, "/v1/devices/pair", None, &body).map_err(invite_error)?;
     let r: PairReply = reply.json().map_err(|_| PairError::NotATeamsServer)?;
-    if r.device_token.trim().is_empty() || r.team_id.trim().is_empty() {
+    let token = r.device_token.trim();
+    if token.is_empty() || !is_team_id(&r.team_id) || r.team_id == token {
         return Err(PairError::NotATeamsServer);
     }
+    let floor_at = raise_floor(now, r.floor_at, now).ok_or(PairError::NotATeamsServer)?;
     Ok(Paired {
+        team_name: team_name(&r.team_name, &[code.expose(), token])?,
         device_token: SecretValue::new(r.device_token),
         team_id: r.team_id,
-        team_name: clean(&r.team_name),
         data_epoch: r.data_epoch,
-        floor_at: r.floor_at,
+        floor_at,
     })
 }
 
@@ -222,12 +255,26 @@ fn invite_error(e: PairError) -> PairError {
     }
 }
 
-/// Server text shown in the UI: no control characters, at most 100 characters.
-fn clean(text: &str) -> String {
-    text.chars()
-        .filter(|c| !c.is_control())
+/// The team name to show and store: no control characters, at most 100 characters. Refused
+/// when it repeats one of `secrets` (the invite code, the device token).
+fn team_name(text: &str, secrets: &[&str]) -> Result<String, PairError> {
+    let visible: String = text.chars().filter(|c| !c.is_control()).collect();
+    if secrets.iter().any(|s| !s.is_empty() && visible.contains(s)) {
+        return Err(PairError::NotATeamsServer);
+    }
+    Ok(visible
+        .chars()
         .take(100)
         .collect::<String>()
         .trim()
-        .to_string()
+        .to_string())
+}
+
+/// A team id: a lower-case hyphenated uuid, nothing else.
+pub fn is_team_id(s: &str) -> bool {
+    s.len() == 36
+        && s.char_indices().all(|(i, c)| match i {
+            8 | 13 | 18 | 23 => c == '-',
+            _ => c.is_ascii_digit() || ('a'..='f').contains(&c),
+        })
 }

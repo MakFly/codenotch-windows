@@ -13,8 +13,18 @@
 //!
 //! Generations: every job and every report carries the generation it was made for. Turning
 //! sync off, detaching and a new pairing bump it; the worker skips jobs of an older generation
-//! and re-checks it after each request; the engine drops reports of an older one (a late
+//! and re-checks it after each request (an upload answer that comes back for an older one is
+//! dropped before it can touch a file); the engine drops reports of an older one (a late
 //! pairing result is never stored).
+//!
+//! One owner for the files: a worker holds the `teams*` files lock for its whole life. A
+//! worker started while a stopped one is still blocked in a request waits for it on its own
+//! thread (its jobs queue up meanwhile); the engine thread never waits.
+//!
+//! Policy versions: every `Policy` job carries a version, bumped by the engine when it sends
+//! it. Observations may still be queued ahead of it, but the worker sends nothing while the
+//! version it applied is not the engine's current one, so an exclusion or an origin change
+//! stops uploads at once.
 
 use super::{Engine, Msg};
 use crate::Clock;
@@ -24,6 +34,7 @@ use codenotch_core::model::{
 };
 use codenotch_core::secrets::{SecretKey, SecretValue};
 use codenotch_core::{Config, Env, HttpClient, Paths};
+use codenotch_core::{HttpError, HttpRequest, HttpResponse};
 use codenotch_teams::sync::MIN_SEND_INTERVAL_SECS;
 use codenotch_teams::{
     pairing, InviteCode, Origin, OriginError, PairError, PairingInfo, Policy, SendOutcome,
@@ -31,7 +42,7 @@ use codenotch_teams::{
 };
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 /// Observations waiting for the worker at most.
@@ -127,7 +138,10 @@ pub(crate) enum Job {
         token: SecretValue,
     },
     /// Current config: shared accounts, roots (computed on the worker), origin check.
-    Policy(Box<Config>),
+    Policy {
+        config: Box<Config>,
+        version: u64,
+    },
     Reading(Box<Reading>),
     Usage(Arc<Vec<HourlyUsage>>),
     /// Upload now ("Send now"), not waiting for the 60 s spacing or a short backoff.
@@ -200,6 +214,10 @@ struct Invite {
 /// Teams state owned by the engine thread.
 pub(crate) struct Teams {
     generation: Arc<AtomicU64>,
+    /// Version of the last `Policy` job sent (see the module docs).
+    policy_version: Arc<AtomicU64>,
+    /// Held by the running worker: the `teams*` files have one writer at a time.
+    files: Arc<Mutex<()>>,
     link: Option<Link>,
     /// Generation for which the pairing was opened on the worker (`Open` / `Activate` sent).
     opened: Option<u64>,
@@ -222,6 +240,8 @@ impl Teams {
             // Seeded from the clock: the pairing generation also binds the outbox, so it keeps
             // growing across runs.
             generation: Arc::new(AtomicU64::new(u64::try_from(now).unwrap_or(1).max(1))),
+            policy_version: Arc::new(AtomicU64::new(0)),
+            files: Arc::new(Mutex::new(())),
             link: None,
             opened: None,
             policy: None,
@@ -282,6 +302,8 @@ impl Engine {
             http: self.opts.http.clone(),
             clock: self.clock.clone(),
             current: self.teams.generation.clone(),
+            policy_version: self.teams.policy_version.clone(),
+            applied_policy: 0,
             pending: pending.clone(),
             tx: self.tx.clone(),
             sync: None,
@@ -297,10 +319,14 @@ impl Engine {
             published: None,
         };
         let wake = self.tuning.teams_wake;
+        let files = self.teams.files.clone();
         let spawned = std::thread::Builder::new()
             .name("codenotch-teams".into())
             .spawn(move || {
+                // Waits here (not on the engine thread) for a previous worker to finish.
+                let owner = files.lock().unwrap_or_else(|e| e.into_inner());
                 worker.run(rx, wake);
+                drop(owner);
                 let _ = done_tx.send(());
             });
         match spawned {
@@ -347,6 +373,17 @@ impl Engine {
             self.teams.opened = None;
         }
         sent
+    }
+
+    /// Send the current config as a new policy version: uploads stop until the worker
+    /// applied it.
+    fn teams_send_policy(&mut self) {
+        self.teams.policy = Some(self.snap.config.clone());
+        let version = self.teams.policy_version.fetch_add(1, Ordering::SeqCst) + 1;
+        self.teams_send(Job::Policy {
+            config: Box::new(self.snap.config.clone()),
+            version,
+        });
     }
 
     /// Queue an observation if the pairing is active and the queue has room.
@@ -415,8 +452,7 @@ impl Engine {
                     self.teams_send(Job::Open { token });
                 }
                 if self.teams.policy.as_ref() != Some(&self.snap.config) {
-                    self.teams.policy = Some(self.snap.config.clone());
-                    self.teams_send(Job::Policy(Box::new(self.snap.config.clone())));
+                    self.teams_send_policy();
                 }
             }
             _ => {
@@ -657,13 +693,12 @@ impl Engine {
         let generation = self.teams.bump();
         info.generation = generation;
         self.teams.opened = Some(generation);
-        self.teams.policy = Some(self.snap.config.clone());
         self.teams.status = None;
         self.teams_send(Job::Activate {
             info: Box::new(info),
             token,
         });
-        self.teams_send(Job::Policy(Box::new(self.snap.config.clone())));
+        self.teams_send_policy();
         // What is already known goes out at once.
         let fresh: Vec<Reading> = self
             .snap
@@ -709,6 +744,9 @@ struct Worker {
     clock: Clock,
     /// The engine's current generation.
     current: Arc<AtomicU64>,
+    /// The engine's current policy version, and the one applied here.
+    policy_version: Arc<AtomicU64>,
+    applied_policy: u64,
     pending: Arc<AtomicUsize>,
     tx: Sender<Msg>,
     sync: Option<TeamsSync>,
@@ -823,7 +861,7 @@ impl Worker {
                     }
                 }
             }
-            Job::Policy(config) => {
+            Job::Policy { config, version } => {
                 // Scan roots read the profile folders: done here, not on the engine thread.
                 self.owners = codenotch_analytics::root_owners(&config, &self.env);
                 let owners = std::mem::take(&mut self.owners);
@@ -837,6 +875,7 @@ impl Worker {
                 }
                 self.owners = owners;
                 self.config = Some(*config);
+                self.applied_policy = version;
             }
             Job::Reading(reading) => {
                 if let Some(sync) = self.sync_for(generation) {
@@ -878,24 +917,30 @@ impl Worker {
                 consent_version,
             } => {
                 let device_id = pairing::new_device_id();
-                let result =
-                    pairing::pair(&*self.http, &origin, &code, &device_id, consent_version)
-                        .map(|p| {
-                            Box::new(Paired {
-                                info: PairingInfo {
-                                    origin: origin.clone(),
-                                    team_id: p.team_id,
-                                    team_name: p.team_name,
-                                    device_id,
-                                    generation: 0,
-                                    consent_version,
-                                    data_epoch: p.data_epoch,
-                                    floor_at: p.floor_at,
-                                },
-                                token: p.device_token,
-                            })
-                        })
-                        .map_err(pair_message);
+                let result = pairing::pair(
+                    &*self.http,
+                    &origin,
+                    &code,
+                    &device_id,
+                    consent_version,
+                    now,
+                )
+                .map(|p| {
+                    Box::new(Paired {
+                        info: PairingInfo {
+                            origin: origin.clone(),
+                            team_id: p.team_id,
+                            team_name: p.team_name,
+                            device_id,
+                            generation: 0,
+                            consent_version,
+                            data_epoch: p.data_epoch,
+                            floor_at: p.floor_at,
+                        },
+                        token: p.device_token,
+                    })
+                })
+                .map_err(pair_message);
                 // The engine drops it when the generation moved meanwhile.
                 self.report(generation, Report::Paired(result));
             }
@@ -983,12 +1028,20 @@ impl Worker {
         if self.halted || self.origin_mismatch || self.sync_for(generation).is_none() {
             return;
         }
+        // A config change not applied yet may restrict what is allowed: wait for it.
+        if self.applied_policy != self.policy_version.load(Ordering::SeqCst) {
+            return;
+        }
         let now = (self.clock)();
         let (flush, long_pause, last_attempt) = (self.flush, self.long_pause, self.last_attempt);
         let Some(token) = self.token.clone() else {
             return;
         };
-        let http = self.http.clone();
+        let http = Current {
+            http: self.http.clone(),
+            current: self.current.clone(),
+            generation,
+        };
         let Some(sync) = self.sync.as_mut() else {
             return;
         };
@@ -1005,7 +1058,7 @@ impl Worker {
             return;
         }
         self.flush = false;
-        let outcome = sync.send(&*http, token.expose(), now);
+        let outcome = sync.send(&http, token.expose(), now);
         if outcome != SendOutcome::Nothing {
             // `Nothing` made no request (no policy yet, everything purged).
             self.last_attempt = Some(now);
@@ -1033,6 +1086,25 @@ impl Worker {
             self.published = Some(status.clone());
             self.report(generation, Report::Status(status));
         }
+    }
+}
+
+/// The worker's HTTP client for uploads: an answer that comes back after the generation moved
+/// (sync turned off, detached, paired again) is turned into a network error, so `TeamsSync`
+/// writes nothing for a pairing that is no longer current.
+struct Current {
+    http: Arc<dyn HttpClient>,
+    current: Arc<AtomicU64>,
+    generation: u64,
+}
+
+impl HttpClient for Current {
+    fn send(&self, request: &HttpRequest) -> Result<HttpResponse, HttpError> {
+        let reply = self.http.send(request);
+        if self.current.load(Ordering::SeqCst) != self.generation {
+            return Err(HttpError::Connect("teams pairing no longer current".into()));
+        }
+        reply
     }
 }
 

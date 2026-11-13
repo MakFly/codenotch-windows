@@ -20,6 +20,8 @@ const ORIGIN: &str = "http://127.0.0.1:47999";
 const INVITE_A: &str = "http://127.0.0.1:47999/j/teama-code-0001";
 const INVITE_B: &str = "http://127.0.0.1:47999/j/teamb-code-0002";
 const WAIT: Duration = Duration::from_secs(10);
+const TEAM_A: &str = "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d";
+const TEAM_B: &str = "1b2c3d4e-5f6a-4b7c-9d8e-0f1a2b3c4d5e";
 
 // ---------------------------------------------------------------------------------------------
 // Fake Teams server (sequenced: scripted statuses for uploads, an optional gate)
@@ -30,7 +32,8 @@ struct Server {
     log: Mutex<Vec<HttpRequest>>,
     /// Statuses for the next `/v1/events` calls (then 200 accepting every event).
     uploads: Mutex<VecDeque<u16>>,
-    /// Requests whose URL contains this path wait for `release` (after signalling `entered`).
+    /// Requests whose URL contains this path wait for `release` (after signalling `entered`),
+    /// then get a 200 (an upload: every event accepted) whatever `uploads` holds.
     gate: Mutex<Option<&'static str>>,
     entered: Mutex<Option<std::sync::mpsc::Sender<()>>>,
     release: Mutex<Option<std::sync::mpsc::Receiver<()>>>,
@@ -101,6 +104,10 @@ impl HttpClient for Server {
             if let Some(rx) = rx {
                 let _ = rx.recv();
             }
+            if req.url.ends_with("/v1/events") {
+                let ack = serde_json::json!({ "accepted": event_ids(req), "duplicate": [], "rejected": [] });
+                return Ok(HttpResponse::new(200, ack.to_string().into_bytes()));
+            }
         }
         let Some(path) = req.url.strip_prefix(ORIGIN) else {
             return Err(HttpError::Connect("unknown host".into()));
@@ -125,7 +132,7 @@ impl HttpClient for Server {
                 200,
                 serde_json::json!({
                     "deviceToken": if team_b { "tok-B" } else { "tok-A" },
-                    "teamId": if team_b { "team-b" } else { "team-a" },
+                    "teamId": if team_b { TEAM_B } else { TEAM_A },
                     "teamName": if team_b { "Team B" } else { "Team A" },
                     "dataEpoch": 1,
                     "floorAt": T0 - 3600
@@ -610,6 +617,65 @@ fn an_account_excluded_after_enqueue_is_purged_before_sending() {
     let last = server.uploads().last().cloned().unwrap();
     assert_eq!(snapshots_with_windows(&last), 0, "{}", body(&last));
     r.e.teams_shutdown();
+}
+
+#[test]
+fn an_exclusion_stops_uploads_before_queued_observations_are_handled() {
+    let server = Arc::new(Server::default());
+    let mut r = rig(true, &server);
+    r.pair(INVITE_A, "Team A");
+    // The worker is blocked in an upload of a reading still allowed.
+    let (entered, release) = server.hold("/v1/events");
+    r.reading(40.0);
+    entered.recv_timeout(WAIT).expect("upload started");
+    let held = server.uploads().len();
+    // Observations queue up behind it, then the account is excluded.
+    r.reading(45.0);
+    r.reading(50.0);
+    r.save(|c| c.settings.teams_excluded_accounts = vec!["c1".into()]);
+    // Next upload due as soon as the worker is free again.
+    r.advance(120);
+    drop(release);
+    r.pump(|e| e.snap.teams.state == TeamsState::Active && e.snap.teams.queued == 0);
+    r.settle(100);
+    assert!(server.uploads().len() > held, "the tombstone went out");
+    for q in &server.uploads()[held..] {
+        assert_eq!(snapshots_with_windows(q), 0, "{}", body(q));
+    }
+    r.e.teams_shutdown();
+}
+
+#[test]
+fn off_and_on_during_an_upload_keeps_one_writer() {
+    let server = Arc::new(Server::default());
+    let mut r = rig(true, &server);
+    r.pair(INVITE_A, "Team A");
+    // The old worker is blocked in an upload (that will be accepted) …
+    let (entered, release) = server.hold("/v1/events");
+    r.reading(40.0);
+    entered.recv_timeout(WAIT).expect("upload started");
+    // … while sync goes off and on: a new worker, whose uploads fail.
+    r.save(|c| c.settings.teams_sync_enabled = false);
+    r.save(|c| c.settings.teams_sync_enabled = true);
+    server.uploads.lock().unwrap().extend([503; 8]);
+    r.advance(120);
+    r.reading(60.0);
+    r.settle(200);
+    drop(release);
+    r.pump(|e| e.snap.teams.state == TeamsState::Paused && e.snap.teams.queued > 0);
+    // Let the old worker finish with its answer.
+    r.settle(300);
+    r.e.teams_shutdown();
+    // The old worker's late answer changed no file: the second snapshot is still queued and
+    // its sequence number is recorded, so it is neither lost nor reused.
+    let paths = Paths::at(r.data.clone());
+    let state = codenotch_teams::state::StateFile::load(&paths.teams_state())
+        .unwrap()
+        .expect("still paired");
+    assert_eq!(state.snapshots.len(), 1);
+    assert_eq!(state.snapshots[0].seq, 2);
+    let sync = TeamsSync::open(&paths).unwrap().expect("still paired");
+    assert!(sync.queued() >= 1);
 }
 
 #[test]

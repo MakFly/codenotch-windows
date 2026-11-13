@@ -1441,4 +1441,23 @@ mod tests {
         s.analytics_days = 10_000;
         assert_eq!(period_days(&s), 366);
     }
+
+    #[test]
+    fn report_debug_hides_the_hourly_export_paths_and_models() {
+        let report = AnalyticsReport {
+            hourly: Arc::new(vec![HourlyUsage {
+                hour: 3600,
+                source: r"C:\Users\alice\.codex\sessions".into(),
+                provider: ProviderKind::Codex,
+                model: "C_Users_alice_secret-repo".into(),
+                ..Default::default()
+            }]),
+            ..Default::default()
+        };
+        let text = format!("{report:?}");
+        assert!(
+            !text.contains("alice") && !text.contains("secret-repo"),
+            "{text}"
+        );
+    }
 }

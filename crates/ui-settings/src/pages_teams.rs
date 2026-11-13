@@ -11,7 +11,7 @@ use crate::widgets::{
     FONT,
 };
 use codenotch_core::format;
-use codenotch_core::model::TeamsState;
+use codenotch_core::model::{TeamsState, TeamsVisibility};
 use codenotch_core::secrets::SecretValue;
 use codenotch_core::{Command, Lang, Snapshot, TeamsPayer};
 use codenotch_ui_kit::Theme;
@@ -219,10 +219,10 @@ impl SettingsView {
             )
             .into_any_element()];
             if let Some(preview) = &status.preview {
-                let sees = if preview.visibility == "named" {
-                    t(lang, "Your team admin sees your usage by name").to_string()
-                } else {
-                    tf(lang, "Visibility: {v}", &[("v", &preview.visibility)])
+                let sees = match preview.visibility {
+                    TeamsVisibility::Named => {
+                        t(lang, "Your team admin sees your usage by name").to_string()
+                    }
                 };
                 join.push(
                     item(

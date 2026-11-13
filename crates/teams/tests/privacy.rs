@@ -5,7 +5,10 @@ mod common;
 
 use codenotch_core::analytics::{HourlyUsage, RootOwners};
 use codenotch_core::model::{ActivityState, ReadingStatus, SessionInfo, WindowKind};
+use codenotch_core::TeamsVisibility;
 use codenotch_core::{FakeHttp, LimitWindow, ProviderKind, Reading, TeamsPayer, TokenCounts};
+use codenotch_teams::state::StateFile;
+use codenotch_teams::sync::BACKFILL_SECS;
 use codenotch_teams::{pairing, InviteCode, Origin, PairError, Policy, TeamsSync};
 use common::*;
 
@@ -172,12 +175,12 @@ fn sentinels_never_reach_the_wire_the_disk_or_debug() {
             &format!("{ORIGIN}/v1/devices/pair"),
             200,
             &format!(
-                r#"{{"deviceToken":"{DEVICE_TOKEN}","teamId":"t1","teamName":"Acme","dataEpoch":1,"floorAt":{H0}}}"#
+                r#"{{"deviceToken":"{DEVICE_TOKEN}","teamId":"{TEAM_ID}","teamName":"Acme","dataEpoch":1,"floorAt":{H0}}}"#
             ),
         )
         .on(&format!("{ORIGIN}/v1/"), 200, "{}");
     pairing::preview(&fake, &origin, &code).unwrap();
-    let paired = pairing::pair(&fake, &origin, &code, DEVICE, 1).unwrap();
+    let paired = pairing::pair(&fake, &origin, &code, DEVICE, 1, NOW).unwrap();
     assert!(!format!("{paired:?}").contains(DEVICE_TOKEN));
     pairing::declare_account(
         &fake,
@@ -270,11 +273,11 @@ fn pairing_errors_and_redirects() {
         Err(PairError::NotATeamsServer)
     );
     assert_eq!(
-        pairing::pair(&http, &origin, &code, DEVICE, 1).unwrap_err(),
+        pairing::pair(&http, &origin, &code, DEVICE, 1, NOW).unwrap_err(),
         PairError::NotATeamsServer
     );
     assert_eq!(
-        pairing::pair(&http, &origin, &code, DEVICE, 1).unwrap_err(),
+        pairing::pair(&http, &origin, &code, DEVICE, 1, NOW).unwrap_err(),
         PairError::UpdateRequired
     );
     assert_eq!(
@@ -356,4 +359,140 @@ fn not_paired_means_no_file_and_no_request() {
     let f = fixture();
     assert!(TeamsSync::open(&f.paths).unwrap().is_none());
     assert!(!f.paths.root().exists());
+}
+
+/// A pairing reply with these fields.
+fn pair_reply(token: &str, team_id: &str, team_name: &str, floor_at: i64) -> Reply {
+    Reply::Status(
+        200,
+        serde_json::json!({
+            "deviceToken": token,
+            "teamId": team_id,
+            "teamName": team_name,
+            "dataEpoch": 1,
+            "floorAt": floor_at,
+        })
+        .to_string(),
+    )
+}
+
+#[test]
+fn the_server_floor_never_lowers_the_local_consent() {
+    let origin = Origin::parse(ORIGIN).unwrap();
+    let code = InviteCode::parse("invite-code-123", &origin).unwrap();
+    let pair_at = |floor_at: i64| {
+        let http = SeqHttp::new(vec![pair_reply(DEVICE_TOKEN, TEAM_ID, "Acme", floor_at)]);
+        pairing::pair(&http, &origin, &code, DEVICE, 1, NOW).map(|p| p.floor_at)
+    };
+    // Old and extreme dates: the floor is the local pairing time.
+    for old in [1, 0, -1, i64::MIN, NOW - 30 * 86_400, NOW - 1] {
+        assert_eq!(pair_at(old), Ok(NOW), "{old}");
+    }
+    // A later server floor (clock skew) is kept; beyond a day ahead the reply is refused.
+    assert_eq!(pair_at(NOW + 3600), Ok(NOW + 3600));
+    for future in [NOW + 2 * 86_400, i64::MAX] {
+        assert_eq!(pair_at(future), Err(PairError::NotATeamsServer), "{future}");
+    }
+
+    // Without the backfill agreement nothing before the pairing leaves, with it 45 days only.
+    let f = fixture();
+    let mut paired = info("a");
+    paired.floor_at = pair_at(1).unwrap();
+    let mut s = TeamsSync::create(&f.paths, paired).unwrap();
+    s.set_policy(&f.config, &f.owners, NOW).unwrap();
+    assert_eq!(s.observe_usage(&[claude(H0, 1)], NOW).unwrap(), 0);
+    s.allow_backfill(true).unwrap();
+    assert_eq!(s.effective_floor(), NOW - BACKFILL_SECS);
+    assert_eq!(
+        s.observe_usage(&[claude(NOW - BACKFILL_SECS - 3600, 1)], NOW)
+            .unwrap(),
+        0
+    );
+
+    // A floor at the edge of the range does not overflow with the backfill agreement.
+    let f = fixture();
+    let mut extreme = info("a");
+    extreme.floor_at = i64::MIN;
+    let mut s = TeamsSync::create(&f.paths, extreme).unwrap();
+    s.allow_backfill(true).unwrap();
+    assert_eq!(s.effective_floor(), i64::MIN);
+}
+
+#[test]
+fn pairing_replies_stay_in_the_closed_contract() {
+    let origin = Origin::parse(ORIGIN).unwrap();
+    let invite = "invite-code-123";
+    let code = InviteCode::parse(invite, &origin).unwrap();
+    let preview = |team_name: &str, visibility: &str| {
+        let body = serde_json::json!({
+            "teamName": team_name, "visibility": visibility, "consentVersion": 1
+        });
+        let http = SeqHttp::new(vec![Reply::Status(200, body.to_string())]);
+        pairing::preview(&http, &origin, &code)
+    };
+    // Visibility: a value of the closed set, nothing else.
+    for visibility in [EMAIL, invite, DEVICE_TOKEN, "Named", "named ", ""] {
+        assert_eq!(
+            preview("Acme", visibility),
+            Err(PairError::UpdateRequired),
+            "{visibility}"
+        );
+    }
+    assert_eq!(
+        preview(&format!("Acme {invite}"), "named"),
+        Err(PairError::NotATeamsServer)
+    );
+    let shown = preview(&format!("Acme {EMAIL}"), "named").unwrap();
+    assert_eq!(shown.visibility, TeamsVisibility::Named);
+    assert!(!format!("{shown:?}").contains(EMAIL));
+
+    let pair = |token: &str, team_id: &str, team_name: &str| {
+        let http = SeqHttp::new(vec![pair_reply(token, team_id, team_name, H0)]);
+        pairing::pair(&http, &origin, &code, DEVICE, 1, NOW)
+    };
+    // Team id: a lower-case uuid, never a value the member or the token could carry.
+    let uuid_token = "9d4e1c2b-3a5f-4e6d-8c7b-1a2b3c4d5e6f";
+    for (token, team_id) in [
+        (DEVICE_TOKEN, EMAIL),
+        (DEVICE_TOKEN, invite),
+        (DEVICE_TOKEN, DEVICE_TOKEN),
+        (DEVICE_TOKEN, "t1"),
+        (DEVICE_TOKEN, "3B2F0C4E-5D6A-4B7C-8D9E-0F1A2B3C4D5E"),
+        (DEVICE_TOKEN, "3b2f0c4e5d6a4b7c8d9e0f1a2b3c4d5e"),
+        (uuid_token, uuid_token),
+    ] {
+        assert_eq!(
+            pair(token, team_id, "Acme").unwrap_err(),
+            PairError::NotATeamsServer,
+            "{team_id}"
+        );
+    }
+    // Team name: free text, but never the invite code or the device token.
+    for name in [
+        format!("Acme {invite}"),
+        DEVICE_TOKEN.to_string(),
+        format!("A\u{7}{DEVICE_TOKEN}"),
+    ] {
+        assert_eq!(
+            pair(DEVICE_TOKEN, TEAM_ID, &name).unwrap_err(),
+            PairError::NotATeamsServer
+        );
+    }
+    // An e-mail in the name is kept (shown and stored) but never in `Debug`.
+    let paired = pair(DEVICE_TOKEN, TEAM_ID, &format!("Acme {EMAIL}")).unwrap();
+    assert_eq!(paired.team_name, format!("Acme {EMAIL}"));
+    let f = fixture();
+    let mut info = info("a");
+    info.team_id = paired.team_id.clone();
+    info.team_name = paired.team_name.clone();
+    let s = TeamsSync::create(&f.paths, info.clone()).unwrap();
+    let state = StateFile::load(&f.paths.teams_state()).unwrap().unwrap();
+    let debug = format!(
+        "{paired:?} {info:?} {s:?} {:?} {state:?} {:?}",
+        s.status(),
+        s.binding()
+    );
+    for secret in [EMAIL, TEAM_ID, DEVICE_TOKEN, invite] {
+        assert!(!debug.contains(secret), "{secret} in {debug}");
+    }
 }

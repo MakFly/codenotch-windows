@@ -35,8 +35,8 @@ pub const MAX_EVENTS: usize = 10_000;
 /// Most bytes kept in the queue.
 pub const MAX_BYTES: u64 = 20 * 1024 * 1024;
 
-/// What the queue (and every event in it) is bound to.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// What the queue (and every event in it) is bound to. `Debug` leaves out the team id.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Binding {
     pub origin: String,
@@ -45,6 +45,17 @@ pub struct Binding {
     pub generation: u64,
     pub consent_version: u32,
     pub data_epoch: u32,
+}
+
+impl std::fmt::Debug for Binding {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Binding")
+            .field("origin", &self.origin)
+            .field("generation", &self.generation)
+            .field("consent_version", &self.consent_version)
+            .field("data_epoch", &self.data_epoch)
+            .finish_non_exhaustive()
+    }
 }
 
 #[derive(Serialize, Deserialize)]

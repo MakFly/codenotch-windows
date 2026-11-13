@@ -4,6 +4,7 @@ mod common;
 
 use codenotch_core::model::TeamsState;
 use codenotch_core::{HttpResponse, Method};
+use codenotch_teams::sync::BACKFILL_SECS;
 use codenotch_teams::{i18n, PauseReason, SendOutcome, TeamsSync};
 use codenotch_teams_schema::Batch;
 use common::*;
@@ -341,4 +342,32 @@ fn excluded_after_queueing_is_purged_before_sending() {
     let http = SeqHttp::new(vec![accept_all()]);
     assert_eq!(s.send(&http, TOKEN, NOW), SendOutcome::Nothing);
     assert!(http.requests().is_empty());
+}
+
+#[test]
+fn epoch_changed_never_moves_the_floor_back() {
+    let conflict = |floor_at: &serde_json::Value| {
+        Reply::Status(
+            409,
+            serde_json::json!({ "error": "epoch_changed", "dataEpoch": 2, "floorAt": floor_at })
+                .to_string(),
+        )
+    };
+    let cases = [
+        (serde_json::json!(1), H0),
+        (serde_json::json!(i64::MIN), H0),
+        (serde_json::json!(i64::MAX), NOW),
+        (serde_json::Value::Null, NOW),
+        (serde_json::json!(NOW - 3600), NOW - 3600),
+    ];
+    for (floor_at, expected) in cases {
+        let f = fixture();
+        let mut s = start(&f);
+        queue(&mut s, 1);
+        let http = SeqHttp::new(vec![conflict(&floor_at)]);
+        assert_eq!(s.send(&http, TOKEN, NOW), SendOutcome::EpochChanged);
+        assert_eq!(s.effective_floor(), expected, "{floor_at}");
+        s.allow_backfill(true).unwrap();
+        assert_eq!(s.effective_floor(), expected - BACKFILL_SECS);
+    }
 }

@@ -836,8 +836,8 @@ pub enum TeamsState {
 }
 
 /// Teams sync status in the [`Snapshot`]. Holds no secret: the device token's presence is
-/// implied by the state, never its value.
-#[derive(Debug, Clone, PartialEq, Default)]
+/// implied by the state, never its value. `Debug` leaves out the team name (server text).
+#[derive(Clone, PartialEq, Default)]
 pub struct TeamsStatus {
     pub state: TeamsState,
     /// Name of the paired team. `None` = not paired.
@@ -860,13 +860,59 @@ pub struct TeamsStatus {
 }
 
 /// What an invite shows before the member accepts it. Holds no secret (not the invite code).
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+/// `team_name` is free text chosen by the team admin, shown and stored as is (control
+/// characters removed, at most 100 characters); `Debug` leaves it out.
+#[derive(Clone, PartialEq, Eq, Default)]
 pub struct TeamsInvitePreview {
     pub team_name: String,
-    /// What the team sees, as the server names it (`named`: usage by member name).
-    pub visibility: String,
+    /// What the team sees.
+    pub visibility: TeamsVisibility,
     /// Server origin the invite points to (`scheme://host[:port]`).
     pub origin: String,
+}
+
+/// What a team sees of its members (closed set of the pairing contract; an invite with any
+/// other value is refused).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum TeamsVisibility {
+    /// Usage by member name (`named`).
+    #[default]
+    Named,
+}
+
+impl TeamsVisibility {
+    /// The contract value (`None` = not in the closed set).
+    pub fn parse(value: &str) -> Option<TeamsVisibility> {
+        match value {
+            "named" => Some(TeamsVisibility::Named),
+            _ => None,
+        }
+    }
+}
+
+impl std::fmt::Debug for TeamsStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TeamsStatus")
+            .field("state", &self.state)
+            .field("paired", &self.team_name.is_some())
+            .field("queued", &self.queued)
+            .field("last_sent_at", &self.last_sent_at)
+            .field("last_error", &self.last_error)
+            .field("origin", &self.origin)
+            .field("backfill", &self.backfill)
+            .field("preview", &self.preview)
+            .field("busy", &self.busy)
+            .finish()
+    }
+}
+
+impl std::fmt::Debug for TeamsInvitePreview {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TeamsInvitePreview")
+            .field("visibility", &self.visibility)
+            .field("origin", &self.origin)
+            .finish_non_exhaustive()
+    }
 }
 
 /// Who pays for an account's plan, as the member declares it to the team.

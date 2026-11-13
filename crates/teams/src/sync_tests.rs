@@ -370,3 +370,39 @@ fn records_of_another_schema_version_are_never_sent() {
     assert_eq!(s.send(&http, "t", NOW), SendOutcome::Nothing);
     assert!(http.requests().is_empty());
 }
+
+#[test]
+fn purged_hours_come_back_under_a_new_revision_once_allowed_again() {
+    let f = fixture();
+    let mut s = start(&f);
+    // Before the pairing floor, so older than the 72-hour window too.
+    let before = H0 - 5 * 86_400;
+    let recent = NOW - 3600;
+    let rows = [claude(before, 7), claude(recent, 3)];
+    s.allow_backfill(true).unwrap();
+    assert_eq!(s.observe_usage(&rows, NOW).unwrap(), 2);
+    // Withdrawn before any upload was acknowledged: purged from the queue.
+    s.allow_backfill(false).unwrap();
+    assert_eq!(usage(&s), [(recent, 1, 3)]);
+    // Restart, then agree again: the same totals are queued again, never under revision 1.
+    let mut s = reopen(&f);
+    s.allow_backfill(true).unwrap();
+    assert_eq!(s.observe_usage(&rows, NOW).unwrap(), 1);
+    let mut got = usage(&s);
+    got.sort();
+    assert_eq!(got, [(before, 2, 7), (recent, 1, 3)]);
+    // Queued again: unchanged totals queue nothing more.
+    assert_eq!(s.observe_usage(&rows, NOW).unwrap(), 0);
+
+    // Same through an exclusion: both hours purged, then queued again after a restart.
+    let mut config = f.config.clone();
+    config.settings.teams_excluded_accounts = vec!["c1".into()];
+    s.set_policy(&config, &f.owners, NOW).unwrap();
+    assert!(usage(&s).is_empty());
+    let mut s = reopen(&f);
+    s.allow_backfill(true).unwrap();
+    assert_eq!(s.observe_usage(&rows, NOW).unwrap(), 2);
+    let mut got = usage(&s);
+    got.sort();
+    assert_eq!(got, [(before, 3, 7), (recent, 2, 3)]);
+}

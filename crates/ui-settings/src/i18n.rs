@@ -467,10 +467,6 @@ pub static FR: &[(&str, &str)] = &[
         "L'administrateur de votre équipe voit votre usage à votre nom",
     ),
     (
-        "Visibility: {v}",
-        "Visibilité : {v}",
-    ),
-    (
         "Server: {origin}",
         "Serveur : {origin}",
     ),
