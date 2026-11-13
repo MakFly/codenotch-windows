@@ -1,4 +1,5 @@
-//! Secrets (Telegram bot token, Discord webhook URL, custom-endpoint tokens).
+//! Secrets (Telegram bot token, Discord webhook URL, custom-endpoint tokens, Teams device
+//! token).
 //!
 //! Never stored in `config.gpui.json`, `state.json`, history, snapshots or logs. The real store
 //! is the Windows Credential Manager (`codenotch_platform::secrets::CredentialStore`, generic
@@ -6,7 +7,8 @@
 //! [`SecretValue`], whose `Debug` prints `***`.
 //!
 //! Lookup order ([`resolve_secret`]): environment variable first (fixed name for Telegram /
-//! Discord, the variable NAMED by `Account::secret_env` for an account), then the store.
+//! Discord, the variable NAMED by `Account::secret_env` for an account), then the store. The
+//! Teams device token has no environment variable: it lives in the store only.
 
 use crate::config::Config;
 use crate::provider::Env;
@@ -25,26 +27,31 @@ pub enum SecretKey {
     DiscordWebhook,
     /// Bearer token of one account (custom endpoint, API-key providers), by account id.
     Account(String),
+    /// Device token issued by a CodeNotch Teams server at pairing. Credential Manager only.
+    TeamsDeviceToken,
 }
 
 impl SecretKey {
     /// Credential Manager target: `CodeNotch/telegram-token`, `CodeNotch/discord-webhook`,
-    /// `CodeNotch/account/<id>`.
+    /// `CodeNotch/account/<id>`, `CodeNotch/teams-device-token`.
     pub fn target_name(&self) -> String {
         match self {
             SecretKey::TelegramToken => format!("{TARGET_PREFIX}telegram-token"),
             SecretKey::DiscordWebhook => format!("{TARGET_PREFIX}discord-webhook"),
             SecretKey::Account(id) => format!("{TARGET_PREFIX}account/{id}"),
+            SecretKey::TeamsDeviceToken => format!("{TARGET_PREFIX}teams-device-token"),
         }
     }
 
-    /// Fixed environment variable for the two app-wide secrets; `None` for accounts (their
-    /// variable name comes from `Account::secret_env`, see [`resolve_secret`]).
+    /// Fixed environment variable for the Telegram and Discord secrets; `None` for accounts
+    /// (their variable name comes from `Account::secret_env`, see [`resolve_secret`]) and for
+    /// the Teams device token (store only: an environment variable could leak it to child
+    /// processes and is not tied to the pairing).
     pub fn env_var(&self) -> Option<&'static str> {
         match self {
             SecretKey::TelegramToken => Some(TELEGRAM_TOKEN_ENV),
             SecretKey::DiscordWebhook => Some(DISCORD_WEBHOOK_ENV),
-            SecretKey::Account(_) => None,
+            SecretKey::Account(_) | SecretKey::TeamsDeviceToken => None,
         }
     }
 }
@@ -220,6 +227,29 @@ mod tests {
             Some("CODENOTCH_TELEGRAM_TOKEN")
         );
         assert_eq!(SecretKey::Account("a".into()).env_var(), None);
+        assert_eq!(
+            SecretKey::TeamsDeviceToken.target_name(),
+            "CodeNotch/teams-device-token"
+        );
+        assert_eq!(SecretKey::TeamsDeviceToken.env_var(), None);
+    }
+
+    #[test]
+    fn teams_device_token_comes_from_the_store_only() {
+        let store = MemorySecrets::new();
+        let env = Env::for_test(Path::new("."))
+            .with_var("CODENOTCH_TEAMS_DEVICE_TOKEN", "from-env")
+            .with_var("CODENOTCH_TEAMS_TOKEN", "from-env");
+        let key = SecretKey::TeamsDeviceToken;
+        assert_eq!(resolve_secret(&key, &env, &store), None);
+        store.set(&key, "cnt_s3cr3t").unwrap();
+        assert_eq!(
+            resolve_secret(&key, &env, &store).as_deref(),
+            Some("cnt_s3cr3t")
+        );
+        assert!(!format!("{store:?}").contains("s3cr3t"));
+        let cmd = crate::Command::TeamsPair(SecretValue::new("https://x/invite/s3cr3t"));
+        assert!(!format!("{cmd:?}").contains("s3cr3t"));
     }
 
     #[test]

@@ -1217,7 +1217,8 @@ impl SettingsView {
         let field = match key {
             SecretKey::TelegramToken => Field::TelegramToken,
             SecretKey::DiscordWebhook => Field::DiscordWebhook,
-            SecretKey::Account(_) => return,
+            // The Teams device token is issued at pairing, never typed in a field.
+            SecretKey::Account(_) | SecretKey::TeamsDeviceToken => return,
         };
         let value = self.value(field, cx);
         if value.trim().is_empty() {

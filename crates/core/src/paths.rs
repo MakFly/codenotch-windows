@@ -58,6 +58,16 @@ impl Paths {
     pub fn hook_token(&self) -> PathBuf {
         self.root.join("auth_token")
     }
+    /// `teams-outbox.jsonl`: Teams events waiting to be sent (owned by `codenotch-teams`;
+    /// exists only while the device is paired and Teams sync is on).
+    pub fn teams_outbox(&self) -> PathBuf {
+        self.root.join("teams-outbox.jsonl")
+    }
+    /// `teams.json`: Teams pairing state and cursors, no secret (owned by `codenotch-teams`;
+    /// exists only once the device is paired).
+    pub fn teams_state(&self) -> PathBuf {
+        self.root.join("teams.json")
+    }
     /// `logs\`
     pub fn logs_dir(&self) -> PathBuf {
         self.root.join("logs")
@@ -154,6 +164,11 @@ mod tests {
         assert_eq!(p.history(), PathBuf::from("X:/data/history.jsonl"));
         assert_eq!(p.logs_dir(), PathBuf::from("X:/data/logs"));
         assert!(p.state().ends_with("state.json"));
+        assert_eq!(
+            p.teams_outbox(),
+            PathBuf::from("X:/data/teams-outbox.jsonl")
+        );
+        assert_eq!(p.teams_state(), PathBuf::from("X:/data/teams.json"));
     }
 
     #[test]

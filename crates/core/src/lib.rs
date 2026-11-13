@@ -47,7 +47,7 @@ pub use analytics::{
 };
 pub use config::{
     Account, ColorTransition, Config, Edge, NotchSize, Settings, ShowMode, TaskbarMode, ThemeMode,
-    UpdateMode, WeeklyRing, WidgetPlacement, DEFAULT_UPDATE_MANIFEST_URL,
+    UpdateMode, WeeklyRing, WidgetPlacement, DEFAULT_UPDATE_MANIFEST_URL, TEAMS_OFFICIAL_ORIGIN,
 };
 pub use error::{Error, Result};
 pub use format::Grade;
@@ -57,7 +57,8 @@ pub use i18n::{tr, trf, Lang};
 pub use model::{
     AccountView, ActivityState, Alert, AlertKind, AnalyticsSummary, Command, DailyUsage, Event,
     EventSink, LimitWindow, ModelUsage, ProviderKind, ProviderUsage, Reading, ReadingStatus,
-    SessionInfo, Snapshot, TokenCounts, UpdateState, WindowKind,
+    SessionInfo, Snapshot, TeamsPayer, TeamsState, TeamsStatus, TokenCounts, UpdateState,
+    WindowKind,
 };
 pub use paths::Paths;
 pub use provider::{Env, FetchContext, LocalIdentity, Provider};

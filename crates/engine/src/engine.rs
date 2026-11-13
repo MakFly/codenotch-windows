@@ -983,6 +983,17 @@ impl Engine {
                 self.snap.secrets = SecretsPresent::detect(&self.opts.env, &*self.opts.secrets);
             }
             Command::ToggleNotch => self.snap.notch_hidden = !self.snap.notch_hidden,
+            // Teams sync is not wired into the engine yet: these commands do nothing (no
+            // request, no file) and the status stays `Off`.
+            Command::TeamsPreviewInvite(_)
+            | Command::TeamsPair(_)
+            | Command::TeamsDetach
+            | Command::TeamsFlush
+            | Command::TeamsAllowBackfill(_)
+            | Command::TeamsDeclareAccount { .. }
+            | Command::TeamsEraseServerData => {
+                log::debug!("teams: command ignored (sync not available in this build)");
+            }
             Command::Quit => {}
         }
     }
