@@ -229,6 +229,10 @@ pub enum UpdateMode {
 pub const DEFAULT_UPDATE_MANIFEST_URL: &str =
     "https://raw.githubusercontent.com/MakFly/codenotch-windows/main/update.json";
 
+/// Origin of the official CodeNotch Teams server, compiled in. Empty until one is chosen:
+/// pairing then needs `teamsEndpoint`.
+pub const TEAMS_OFFICIAL_ORIGIN: &str = "";
+
 /// `antigravityLimit`: which lane the Antigravity ring reads.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum AntigravityLimit {
@@ -492,6 +496,32 @@ pub struct Settings {
     #[serde(default)]
     pub settings_sidebar_collapsed: bool,
 
+    // ----- Teams sync (off / empty by default and then not written, so a file without them
+    // is saved exactly as before) -----
+    /// Share usage with a CodeNotch Teams server. Off by default; while off, Teams makes no
+    /// request and creates no file.
+    #[serde(
+        default,
+        deserialize_with = "lenient",
+        skip_serializing_if = "std::ops::Not::not"
+    )]
+    pub teams_sync_enabled: bool,
+    /// Teams server origin (`https://host[:port]`). Empty = [`TEAMS_OFFICIAL_ORIGIN`]; set it
+    /// for development or a self-hosted server. See [`Settings::teams_origin`].
+    #[serde(
+        default,
+        deserialize_with = "lenient",
+        skip_serializing_if = "String::is_empty"
+    )]
+    pub teams_endpoint: String,
+    /// Account ids never shared with the team (no quota, no usage).
+    #[serde(
+        default,
+        deserialize_with = "lenient",
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    pub teams_excluded_accounts: Vec<String>,
+
     /// Unknown keys, preserved verbatim.
     #[serde(flatten)]
     pub extra: Map<String, Value>,
@@ -553,6 +583,9 @@ impl Default for Settings {
             antigravity_limit: AntigravityLimit::default(),
             antigravity_model: AntigravityModel::default(),
             settings_sidebar_collapsed: false,
+            teams_sync_enabled: false,
+            teams_endpoint: String::new(),
+            teams_excluded_accounts: Vec::new(),
             extra: Map::new(),
         }
     }
@@ -696,6 +729,23 @@ impl Settings {
             "" => DEFAULT_UPDATE_MANIFEST_URL,
             url => url,
         }
+    }
+
+    /// Teams server origin: `teamsEndpoint` when set, else [`TEAMS_OFFICIAL_ORIGIN`]; `None`
+    /// when both are empty. The value is not checked here (the Teams crate applies its own
+    /// origin policy before any request).
+    pub fn teams_origin(&self) -> Option<&str> {
+        match self.teams_endpoint.trim() {
+            "" => Some(TEAMS_OFFICIAL_ORIGIN.trim()).filter(|o| !o.is_empty()),
+            endpoint => Some(endpoint),
+        }
+    }
+
+    /// The account is excluded from Teams sharing (`teamsExcludedAccounts`).
+    pub fn teams_excludes(&self, account_id: &str) -> bool {
+        self.teams_excluded_accounts
+            .iter()
+            .any(|id| id == account_id)
     }
 
     /// Automatic refresh period, clamped to 30..=300 s.
@@ -1132,6 +1182,106 @@ mod tests {
             .map(|_| Account::new(ProviderKind::Claude, "c").id)
             .collect();
         assert_eq!(ids.len(), 200);
+    }
+
+    /// What 0.1.0 wrote for [`OWNER_SHAPE`] and for a fresh install (`Config::to_json`).
+    const OWNER_SAVED_BY_0_1_0: &str = include_str!("testdata/config-0.1.0-owner-saved.json");
+    const DEFAULT_SAVED_BY_0_1_0: &str = include_str!("testdata/config-0.1.0-default-saved.json");
+
+    /// The fixtures may be checked out with CRLF line ends.
+    fn lf(text: &str) -> String {
+        text.replace("\r\n", "\n")
+    }
+
+    #[test]
+    fn config_without_teams_keys_is_saved_as_0_1_0_saved_it() {
+        let config = Config::parse(OWNER_SHAPE).unwrap();
+        assert!(!config.settings.teams_sync_enabled);
+        assert_eq!(config.to_json().unwrap(), lf(OWNER_SAVED_BY_0_1_0));
+        assert_eq!(
+            Config::default().to_json().unwrap(),
+            lf(DEFAULT_SAVED_BY_0_1_0)
+        );
+        // A file saved by 0.1.0 loads back to the same config and saves the same.
+        let reloaded = Config::parse(OWNER_SAVED_BY_0_1_0).unwrap();
+        assert_eq!(reloaded, config);
+        let out = serde_json::to_value(&reloaded).unwrap();
+        assert!(out["settings"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .all(|k| !k.starts_with("teams")));
+    }
+
+    #[test]
+    fn teams_keys_round_trip_beside_unknown_keys() {
+        let raw = r#"{"settings":{"teamsSyncEnabled":true,"teamsEndpoint":" http://127.0.0.1:8080 ",
+                      "teamsExcludedAccounts":["acc-2"],"futureTeamsThing":{"a":1}},
+                      "topLevelThing":"keep"}"#;
+        let config = Config::parse(raw).unwrap();
+        let s = &config.settings;
+        assert!(s.teams_sync_enabled);
+        assert_eq!(s.teams_origin(), Some("http://127.0.0.1:8080"));
+        assert!(s.teams_excludes("acc-2") && !s.teams_excludes("acc-1"));
+        // Known Teams keys are fields, not `extra` (written once); unknown keys survive.
+        for key in ["teamsSyncEnabled", "teamsEndpoint", "teamsExcludedAccounts"] {
+            assert!(!s.extra.contains_key(key), "{key}");
+        }
+        let text = config.to_json().unwrap();
+        assert_eq!(text.matches("\"teamsSyncEnabled\"").count(), 1);
+        let out: Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(out["settings"]["teamsSyncEnabled"], true);
+        assert_eq!(out["settings"]["teamsExcludedAccounts"][0], "acc-2");
+        assert_eq!(out["settings"]["futureTeamsThing"]["a"], 1);
+        assert_eq!(out["topLevelThing"], "keep");
+        assert_eq!(Config::parse(&text).unwrap(), config);
+    }
+
+    #[test]
+    fn teams_key_kept_in_extra_by_an_older_build_becomes_the_field() {
+        // An older build kept the keys in `extra` (unknown to it) and wrote them back verbatim.
+        let mut old = Config::parse(OWNER_SHAPE).unwrap();
+        old.settings
+            .extra
+            .insert("teamsSyncEnabled".into(), Value::Bool(true));
+        old.settings
+            .extra
+            .insert("teamsExcludedAccounts".into(), serde_json::json!(["acc-1"]));
+        let text = old.to_json().unwrap();
+        let config = Config::parse(&text).unwrap();
+        assert!(config.settings.teams_sync_enabled);
+        assert!(config.settings.teams_excludes("acc-1"));
+        assert!(config.settings.extra.is_empty());
+        let again = config.to_json().unwrap();
+        assert_eq!(again.matches("\"teamsSyncEnabled\"").count(), 1);
+        assert_eq!(again.matches("\"teamsExcludedAccounts\"").count(), 1);
+    }
+
+    #[test]
+    fn bad_teams_values_fall_back_to_off() {
+        let raw = r#"{"settings":{"teamsSyncEnabled":"yes","teamsEndpoint":42,
+                      "teamsExcludedAccounts":"acc-1","theme":"dark"}}"#;
+        let config = Config::parse(raw).unwrap();
+        let s = &config.settings;
+        assert!(!s.teams_sync_enabled);
+        assert!(s.teams_endpoint.is_empty());
+        assert!(s.teams_excluded_accounts.is_empty());
+        assert_eq!(s.theme, ThemeMode::Dark, "the rest of the file still loads");
+        let out = serde_json::to_value(&config).unwrap();
+        assert!(out["settings"].get("teamsSyncEnabled").is_none());
+        let config = Config::parse(r#"{"settings":{"teamsSyncEnabled":null}}"#).unwrap();
+        assert!(!config.settings.teams_sync_enabled);
+    }
+
+    #[test]
+    fn teams_origin_falls_back_to_the_official_one() {
+        let official = Some(TEAMS_OFFICIAL_ORIGIN).filter(|o| !o.is_empty());
+        let mut s = Settings::default();
+        assert_eq!(s.teams_origin(), official);
+        s.teams_endpoint = "   ".into();
+        assert_eq!(s.teams_origin(), official);
+        s.teams_endpoint = "https://teams.example.test".into();
+        assert_eq!(s.teams_origin(), Some("https://teams.example.test"));
     }
 
     /// Read-only check against the real config file, when present. Run explicitly with

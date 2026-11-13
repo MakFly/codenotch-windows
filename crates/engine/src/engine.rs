@@ -25,6 +25,8 @@ use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
+mod teams;
+
 /// Reading error while an account's previous fetch thread is stuck (English key, see `FR`).
 pub(crate) const MSG_FETCH_STUCK: &str = "The last refresh did not finish.";
 
@@ -70,6 +72,11 @@ pub(crate) enum Msg {
         message: String,
     },
     SetToast(Option<Arc<dyn ToastSink>>),
+    /// A Teams worker result for the pairing generation it was made for.
+    Teams {
+        generation: u64,
+        report: teams::Report,
+    },
 }
 
 pub(crate) struct Engine {
@@ -121,6 +128,8 @@ pub(crate) struct Engine {
     prune_next: Instant,
     discovering: bool,
     no_provider: HashSet<String>,
+    /// Teams sync: decisions and the link to its worker (see `teams`).
+    teams: teams::Teams,
 }
 
 /// Period forecast of every window of `reading` (local time for the profile). Readings without
@@ -249,6 +258,7 @@ impl Engine {
             analytics_shared,
             discovering: false,
             no_provider: HashSet::new(),
+            teams: teams::Teams::new(now),
         };
         engine.restore_schedules(now);
         engine.refresh_forecasts(now);
@@ -266,6 +276,7 @@ impl Engine {
     // -----------------------------------------------------------------------------------------
 
     pub(crate) fn run(mut self, rx: Receiver<Msg>) {
+        self.teams_refresh();
         self.publish(true);
         self.start_discovery();
         self.tick();
@@ -324,6 +335,7 @@ impl Engine {
                 self.analytics_running = false;
                 match result {
                     Ok(report) => {
+                        self.teams_observe_usage(report.hourly.clone());
                         self.snap.analytics = Some(crate::summary_from_report(&report));
                         if let Ok(mut slot) = self.analytics_shared.lock() {
                             *slot = Some(*report);
@@ -369,11 +381,13 @@ impl Engine {
                 self.toast = sink.clone();
                 self.notifier.set_toast(sink);
             }
+            Msg::Teams { generation, report } => self.on_teams(generation, report),
         }
         true
     }
 
     fn shutdown(&mut self) {
+        self.teams_shutdown();
         self.sync_all_schedules();
         self.maybe_save(true);
         if let Some(activity) = self.activity.take() {
@@ -628,6 +642,7 @@ impl Engine {
         };
         let events = self.notifier.process(&input, &mut self.state);
 
+        self.teams_observe_reading(&reading);
         self.state.readings.insert(id.to_string(), reading);
         self.sync_schedule(id);
         self.state_dirty = true;
@@ -873,6 +888,7 @@ impl Engine {
             }
             self.updater_settings = wanted;
         }
+        self.teams_refresh();
     }
 
     // -----------------------------------------------------------------------------------------
@@ -983,6 +999,14 @@ impl Engine {
                 self.snap.secrets = SecretsPresent::detect(&self.opts.env, &*self.opts.secrets);
             }
             Command::ToggleNotch => self.snap.notch_hidden = !self.snap.notch_hidden,
+            // Teams sync: decisions here, storage and requests on its worker (`teams`).
+            command @ (Command::TeamsPreviewInvite(_)
+            | Command::TeamsPair(_)
+            | Command::TeamsDetach
+            | Command::TeamsFlush
+            | Command::TeamsAllowBackfill(_)
+            | Command::TeamsDeclareAccount { .. }
+            | Command::TeamsEraseServerData) => self.teams_command(command),
             Command::Quit => {}
         }
     }

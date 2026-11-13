@@ -14,6 +14,12 @@
 //! (`AnalyticsSummary::detail`, see `codenotch_core::analytics`) over
 //! `fact_days(analyticsDays)` days (the period, the previous period and the 53-week heatmap).
 //!
+//! ## Hourly export
+//! [`AnalyticsReport::hourly`] sums usage per (UTC hour, scan root, provider, normalised model)
+//! over the last [`HOURLY_EXPORT_DAYS`] days, without projects or files; [`root_owners`] tells
+//! which enabled accounts each scan root belongs to. Teams sync builds on these two; the
+//! analytics page does not use them.
+//!
 //! ## Incremental index
 //! `Paths::analytics_cache()` (`analytics-cache.json`, format in [`cache`]) keeps, per
 //! transcript, the bytes already parsed and hourly token buckets. A refresh stats every file,
@@ -44,10 +50,12 @@ use std::time::Instant;
 use codenotch_core::model::{AnalyticsSummary, TokenCounts};
 use codenotch_core::{Config, Env, Paths, Result};
 
+pub use codenotch_core::analytics::{HourlyUsage, RootOwners, HOURLY_EXPORT_DAYS};
+pub use index::root_owners;
 pub use pricing::{normalize_model, PriceTable, Rates};
 pub use report::{
-    compare_plan, plan_price_eur, AnalyticsReport, CliUsage, DayReport, HourReport, ModelReport,
-    PlanComparison, ProjectReport, ReportStats, Usage,
+    compare_plan, hourly_usage, plan_price_eur, AnalyticsReport, CliUsage, DayReport, HourReport,
+    ModelReport, PlanComparison, ProjectReport, ReportStats, Usage,
 };
 
 /// USD price per million tokens.
@@ -273,6 +281,65 @@ mod tests {
         let r4 = compute(&Config::default(), &env, &paths, now).expect("summary");
         assert!(r4.total_cost_usd > r3.total.cost_usd);
         assert_eq!(r4.days, 7);
+    }
+
+    #[test]
+    fn hourly_export_adds_sessions_and_archived_sessions() {
+        let dir = tempfile::tempdir().expect("tmp");
+        let env = Env::for_test(dir.path());
+        let paths = Paths::at(dir.path().join("data"));
+        let now = codenotch_core::now_secs();
+        let hour = now - now.rem_euclid(3600) - 2 * 3600;
+        let at = |offset: i64| {
+            chrono::DateTime::from_timestamp(hour + offset, 0)
+                .map(|d| d.to_rfc3339())
+                .unwrap_or_default()
+        };
+        let tc = |ts: &str, input: u64, output: u64| {
+            format!("{{\"timestamp\":\"{ts}\",\"type\":\"event_msg\",\"payload\":{{\"type\":\"token_count\",\"info\":{{\"total_token_usage\":{{\"input_tokens\":{input},\"cached_input_tokens\":0,\"output_tokens\":{output}}}}}}}}}\n")
+        };
+        let rollout = |cwd: &str, input: u64, output: u64| {
+            format!(
+                "{{\"type\":\"turn_context\",\"payload\":{{\"model\":\"gpt-5\",\"cwd\":\"{cwd}\"}}}}\n{}",
+                tc(&at(60), input, output)
+            )
+        };
+        let codex = env.home_path(".codex");
+        write(
+            &codex.join("sessions").join("2026").join("rollout-a.jsonl"),
+            &rollout("C:\\\\one", 100, 10),
+        );
+        write(
+            &codex.join("sessions").join("2026").join("rollout-b.jsonl"),
+            &rollout("C:\\\\two", 20, 2),
+        );
+        write(
+            &codex.join("archived_sessions").join("rollout-c.jsonl"),
+            &rollout("C:\\\\one", 3, 1),
+        );
+        let mut config = Config::default();
+        let account = codenotch_core::Account::new(codenotch_core::ProviderKind::Codex, "me");
+        let id = account.id.clone();
+        config.accounts.push(account);
+
+        let r = compute_report(&config, &env, &paths, now, &HashMap::new()).expect("report");
+        let owners = root_owners(&config, &env);
+        let mine: Vec<&RootOwners> = owners
+            .iter()
+            .filter(|o| o.accounts == [id.clone()])
+            .collect();
+        assert_eq!(mine.len(), 2, "sessions and archived_sessions");
+        let rows: Vec<&HourlyUsage> = r
+            .hourly
+            .iter()
+            .filter(|h| mine.iter().any(|o| o.source == h.source))
+            .collect();
+        assert_eq!(rows.len(), 2, "one row per root, projects and files summed");
+        assert!(rows.iter().all(|h| h.hour == hour && h.model == "gpt-5"));
+        let input: u64 = rows.iter().map(|h| h.tokens.input).sum();
+        let output: u64 = rows.iter().map(|h| h.tokens.output).sum();
+        assert_eq!((input, output), (123, 13));
+        assert_eq!(r.total.tokens.input, 123);
     }
 
     #[test]

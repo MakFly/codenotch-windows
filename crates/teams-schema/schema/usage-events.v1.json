@@ -1,0 +1,432 @@
+{
+  "$defs": {
+    "Heartbeat": {
+      "additionalProperties": false,
+      "description": "`device.heartbeat`: liveness of the device's queue. Confirms no window value.",
+      "properties": {
+        "dropped": {
+          "description": "Events the device dropped (queue full) since the previous heartbeat.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "queued": {
+          "description": "Events waiting on the device.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "queued",
+        "dropped"
+      ],
+      "type": "object"
+    },
+    "ModelId": {
+      "description": "Model id: a closed table embedded in this version (normalised ids as the desktop\npricing table writes them). Any other model is [`ModelId::Unknown`].",
+      "enum": [
+        "claude-fable-5-2",
+        "claude-mythos-5-2",
+        "claude-fable-5-1",
+        "claude-mythos-5-1",
+        "claude-fable-5",
+        "claude-mythos-5",
+        "claude-opus-5-5",
+        "claude-opus-5",
+        "claude-opus-4-8",
+        "claude-opus-4-7",
+        "claude-opus-4-6",
+        "claude-opus-4-5",
+        "claude-opus-4-1",
+        "claude-opus-4",
+        "claude-sonnet-5-5",
+        "claude-sonnet-5",
+        "claude-sonnet-4-6",
+        "claude-sonnet-4-5",
+        "claude-sonnet-4",
+        "claude-3-7-sonnet",
+        "claude-haiku-5-5",
+        "claude-haiku-4-5",
+        "claude-3-5-haiku",
+        "o3",
+        "o4-mini",
+        "codex-mini-latest",
+        "gpt-4.1",
+        "gpt-5",
+        "gpt-5-codex",
+        "gpt-5.1",
+        "gpt-5.1-codex",
+        "gpt-5.1-codex-max",
+        "gpt-5.1-codex-mini",
+        "gpt-5.2",
+        "gpt-5.2-codex",
+        "gpt-5-pro",
+        "gpt-5-mini",
+        "gpt-5-nano",
+        "unknown"
+      ],
+      "type": "string"
+    },
+    "PlanCode": {
+      "description": "Subscription plan. Each provider has its own subset (see [`PlanCode::allowed_for`]);\nanything else is [`PlanCode::Unknown`].",
+      "enum": [
+        "free",
+        "pro",
+        "max",
+        "max_5x",
+        "max_20x",
+        "team",
+        "enterprise",
+        "go",
+        "plus",
+        "business",
+        "edu",
+        "unknown"
+      ],
+      "type": "string"
+    },
+    "Provider": {
+      "description": "Providers whose accounts can be shared in version 1.",
+      "enum": [
+        "claude",
+        "codex"
+      ],
+      "type": "string"
+    },
+    "QuotaSnapshot": {
+      "additionalProperties": false,
+      "description": "`quota.snapshot`: the COMPLETE quota state of one account. It replaces the previous one\n(a window missing from it is removed); an empty `windows` is a tombstone (account removed\nor excluded from sharing).",
+      "properties": {
+        "accountRef": {
+          "description": "16 lowercase hex characters derived on the device; never an account name or e-mail.",
+          "pattern": "^[0-9a-f]{16}$",
+          "type": "string"
+        },
+        "observedAt": {
+          "description": "When the provider reading was taken (unix seconds).",
+          "format": "int64",
+          "type": "integer"
+        },
+        "plan": {
+          "$ref": "#/$defs/PlanCode"
+        },
+        "provider": {
+          "$ref": "#/$defs/Provider"
+        },
+        "seq": {
+          "description": "Monotonic per account, persisted on the device.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "windows": {
+          "description": "Empty = tombstone.",
+          "items": {
+            "$ref": "#/$defs/QuotaWindow"
+          },
+          "maxItems": 8,
+          "type": "array"
+        }
+      },
+      "required": [
+        "accountRef",
+        "provider",
+        "plan",
+        "seq",
+        "observedAt",
+        "windows"
+      ],
+      "type": "object"
+    },
+    "QuotaWindow": {
+      "additionalProperties": false,
+      "description": "One quota window of a [`QuotaSnapshot`].",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/WindowId"
+        },
+        "kind": {
+          "$ref": "#/$defs/WindowKind"
+        },
+        "resetsAt": {
+          "description": "Reset time (unix seconds). `None` = unknown.",
+          "format": "int64",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "role": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WindowRole"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Which ring the window drives on the device, when any."
+        },
+        "usedPercent": {
+          "description": "Percent used, 0–100. `None` = unknown.",
+          "format": "double",
+          "maximum": 100.0,
+          "minimum": 0.0,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "windowSeconds": {
+          "description": "Full window length in seconds. `None` = unknown.",
+          "format": "int64",
+          "minimum": 1,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "kind"
+      ],
+      "type": "object"
+    },
+    "RawEvent": {
+      "additionalProperties": false,
+      "description": "Closed event envelope (no `flatten`): `kind` selects the payload type, which is parsed only\nafter dispatch (see [`RawEvent::payload`]).",
+      "properties": {
+        "eventId": {
+          "description": "uuid v4, one per event or per revision.",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "type": "string"
+        },
+        "kind": {
+          "description": "One of [`KINDS`].",
+          "enum": [
+            "quota.snapshot",
+            "usage.hour",
+            "device.heartbeat"
+          ],
+          "type": "string"
+        },
+        "occurredAt": {
+          "description": "When the event was produced (unix seconds).",
+          "format": "int64",
+          "type": "integer"
+        },
+        "payload": {
+          "description": "The payload of `kind`.",
+          "oneOf": [
+            {
+              "$ref": "#/$defs/QuotaSnapshot"
+            },
+            {
+              "$ref": "#/$defs/UsageHour"
+            },
+            {
+              "$ref": "#/$defs/Heartbeat"
+            }
+          ]
+        }
+      },
+      "required": [
+        "eventId",
+        "occurredAt",
+        "kind",
+        "payload"
+      ],
+      "type": "object"
+    },
+    "Tokens": {
+      "additionalProperties": false,
+      "description": "Token counts of a [`UsageHour`]. `cache_write_1h` is a part of `cache_write`, not an\naddition to it.",
+      "properties": {
+        "cacheRead": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "cacheWrite": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "cacheWrite1h": {
+          "description": "1-hour cache writes, included in `cache_write`.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "input": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "output": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "input",
+        "output",
+        "cacheRead",
+        "cacheWrite",
+        "cacheWrite1h"
+      ],
+      "type": "object"
+    },
+    "UsageHour": {
+      "additionalProperties": false,
+      "description": "`usage.hour`: the ABSOLUTE token totals of one natural key (device, account, provider,\nmodel, UTC hour). Each change is a new revision (`rev + 1`, new event id); zero totals are a\ntombstone.",
+      "properties": {
+        "accountRef": {
+          "pattern": "^[0-9a-f]{16}$",
+          "type": "string"
+        },
+        "hourStart": {
+          "description": "Start of the UTC hour (unix seconds, multiple of 3600).",
+          "format": "int64",
+          "type": "integer"
+        },
+        "model": {
+          "$ref": "#/$defs/ModelId"
+        },
+        "provider": {
+          "$ref": "#/$defs/Provider"
+        },
+        "rev": {
+          "description": "Revision, monotonic per natural key, starting at 1.",
+          "format": "uint64",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "tokens": {
+          "$ref": "#/$defs/Tokens"
+        }
+      },
+      "required": [
+        "accountRef",
+        "provider",
+        "model",
+        "hourStart",
+        "rev",
+        "tokens"
+      ],
+      "type": "object"
+    },
+    "WindowId": {
+      "description": "Quota window id. Each provider has its own subset (see [`WindowId::allowed_for`]); any\nother window (custom endpoints, spend, extra usage …) is not sent.",
+      "oneOf": [
+        {
+          "enum": [
+            "seven_day_opus",
+            "seven_day_sonnet",
+            "weekly_scoped"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "session",
+          "description": "Claude 5-hour session.",
+          "type": "string"
+        },
+        {
+          "const": "seven_day",
+          "description": "Claude 7-day, all models.",
+          "type": "string"
+        },
+        {
+          "const": "primary",
+          "description": "Codex primary window.",
+          "type": "string"
+        },
+        {
+          "const": "secondary",
+          "description": "Codex secondary window.",
+          "type": "string"
+        }
+      ]
+    },
+    "WindowKind": {
+      "description": "What a window measures (same values as the desktop model).",
+      "enum": [
+        "session",
+        "weekly",
+        "monthly",
+        "other"
+      ],
+      "type": "string"
+    },
+    "WindowRole": {
+      "description": "Ring a window drives on the device.",
+      "enum": [
+        "headline",
+        "weekly"
+      ],
+      "type": "string"
+    }
+  },
+  "$id": "https://raw.githubusercontent.com/MakFly/codenotch-windows/main/crates/teams-schema/schema/usage-events.v1.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "One upload. Contains events of a single schema version.",
+  "properties": {
+    "appVersion": {
+      "description": "CodeNotch version that built the batch (`0.1.0`).",
+      "pattern": "^[0-9A-Za-z.+-]{1,32}$",
+      "type": "string"
+    },
+    "consentVersion": {
+      "description": "Consent version the member accepted at pairing.",
+      "format": "uint32",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "dataEpoch": {
+      "description": "Data epoch of the member (bumped when the member's server data is erased).",
+      "format": "uint32",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "deviceId": {
+      "description": "Device id (uuid v4) generated at pairing; must match the device token.",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+      "type": "string"
+    },
+    "events": {
+      "items": {
+        "$ref": "#/$defs/RawEvent"
+      },
+      "maxItems": 100,
+      "minItems": 1,
+      "type": "array"
+    },
+    "schemaVersion": {
+      "description": "Always [`SCHEMA_VERSION`] for this crate.",
+      "format": "uint32",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "sentAt": {
+      "description": "When the device sent the batch (unix seconds).",
+      "format": "int64",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "sentAt",
+    "deviceId",
+    "appVersion",
+    "consentVersion",
+    "dataEpoch",
+    "events"
+  ],
+  "title": "CodeNotch Teams usage events v1",
+  "type": "object"
+}

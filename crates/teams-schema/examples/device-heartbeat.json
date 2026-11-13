@@ -1,0 +1,6 @@
+{
+  "eventId": "b7a0e2c4-91d3-4f6a-a5c8-3e1d0f9b2c74",
+  "occurredAt": 1794556800,
+  "kind": "device.heartbeat",
+  "payload": { "queued": 3, "dropped": 0 }
+}

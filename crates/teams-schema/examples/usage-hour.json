@@ -1,0 +1,13 @@
+{
+  "eventId": "5c0e7a13-2d44-4b9e-9a61-70c1f2b8d3e9",
+  "occurredAt": 1794556700,
+  "kind": "usage.hour",
+  "payload": {
+    "accountRef": "a3f9c07e12b45d68",
+    "provider": "claude",
+    "model": "claude-opus-5-5",
+    "hourStart": 1794553200,
+    "rev": 3,
+    "tokens": { "input": 18250, "output": 9120, "cacheRead": 412000, "cacheWrite": 36500, "cacheWrite1h": 0 }
+  }
+}

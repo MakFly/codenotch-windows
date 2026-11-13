@@ -14,6 +14,8 @@
 //!   state. Discovery, analytics, the update check, hook installation, sign-in and test
 //!   messages also run on worker threads.
 //! * Activity runs its own threads; its `on_change` callback just posts to the engine.
+//! * Teams sync (opt-in) runs on one bounded worker thread, only while `teamsSyncEnabled` is
+//!   on and the device is paired; it owns the outbox, batches and HTTP (`engine::teams`).
 //!
 //! ## Scheduling
 //! See [`schedule`]: pure functions, one [`schedule::AccountSched`] per enabled account.
@@ -89,6 +91,9 @@ pub struct Tuning {
     pub fetch_stall: Duration,
     /// Start the activity services (hook server, transcript watcher, pollers).
     pub activity: bool,
+    /// Longest sleep of the Teams worker between two upload checks (only runs while Teams
+    /// sync is on and paired).
+    pub teams_wake: Duration,
 }
 
 impl Default for Tuning {
@@ -107,6 +112,7 @@ impl Default for Tuning {
             publish_every: Duration::from_secs(30),
             fetch_stall: Duration::from_secs(10 * 60),
             activity: true,
+            teams_wake: Duration::from_secs(1),
         }
     }
 }

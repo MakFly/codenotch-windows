@@ -7,7 +7,8 @@
 //! codenotch --demo         GUI on fake figures for the providers detected here, no engine, no network
 //! codenotch --demo --settings      the same, with the settings window open
 //! codenotch --settings-page=<page> open the settings on accounts | appearance | notifications |
-//!                                  analytics | general (implies --settings; works with --demo)
+//!                                  analytics | teams | general (implies --settings; works with
+//!                                  --demo)
 //! codenotch --demo --theme=<mode>  demo with the theme setting forced to light | dark | system
 //! codenotch --demo --preview-reset  demo that shows the reset card at start (visual checks)
 //! codenotch --demo --preview-card   demo with the notch open on the first account's hover card
@@ -65,6 +66,7 @@ fn settings_page(args: &[String]) -> Option<Page> {
         "appearance" => Some(Page::Appearance),
         "notifications" => Some(Page::Notifications),
         "analytics" => Some(Page::Analytics),
+        "teams" => Some(Page::Teams),
         "general" => Some(Page::General),
         _ => None,
     }
@@ -163,7 +165,7 @@ fn main() {
             "codenotch {}\n\n\
              Usage: codenotch [--demo [--theme=<mode>]] [--settings] [--settings-page=<page>]\n\
              \x20      codenotch --once | doctor | --version\n\n\
-             <page>: accounts | appearance | notifications | analytics | general\n\
+             <page>: accounts | appearance | notifications | analytics | teams | general\n\
              <mode>: light | dark | system (demo only)",
             codenotch_core::VERSION
         ),
@@ -310,6 +312,7 @@ mod tests {
             ("appearance", Page::Appearance),
             ("notifications", Page::Notifications),
             ("analytics", Page::Analytics),
+            ("teams", Page::Teams),
             ("general", Page::General),
         ] {
             let flag = format!("--settings-page={name}");

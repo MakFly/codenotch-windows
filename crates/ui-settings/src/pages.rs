@@ -31,11 +31,11 @@ const FIELD_W: f32 = 220.0;
 const PLAN_INPUT_W: f32 = 120.0;
 const PLAN_SUFFIX_W: f32 = 56.0;
 
-fn s(text: impl Into<String>) -> SharedString {
+pub(crate) fn s(text: impl Into<String>) -> SharedString {
     SharedString::from(text.into())
 }
 
-fn tone_color(t_: &Theme, tone: Tone) -> gpui::Hsla {
+pub(crate) fn tone_color(t_: &Theme, tone: Tone) -> gpui::Hsla {
     match tone {
         Tone::Normal => t_.muted_foreground,
         Tone::Muted => t_.muted_foreground.opacity(0.75),
@@ -63,6 +63,7 @@ impl SettingsView {
             Page::Appearance => self.page_appearance(snap, t_, lang, cx),
             Page::Notifications => self.page_notifications(snap, t_, lang, cx),
             Page::Analytics => self.page_analytics(snap, t_, lang, window, cx),
+            Page::Teams => self.page_teams(snap, t_, lang, window, cx),
             Page::General => self.page_general(snap, t_, lang, cx),
         }
         .into_any_element()
@@ -72,7 +73,7 @@ impl SettingsView {
     // Shared bits
     // -----------------------------------------------------------------------------------------
 
-    fn toggle(
+    pub(crate) fn toggle(
         &self,
         id: &'static str,
         on: bool,
@@ -84,12 +85,12 @@ impl SettingsView {
     }
 
     /// A switch (no On/Off text, as in shadcn).
-    fn switch(&self, id: impl Into<gpui::ElementId>, on: bool, t_: &Theme) -> Toggle {
+    pub(crate) fn switch(&self, id: impl Into<gpui::ElementId>, on: bool, t_: &Theme) -> Toggle {
         Toggle::new(id, on, *t_)
     }
 
     /// One choice among several: a Select.
-    fn segmented<T: Clone + PartialEq + 'static>(
+    pub(crate) fn segmented<T: Clone + PartialEq + 'static>(
         &self,
         id: &'static str,
         options: Vec<(T, String)>,
@@ -110,7 +111,7 @@ impl SettingsView {
         )
     }
 
-    fn input(&self, field: Field, width: f32, t_: &Theme) -> impl IntoElement {
+    pub(crate) fn input(&self, field: Field, width: f32, t_: &Theme) -> impl IntoElement {
         self.text_box(self.inputs.get(field), width, t_)
     }
 
@@ -119,7 +120,12 @@ impl SettingsView {
     /// The frame is drawn here, once, around the gpui-component `Input` (which draws no border
     /// or fill of its own: its own focus border was a few px off this frame, so the two looked
     /// like a doubled ring).
-    fn text_box(&self, input: &Entity<InputState>, width: f32, t_: &Theme) -> impl IntoElement {
+    pub(crate) fn text_box(
+        &self,
+        input: &Entity<InputState>,
+        width: f32,
+        t_: &Theme,
+    ) -> impl IntoElement {
         let focused = self.focused_input == Some(input.entity_id());
         let frame = div()
             .size_full()
@@ -148,7 +154,7 @@ impl SettingsView {
             })
     }
 
-    fn field_error(&self, field: Field, t_: &Theme, lang: Lang) -> Option<Div> {
+    pub(crate) fn field_error(&self, field: Field, t_: &Theme, lang: Lang) -> Option<Div> {
         self.errors
             .get(&field)
             .map(|msg| note(t_.destructive, t(lang, msg).to_string()))
@@ -1368,7 +1374,7 @@ impl SettingsView {
     }
 
     /// Label + text field (+ error under it).
-    fn field_item(
+    pub(crate) fn field_item(
         &self,
         t_: &Theme,
         lang: Lang,

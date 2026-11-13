@@ -409,6 +409,63 @@ impl<'de> Deserialize<'de> for SharedDetail {
     }
 }
 
+// ---------------------------------------------------------------------------------------------
+// Hourly usage per scan root (Teams export)
+// ---------------------------------------------------------------------------------------------
+
+/// UTC hours covered by the hourly export: the last 45 days.
+pub const HOURLY_EXPORT_DAYS: u32 = 45;
+
+/// Usage of one UTC hour × scan root × provider × model, summed over every project and
+/// transcript file of that root. Carries no project, file or message data: `source` is the scan
+/// root (`…\.claude\projects`, `…\.codex\sessions`), only used on the device to find the
+/// account it belongs to (see [`RootOwners`]). `Debug` leaves out `source` and `model`.
+#[derive(Clone, PartialEq, Default)]
+pub struct HourlyUsage {
+    /// Unix seconds at the start of the UTC hour (multiple of 3600).
+    pub hour: i64,
+    pub source: String,
+    pub provider: ProviderKind,
+    /// Normalised model id (date suffixes and prefixes removed; `-fast` kept).
+    pub model: String,
+    /// input / output / cacheRead / cacheWrite (cacheWrite = all cache writes).
+    pub tokens: TokenCounts,
+    /// Part of `tokens.cache_write` written with a 1-hour TTL.
+    pub cache_write_1h: u64,
+}
+
+/// A scanned transcript root and the ids of the ENABLED accounts whose profile folder it is
+/// (in config order). Empty = the default profile with no account configured for it; two or
+/// more = shared, so its usage cannot be attributed to one account. `Debug` shows counts only.
+#[derive(Clone, PartialEq, Eq, Default)]
+pub struct RootOwners {
+    pub source: String,
+    pub provider: ProviderKind,
+    pub accounts: Vec<String>,
+}
+
+/// Counters and enums only: the scan root is a profile path and the model is free text.
+impl std::fmt::Debug for HourlyUsage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("HourlyUsage")
+            .field("hour", &self.hour)
+            .field("provider", &self.provider)
+            .field("tokens", &self.tokens)
+            .field("cache_write_1h", &self.cache_write_1h)
+            .finish_non_exhaustive()
+    }
+}
+
+/// The scan root is a profile path and account ids are user-chosen: counts only.
+impl std::fmt::Debug for RootOwners {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RootOwners")
+            .field("provider", &self.provider)
+            .field("accounts", &self.accounts.len())
+            .finish_non_exhaustive()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -562,5 +619,27 @@ mod tests {
         assert_eq!(a, c);
         let empty: AnalyticsDetail = serde_json::from_str("{}").unwrap();
         assert_eq!(empty, AnalyticsDetail::default());
+    }
+
+    #[test]
+    fn hourly_debug_hides_paths_identities_and_models() {
+        let path = r"C:\Users\alice\.claude-work\projects";
+        let row = HourlyUsage {
+            hour: 3600,
+            source: path.into(),
+            provider: ProviderKind::Claude,
+            model: "C_Users_alice_secret-repo".into(),
+            ..Default::default()
+        };
+        let owners = RootOwners {
+            source: path.into(),
+            provider: ProviderKind::Claude,
+            accounts: vec!["alice@corp.invalid".into()],
+        };
+        let text = format!("{row:?} {owners:?} {:?}", vec![row.clone()]);
+        for sentinel in ["alice", "secret-repo", "corp.invalid", ".claude-work"] {
+            assert!(!text.contains(sentinel), "{sentinel} in {text}");
+        }
+        assert!(text.contains("hour: 3600"));
     }
 }

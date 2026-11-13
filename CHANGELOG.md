@@ -4,6 +4,13 @@
 
 ### Added
 
+- Team sync (opt-in, off by default): pair this PC with a CodeNotch Teams server from the new
+  Settings > Teams page (invite preview and consent, shared accounts, plan payer declaration,
+  backfill agreement, send now, detach, erase on the server). Only quota figures and hourly token
+  counts of the shared Claude and Codex accounts leave the PC, through one bounded background
+  thread; nothing runs while it is off. New crates `teams-schema` and `teams`, settings keys
+  `teamsSyncEnabled`, `teamsEndpoint`, `teamsExcludedAccounts`, `--settings-page=teams`, and a
+  `teams:` line in `doctor`.
 - One-line PowerShell installer (`install.ps1`): `irm …/install.ps1 | iex` installs or updates to
   `%LOCALAPPDATA%\Programs\CodeNotch` after checking size and SHA-256, adds a Start Menu shortcut
   and starts the app; `CODENOTCH_UNINSTALL=1` removes it again (data kept).

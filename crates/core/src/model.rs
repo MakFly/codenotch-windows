@@ -812,6 +812,119 @@ impl UpdateState {
 }
 
 // ---------------------------------------------------------------------------------------------
+// Teams sync status
+// ---------------------------------------------------------------------------------------------
+
+/// State of Teams sync, as the settings window shows it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum TeamsState {
+    /// `teamsSyncEnabled` is off (default): no request, no file, no thread.
+    #[default]
+    Off,
+    /// On, but this device is not paired with a team.
+    NotPaired,
+    /// Paired and sending.
+    Active,
+    /// Paired; sending is paused (network error, server busy …) and will be retried.
+    Paused,
+    /// The team revoked this device (its token is refused).
+    Revoked,
+    /// The team changed what it sees: the member must review and accept again.
+    ConsentNeeded,
+    /// Sync cannot run (storage error, worker failed to start …): see `last_error`.
+    Error,
+}
+
+/// Teams sync status in the [`Snapshot`]. Holds no secret: the device token's presence is
+/// implied by the state, never its value. `Debug` leaves out the team name (server text).
+#[derive(Clone, PartialEq, Default)]
+pub struct TeamsStatus {
+    pub state: TeamsState,
+    /// Name of the paired team. `None` = not paired.
+    pub team_name: Option<String>,
+    /// Events waiting to be sent.
+    pub queued: u32,
+    /// Last successful send (unix secs). `None` = never.
+    pub last_sent_at: Option<i64>,
+    /// Last error, English i18n key or short technical reason (no secret).
+    pub last_error: Option<String>,
+    /// Server origin of the pairing (`scheme://host[:port]`). `None` = not paired.
+    pub origin: Option<String>,
+    /// The member agreed to also send the usage of the days before pairing.
+    pub backfill: bool,
+    /// An invite read with `Command::TeamsPreviewInvite`, waiting for the member to accept it
+    /// (`Command::TeamsPair`).
+    pub preview: Option<TeamsInvitePreview>,
+    /// A preview, pairing, detach, declaration or erase request is running.
+    pub busy: bool,
+}
+
+/// What an invite shows before the member accepts it. Holds no secret (not the invite code).
+/// `team_name` is free text chosen by the team admin, shown and stored as is (control
+/// characters removed, at most 100 characters); `Debug` leaves it out.
+#[derive(Clone, PartialEq, Eq, Default)]
+pub struct TeamsInvitePreview {
+    pub team_name: String,
+    /// What the team sees.
+    pub visibility: TeamsVisibility,
+    /// Server origin the invite points to (`scheme://host[:port]`).
+    pub origin: String,
+}
+
+/// What a team sees of its members (closed set of the pairing contract; an invite with any
+/// other value is refused).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum TeamsVisibility {
+    /// Usage by member name (`named`).
+    #[default]
+    Named,
+}
+
+impl TeamsVisibility {
+    /// The contract value (`None` = not in the closed set).
+    pub fn parse(value: &str) -> Option<TeamsVisibility> {
+        match value {
+            "named" => Some(TeamsVisibility::Named),
+            _ => None,
+        }
+    }
+}
+
+impl std::fmt::Debug for TeamsStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TeamsStatus")
+            .field("state", &self.state)
+            .field("paired", &self.team_name.is_some())
+            .field("queued", &self.queued)
+            .field("last_sent_at", &self.last_sent_at)
+            .field("last_error", &self.last_error)
+            .field("origin", &self.origin)
+            .field("backfill", &self.backfill)
+            .field("preview", &self.preview)
+            .field("busy", &self.busy)
+            .finish()
+    }
+}
+
+impl std::fmt::Debug for TeamsInvitePreview {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TeamsInvitePreview")
+            .field("visibility", &self.visibility)
+            .field("origin", &self.origin)
+            .finish_non_exhaustive()
+    }
+}
+
+/// Who pays for an account's plan, as the member declares it to the team.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TeamsPayer {
+    /// The company pays (or reimburses) the plan.
+    Company,
+    /// The member pays and is not reimbursed.
+    Member,
+}
+
+// ---------------------------------------------------------------------------------------------
 // Snapshot
 // ---------------------------------------------------------------------------------------------
 
@@ -878,6 +991,8 @@ pub struct Snapshot {
     pub secrets: SecretsPresent,
     /// Notch hidden for this session by `Command::ToggleNotch` (global hotkey). Not persisted.
     pub notch_hidden: bool,
+    /// Teams sync status ([`TeamsState::Off`] unless the user turned it on).
+    pub teams: TeamsStatus,
 }
 
 impl Snapshot {
@@ -901,6 +1016,7 @@ impl Snapshot {
             storage_error: None,
             secrets: SecretsPresent::default(),
             notch_hidden: false,
+            teams: TeamsStatus::default(),
         }
     }
     pub fn settings(&self) -> &Settings {
@@ -1000,6 +1116,27 @@ pub enum Command {
     ClearSecret(SecretKey),
     /// Show/hide the notch for this session (global hotkey); flips `Snapshot::notch_hidden`.
     ToggleNotch,
+    /// Teams: read the invite (team, visibility, server) before pairing. The value is the
+    /// invite link (secret; `Debug` hides it).
+    TeamsPreviewInvite(SecretValue),
+    /// Teams: pair this device with the invite link (after the user confirmed the preview).
+    TeamsPair(SecretValue),
+    /// Teams: detach this device (token, pairing state and queue are deleted).
+    TeamsDetach,
+    /// Teams: send the queued events now.
+    TeamsFlush,
+    /// Teams: the member's separate agreement to also send the usage of the days before
+    /// pairing (`true`) or its withdrawal (`false`).
+    TeamsAllowBackfill(bool),
+    /// Teams: declare who pays for a shared account's plan and, when the member pays, the
+    /// monthly price they declare (`None` = not declared).
+    TeamsDeclareAccount {
+        account_id: String,
+        payer: TeamsPayer,
+        price_eur_month: Option<f64>,
+    },
+    /// Teams: ask the server to erase this member's data.
+    TeamsEraseServerData,
     Quit,
 }
 
@@ -1259,6 +1396,22 @@ mod tests {
         assert_eq!(ActivityState::aggregate([Idle, Done, Working]), Working);
         assert_eq!(ActivityState::aggregate([Working, Waiting]), Waiting);
         assert_eq!(ActivityState::aggregate([]), Idle);
+    }
+
+    #[test]
+    fn teams_status_is_off_by_default_and_commands_hide_invites() {
+        let snap = Snapshot::from_config(Config::default(), 0);
+        assert_eq!(snap.teams, TeamsStatus::default());
+        assert_eq!(snap.teams.state, TeamsState::Off);
+        assert_eq!(snap.teams.queued, 0);
+        assert_eq!(snap.teams.last_sent_at, None);
+        let invite = SecretValue::new("https://teams.example.test/join/s3cr3t-code");
+        for cmd in [
+            Command::TeamsPreviewInvite(invite.clone()),
+            Command::TeamsPair(invite),
+        ] {
+            assert!(!format!("{cmd:?}").contains("s3cr3t"));
+        }
     }
 
     #[test]

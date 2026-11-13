@@ -183,6 +183,7 @@ fn fast_tuning() -> Tuning {
         publish_every: Duration::from_secs(3600),
         fetch_stall: Duration::from_secs(60),
         activity: false,
+        teams_wake: Duration::from_millis(10),
     }
 }
 

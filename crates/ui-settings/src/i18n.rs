@@ -321,6 +321,231 @@ pub static FR: &[(&str, &str)] = &[
     ("Step {n} of {total}", "Étape {n} sur {total}"),
     ("Back", "Retour"),
     ("Finish", "Terminer"),
+    // --- Teams ---
+    (
+        "Teams",
+        "Équipe",
+    ),
+    (
+        "Paste your invite link",
+        "Collez votre lien d'invitation",
+    ),
+    (
+        "Not connected to a team",
+        "Non connecté à une équipe",
+    ),
+    (
+        "Connected to {team}",
+        "Connecté à {team}",
+    ),
+    (
+        "{n} events waiting",
+        "{n} événements en attente",
+    ),
+    (
+        "Sync paused, retrying",
+        "Synchronisation en pause, nouvel essai",
+    ),
+    (
+        "Device revoked by the team",
+        "Appareil révoqué par l'équipe",
+    ),
+    (
+        "The team changed what it sees. Review and accept to resume.",
+        "L'équipe a changé ce qu'elle voit. Relisez et acceptez pour reprendre.",
+    ),
+    (
+        "Cannot save Teams sync data",
+        "Impossible d'enregistrer les données de synchronisation d'équipe",
+    ),
+    (
+        "Update CodeNotch to keep syncing",
+        "Mettez CodeNotch à jour pour continuer la synchronisation",
+    ),
+    (
+        "This server is not a CodeNotch Teams server",
+        "Ce serveur n'est pas un serveur CodeNotch Teams",
+    ),
+    (
+        "Teams sync could not start",
+        "La synchronisation d'équipe n'a pas pu démarrer",
+    ),
+    (
+        "The Teams server address changed. Detach this device to pair again.",
+        "L'adresse du serveur Teams a changé. Détachez cet appareil pour l'appairer de nouveau.",
+    ),
+    (
+        "Tool, plan, quota percentages and reset times",
+        "Outil, forfait, pourcentages de quota et heures de réinitialisation",
+    ),
+    (
+        "Token counts per model and hour",
+        "Nombre de tokens par modèle et par heure",
+    ),
+    (
+        "An account reference made on this PC, the app version and queue counters",
+        "Une référence de compte créée sur ce PC, la version de l'app et les compteurs de file d'attente",
+    ),
+    (
+        "Prompts, code and model responses",
+        "Prompts, code et réponses des modèles",
+    ),
+    (
+        "File paths, folder and repository names",
+        "Chemins de fichiers, noms de dossiers et de dépôts",
+    ),
+    (
+        "Sign-in e-mail and provider tokens",
+        "E-mail de connexion et jetons des fournisseurs",
+    ),
+    (
+        "Accounts you do not share, and every other tool",
+        "Les comptes que vous ne partagez pas, et tous les autres outils",
+    ),
+    (
+        "What leaves this PC",
+        "Ce qui quitte ce PC",
+    ),
+    (
+        "What never leaves this PC",
+        "Ce qui ne quitte jamais ce PC",
+    ),
+    (
+        "Team sync",
+        "Synchronisation d'équipe",
+    ),
+    (
+        "Shares quota and token figures with your team's CodeNotch Teams server. Off by default.",
+        "Partage les quotas et le nombre de tokens avec le serveur CodeNotch Teams de votre équipe. Désactivé par défaut.",
+    ),
+    (
+        "Status",
+        "État",
+    ),
+    (
+        "Server address",
+        "Adresse du serveur",
+    ),
+    (
+        "Your team's server, for example https://teams.example.com. Changing it requires pairing again.",
+        "Le serveur de votre équipe, par exemple https://teams.example.com. La changer impose d'appairer de nouveau.",
+    ),
+    (
+        "Last sent: {when}",
+        "Dernier envoi : {when}",
+    ),
+    (
+        "Nothing sent yet",
+        "Rien d'envoyé pour l'instant",
+    ),
+    (
+        "Send now",
+        "Envoyer maintenant",
+    ),
+    (
+        "Include the 45 days before pairing",
+        "Inclure les 45 jours avant l'appairage",
+    ),
+    (
+        "A separate agreement: your token counts of the 45 days before pairing are sent too. Turn it off to withdraw it.",
+        "Un accord distinct : vos nombres de tokens des 45 jours avant l'appairage sont aussi envoyés. Désactivez-le pour le retirer.",
+    ),
+    (
+        "Connect",
+        "Se connecter",
+    ),
+    (
+        "Invite link",
+        "Lien d'invitation",
+    ),
+    (
+        "Sent by your team admin. It only goes to the server address above.",
+        "Envoyé par l'administrateur de votre équipe. Il n'est transmis qu'à l'adresse du serveur ci-dessus.",
+    ),
+    (
+        "Your team admin sees your usage by name",
+        "L'administrateur de votre équipe voit votre usage à votre nom",
+    ),
+    (
+        "Server: {origin}",
+        "Serveur : {origin}",
+    ),
+    (
+        "Accept and connect",
+        "Accepter et se connecter",
+    ),
+    (
+        "Join a team",
+        "Rejoindre une équipe",
+    ),
+    (
+        "Privacy",
+        "Confidentialité",
+    ),
+    (
+        "Shared accounts",
+        "Comptes partagés",
+    ),
+    (
+        "Only Claude and Codex accounts can be shared",
+        "Seuls les comptes Claude et Codex peuvent être partagés",
+    ),
+    (
+        "This device",
+        "Cet appareil",
+    ),
+    (
+        "No account to share",
+        "Aucun compte à partager",
+    ),
+    (
+        "My company",
+        "Mon entreprise",
+    ),
+    (
+        "Me, not reimbursed",
+        "Moi, sans remboursement",
+    ),
+    (
+        "Declare",
+        "Déclarer",
+    ),
+    (
+        "Monthly price you pay.",
+        "Prix mensuel que vous payez.",
+    ),
+    (
+        "Your team sees this amount but cannot change it",
+        "Votre équipe voit ce montant mais ne peut pas le modifier",
+    ),
+    (
+        "Who pays for this plan?",
+        "Qui paie ce forfait ?",
+    ),
+    (
+        "Detach this device",
+        "Détacher cet appareil",
+    ),
+    (
+        "This device stops syncing. Its pairing, its queue and its device token are deleted from this PC.",
+        "Cet appareil arrête de synchroniser. Son appairage, sa file d'attente et son jeton sont supprimés de ce PC.",
+    ),
+    (
+        "Detach",
+        "Détacher",
+    ),
+    (
+        "Delete my data on the server",
+        "Supprimer mes données sur le serveur",
+    ),
+    (
+        "Asks the team server to erase everything you sent. Sync goes on from now.",
+        "Demande au serveur de l'équipe d'effacer tout ce que vous avez envoyé. La synchronisation continue à partir de maintenant.",
+    ),
+    (
+        "Delete",
+        "Supprimer",
+    ),
 ];
 
 #[cfg(test)]
@@ -369,6 +594,7 @@ mod tests {
             include_str!("view.rs"),
             include_str!("pages.rs"),
             include_str!("pages_stats.rs"),
+            include_str!("pages_teams.rs"),
             include_str!("stats.rs"),
             include_str!("lib.rs"),
         ];
@@ -443,6 +669,7 @@ mod tests {
             Page::Appearance,
             Page::Notifications,
             Page::Analytics,
+            Page::Teams,
             Page::General,
         ]
         .into_iter()
@@ -471,6 +698,23 @@ mod tests {
             .map(FieldError::message),
         );
         keys.extend(crate::stats::Metric::ALL.map(crate::stats::Metric::label));
+        // Teams: status keys from the engine, labels passed through variables.
+        keys.extend([
+            "Sync paused, retrying",
+            "Device revoked by the team",
+            "The team changed what it sees. Review and accept to resume.",
+            "Cannot save Teams sync data",
+            "Update CodeNotch to keep syncing",
+            "This server is not a CodeNotch Teams server",
+            "Teams sync could not start",
+            "The Teams server address changed. Detach this device to pair again.",
+            "Detach this device",
+            "This device stops syncing. Its pairing, its queue and its device token are deleted from this PC.",
+            "Detach",
+            "Delete my data on the server",
+            "Asks the team server to erase everything you sent. Sync goes on from now.",
+            "Delete",
+        ]);
         let known = |k: &str| {
             FR.iter().any(|(e, _)| *e == k) || codenotch_core::i18n::FR.iter().any(|(e, _)| *e == k)
         };

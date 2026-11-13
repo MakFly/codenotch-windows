@@ -18,6 +18,7 @@ codenotch-providers-extra.workspace = true
 codenotch-notify.workspace = true
 codenotch-analytics.workspace = true
 codenotch-activity.workspace = true
+codenotch-teams.workspace = true
 log.workspace = true
 serde_json.workspace = true
 
