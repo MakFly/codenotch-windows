@@ -12,7 +12,8 @@
 //! | [`UsageHour`], [`Tokens`] | absolute token totals of one account, model and UTC hour (`usage.hour`) |
 //! | [`Heartbeat`] | device liveness (`device.heartbeat`) |
 //! | [`Provider`], [`PlanCode`], [`WindowId`], [`WindowKind`], [`WindowRole`], [`ModelId`] | closed value sets |
-//! | [`validate`] | [`ValidationError`], [`FORBIDDEN_KEYS`], [`Batch::parse`] |
+//! | [`validate`] | [`ValidationError`], [`FORBIDDEN_KEYS`] |
+//! | [`receive`] | [`Batch::parse`]: one [`EventOutcome`] per event (accepted, ignored, rejected) |
 //! | `schema` (feature) | the JSON Schema committed as `schema/usage-events.v1.json` |
 //!
 //! Privacy boundary (binding):
@@ -23,12 +24,15 @@
 //! * Every object is closed (`deny_unknown_fields`, `additionalProperties: false`).
 //! * Validation errors never carry the offending value, only a reason code and a field name.
 //!
-//! Versioning: version 1 is immutable once published. Any change (field, enum value, kind)
-//! makes a version 2 with its own schema file; nothing is ever added to version 1.
+//! Versioning: version 1 is immutable once published. Changing the envelope, or a field or an
+//! enum value of an existing kind, makes a version 2 with its own schema file. A NEW kind (with
+//! its own payload type) does not change any existing shape: a receiver that does not know it
+//! ignores that event alone (see [`receive`]), so adding one never breaks an older receiver.
 //!
 //! Conventions: times are unix **seconds** (`i64`), percentages are **0–100 used** (`f64`),
 //! unknown values are `None` (never 0).
 
+pub mod receive;
 #[cfg(feature = "schema")]
 pub mod schema;
 pub mod validate;
@@ -36,6 +40,7 @@ pub mod validate;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+pub use receive::{EventOutcome, EventStatus, ParsedBatch, ParsedEvent};
 pub use validate::{ValidationError, FORBIDDEN_KEYS};
 
 /// Version of this contract. Immutable once published.
@@ -52,7 +57,7 @@ pub const KIND_QUOTA_SNAPSHOT: &str = "quota.snapshot";
 pub const KIND_USAGE_HOUR: &str = "usage.hour";
 /// `kind` of a [`Heartbeat`] event.
 pub const KIND_DEVICE_HEARTBEAT: &str = "device.heartbeat";
-/// Every event kind of version 1.
+/// Every event kind this build knows.
 pub const KINDS: [&str; 3] = [KIND_QUOTA_SNAPSHOT, KIND_USAGE_HOUR, KIND_DEVICE_HEARTBEAT];
 
 // ---------------------------------------------------------------------------------------------

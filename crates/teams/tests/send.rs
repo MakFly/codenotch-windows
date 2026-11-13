@@ -68,7 +68,7 @@ fn server_error_then_success() {
         let batch = Batch::parse(r.body.as_deref().unwrap()).expect("valid batch");
         assert_eq!(batch.device_id, DEVICE);
         assert_eq!(batch.app_version, "0.1.0");
-        assert!(batch.events.iter().all(|e| e.validate().is_ok()));
+        assert!(batch.events.iter().all(|e| e.accepted().is_some()));
     }
     // Nothing left: the outbox file is gone.
     assert!(!f.paths.teams_outbox().exists());

@@ -915,6 +915,19 @@ impl std::fmt::Debug for TeamsInvitePreview {
     }
 }
 
+/// Plan of a shared account in a Teams declaration: the closed set of the Teams contract
+/// (`unknown` when the provider's label is not one of its plans).
+pub use codenotch_teams_schema::PlanCode;
+
+/// The closed plan code of an account's plan label (`None` or any free text = `unknown`).
+/// Providers outside the Teams contract always give `unknown`.
+pub fn teams_plan(provider: &ProviderKind, label: Option<&str>) -> PlanCode {
+    match codenotch_teams_schema::Provider::parse(provider.id()) {
+        Some(p) => PlanCode::parse(p, label.unwrap_or("")),
+        None => PlanCode::Unknown,
+    }
+}
+
 /// Who pays for an account's plan, as the member declares it to the team.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TeamsPayer {
@@ -1128,10 +1141,11 @@ pub enum Command {
     /// Teams: the member's separate agreement to also send the usage of the days before
     /// pairing (`true`) or its withdrawal (`false`).
     TeamsAllowBackfill(bool),
-    /// Teams: declare who pays for a shared account's plan and, when the member pays, the
-    /// monthly price they declare (`None` = not declared).
+    /// Teams: declare a shared account's plan (closed code), who pays for it and, when the
+    /// member pays, the monthly price they declare (`None` = not declared).
     TeamsDeclareAccount {
         account_id: String,
+        plan: PlanCode,
         payer: TeamsPayer,
         price_eur_month: Option<f64>,
     },

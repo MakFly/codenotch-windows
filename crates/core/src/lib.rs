@@ -58,8 +58,8 @@ pub use http::{FakeHttp, HttpClient, HttpError, HttpRequest, HttpResponse, Metho
 pub use i18n::{tr, trf, Lang};
 pub use model::{
     AccountView, ActivityState, Alert, AlertKind, AnalyticsSummary, Command, DailyUsage, Event,
-    EventSink, LimitWindow, ModelUsage, ProviderKind, ProviderUsage, Reading, ReadingStatus,
-    SessionInfo, Snapshot, TeamsInvitePreview, TeamsPayer, TeamsState, TeamsStatus,
+    EventSink, LimitWindow, ModelUsage, PlanCode, ProviderKind, ProviderUsage, Reading,
+    ReadingStatus, SessionInfo, Snapshot, TeamsInvitePreview, TeamsPayer, TeamsState, TeamsStatus,
     TeamsVisibility, TokenCounts, UpdateState, WindowKind,
 };
 pub use paths::Paths;

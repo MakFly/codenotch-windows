@@ -8,7 +8,7 @@
 
 use crate::{
     Batch, EventPayload, Heartbeat, QuotaSnapshot, RawEvent, UsageHour, KIND_DEVICE_HEARTBEAT,
-    KIND_QUOTA_SNAPSHOT, KIND_USAGE_HOUR, MAX_BATCH_BYTES, MAX_BATCH_EVENTS, SCHEMA_VERSION,
+    KIND_QUOTA_SNAPSHOT, KIND_USAGE_HOUR, MAX_BATCH_EVENTS, SCHEMA_VERSION,
 };
 use serde_json::Value;
 
@@ -102,7 +102,7 @@ impl std::fmt::Display for ValidationError {
 
 impl std::error::Error for ValidationError {}
 
-type Result<T> = std::result::Result<T, ValidationError>;
+pub(crate) type Result<T> = std::result::Result<T, ValidationError>;
 
 fn check(ok: bool, field: &'static str) -> Result<()> {
     if ok {
@@ -158,46 +158,27 @@ pub fn peek_schema_version(value: &Value) -> Option<u64> {
 }
 
 impl Batch {
-    /// Parse and validate the envelope of an uploaded batch: size, JSON, `schemaVersion`
-    /// (before the shape, so a newer version gives [`ValidationError::UnsupportedVersion`]),
-    /// forbidden keys, closed shape, then [`Batch::validate`]. Events are NOT validated here,
-    /// so one bad event can be refused alone: call [`RawEvent::validate`] on each.
-    pub fn parse(bytes: &[u8]) -> Result<Batch> {
-        if bytes.len() > MAX_BATCH_BYTES {
+    /// Sender-side envelope rules: version, times, ids, event count and each event's envelope
+    /// (an unknown kind is refused: a device only sends kinds it knows). Payloads are checked
+    /// by [`RawEvent::validate`]. A receiver uses [`Batch::parse`] instead.
+    pub fn validate(&self) -> Result<()> {
+        self.validate_header()?;
+        if self.events.len() > MAX_BATCH_EVENTS {
             return Err(ValidationError::TooLarge);
         }
-        let value: Value = serde_json::from_slice(bytes).map_err(|_| ValidationError::Malformed)?;
-        match peek_schema_version(&value) {
-            Some(v) if v == u64::from(SCHEMA_VERSION) => {}
-            Some(_) => return Err(ValidationError::UnsupportedVersion),
-            None => return Err(ValidationError::Malformed),
-        }
-        let envelope_keys = value.as_object().ok_or(ValidationError::Malformed)?.keys();
-        for key in envelope_keys {
-            if FORBIDDEN_KEYS.iter().any(|f| f.eq_ignore_ascii_case(key)) {
-                return Err(ValidationError::ForbiddenKey);
-            }
-        }
-        let batch: Batch = serde_json::from_value(value).map_err(|_| ValidationError::Malformed)?;
-        batch.validate()?;
-        Ok(batch)
+        check(!self.events.is_empty(), "events")?;
+        self.events.iter().try_for_each(RawEvent::validate_envelope)
     }
 
-    /// Envelope rules: version, times, ids, event count and each event's envelope. Payloads
-    /// are checked by [`RawEvent::validate`].
-    pub fn validate(&self) -> Result<()> {
+    /// Envelope fields only (version, time, ids), without the events.
+    pub(crate) fn validate_header(&self) -> Result<()> {
         if self.schema_version != SCHEMA_VERSION {
             return Err(ValidationError::UnsupportedVersion);
         }
         check(self.sent_at > 0, "sentAt")?;
         check(is_uuid_v4(&self.device_id), "deviceId")?;
         check(is_app_version(&self.app_version), "appVersion")?;
-        check(self.consent_version >= 1, "consentVersion")?;
-        if self.events.len() > MAX_BATCH_EVENTS {
-            return Err(ValidationError::TooLarge);
-        }
-        check(!self.events.is_empty(), "events")?;
-        self.events.iter().try_for_each(RawEvent::validate_envelope)
+        check(self.consent_version >= 1, "consentVersion")
     }
 }
 

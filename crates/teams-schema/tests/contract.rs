@@ -45,17 +45,23 @@ fn every_example_is_valid() {
         let e = event(example(name));
         e.validate().unwrap_or_else(|err| panic!("{name}: {err}"));
     }
-    let batch = Batch::parse(&batch_bytes(&example("batch.json"))).unwrap();
-    assert_eq!(batch.events.len(), 3);
-    let kinds: Vec<_> = batch
-        .events
-        .iter()
-        .map(|e| e.validate().unwrap().kind())
-        .collect();
+    let parsed = Batch::parse(&batch_bytes(&example("batch.json"))).unwrap();
+    assert_eq!(parsed.events.len(), 3);
+    let kinds: Vec<_> = parsed.accepted().map(|(_, p)| p.kind()).collect();
     assert_eq!(kinds, KINDS);
-    // Envelope round trip.
+    // Round trip: the accepted events, sent again as a batch, parse to the same result.
+    let batch = Batch {
+        schema_version: parsed.schema_version,
+        sent_at: parsed.sent_at,
+        device_id: parsed.device_id.clone(),
+        app_version: parsed.app_version.clone(),
+        consent_version: parsed.consent_version,
+        data_epoch: parsed.data_epoch,
+        events: parsed.accepted().map(|(e, _)| e.clone()).collect(),
+    };
+    batch.validate().unwrap();
     let again = Batch::parse(&serde_json::to_vec(&batch).unwrap()).unwrap();
-    assert_eq!(again, batch);
+    assert_eq!(again, parsed);
 }
 
 #[test]
@@ -123,15 +129,22 @@ fn typed_payloads_round_trip_with_the_wire_names() {
 #[test]
 fn unknown_fields_are_refused_at_every_level() {
     let base = example("batch.json");
-    for pointer in ["", "/events/0"] {
-        let mut b = base.clone();
-        b.pointer_mut(pointer).unwrap()["extra"] = json!(1);
-        assert_eq!(
-            Batch::parse(&batch_bytes(&b)),
-            Err(ValidationError::Malformed),
-            "level {pointer:?}"
-        );
-    }
+    let mut b = base.clone();
+    b["extra"] = json!(1);
+    assert_eq!(
+        Batch::parse(&batch_bytes(&b)),
+        Err(ValidationError::Malformed),
+        "envelope level"
+    );
+    // Event envelope level: that event alone is refused.
+    let mut b = base.clone();
+    b["events"][0]["extra"] = json!(1);
+    let parsed = Batch::parse(&batch_bytes(&b)).unwrap();
+    assert_eq!(
+        parsed.events[0].outcome,
+        EventOutcome::Rejected(ValidationError::Malformed)
+    );
+    assert_eq!(parsed.accepted().count(), 2);
     // Payload, window and tokens levels: the event alone is refused.
     let mut snap = example("quota-snapshot.json");
     snap["payload"]["extra"] = json!(1);
@@ -439,10 +452,6 @@ fn envelope_rules_and_limits() {
         refused(&|b| b["events"] = json!([])),
         ValidationError::InvalidValue("events")
     );
-    assert_eq!(
-        refused(&|b| b["events"][2]["kind"] = json!("device.inventory")),
-        ValidationError::UnknownKind
-    );
     let beat = base["events"][2].clone();
     assert_eq!(
         refused(&|b| b["events"] = Value::Array(vec![beat.clone(); MAX_BATCH_EVENTS + 1])),
@@ -453,6 +462,148 @@ fn envelope_rules_and_limits() {
     assert_eq!(Batch::parse(&huge), Err(ValidationError::TooLarge));
     assert_eq!(Batch::parse(b"{ nope"), Err(ValidationError::Malformed));
     assert_eq!(Batch::parse(b"[1]"), Err(ValidationError::Malformed));
+}
+
+// ---------------------------------------------------------------------------------------------
+// Per-event outcomes
+// ---------------------------------------------------------------------------------------------
+
+fn statuses(parsed: &ParsedBatch) -> Vec<Value> {
+    parsed
+        .events
+        .iter()
+        .map(|e| serde_json::to_value(e.status()).unwrap())
+        .collect()
+}
+
+#[test]
+fn unknown_kind_is_ignored_and_the_other_events_are_kept() {
+    // A kind added after this build, with a payload this build cannot read.
+    let mut b = example("batch.json");
+    let id = "e1d2c3b4-a5f6-4a7b-8c9d-0e1f2a3b4c5d";
+    b["events"].as_array_mut().unwrap().insert(
+        1,
+        json!({"eventId": id, "occurredAt": 1_794_556_800_i64, "kind": "device.inventory",
+               "payload": {"anything": [1, 2], "newField": "x"}, "newEnvelopeField": 1}),
+    );
+    let parsed = Batch::parse(&batch_bytes(&b)).unwrap();
+    assert_eq!(parsed.events.len(), 4);
+    assert_eq!(parsed.events[1].outcome, EventOutcome::Ignored);
+    let kinds: Vec<_> = parsed.accepted().map(|(_, p)| p.kind()).collect();
+    assert_eq!(kinds, KINDS);
+    assert_eq!(
+        statuses(&parsed)[1],
+        json!({"index": 1, "eventId": id, "status": "ignored", "reason": "unknown_kind"})
+    );
+    assert_eq!(
+        statuses(&parsed)[0],
+        json!({"index": 0, "eventId": "0d4b6c1e-5a0f-4e0b-8f51-1c2f9d3a7b60", "status": "accepted"})
+    );
+    // Only unknown kinds: still a batch, every event ignored, the kind never echoed.
+    let mut only = example("batch.json");
+    for e in only["events"].as_array_mut().unwrap() {
+        e["kind"] = json!("session.prompt");
+    }
+    let parsed = Batch::parse(&batch_bytes(&only)).unwrap();
+    assert!(parsed
+        .events
+        .iter()
+        .all(|e| e.outcome == EventOutcome::Ignored));
+    assert!(!serde_json::to_string(&statuses(&parsed))
+        .unwrap()
+        .contains("session.prompt"));
+}
+
+#[test]
+fn malformed_event_is_rejected_alone() {
+    let mut b = example("batch.json");
+    let events = b["events"].as_array_mut().unwrap();
+    // Wrong type, no kind, a value outside its closed set, a forbidden key, a broken rule.
+    events.push(json!(42));
+    events.push(json!({"eventId": "not-a-uuid", "occurredAt": 1, "payload": {}}));
+    let mut plan = events[0].clone();
+    plan["payload"]["plan"] = json!(SENTINELS[2]);
+    events.push(plan);
+    let mut key = events[2].clone();
+    key["payload"]["prompt"] = json!(SENTINELS[2]);
+    events.push(key);
+    let mut rule = events[0].clone();
+    rule["payload"]["plan"] = json!("plus");
+    events.push(rule);
+    let parsed = Batch::parse(&batch_bytes(&b)).unwrap();
+    assert_eq!(parsed.events.len(), 8);
+    assert_eq!(parsed.accepted().count(), 3, "the valid events survive");
+    let outcomes: Vec<_> = parsed.events[3..].iter().map(|e| &e.outcome).collect();
+    assert_eq!(
+        outcomes,
+        [
+            &EventOutcome::Rejected(ValidationError::Malformed),
+            &EventOutcome::Rejected(ValidationError::Malformed),
+            &EventOutcome::Rejected(ValidationError::Malformed),
+            &EventOutcome::Rejected(ValidationError::ForbiddenKey),
+            &EventOutcome::Rejected(ValidationError::InvalidValue("plan")),
+        ]
+    );
+    let s = statuses(&parsed);
+    assert_eq!(
+        s[4],
+        json!({"index": 4, "status": "rejected", "reason": "malformed"}),
+        "an invalid event id is not echoed"
+    );
+    assert_eq!(s[7]["reason"], "invalid_value");
+    assert_eq!(s[7]["field"], "plan");
+    let text = serde_json::to_string(&s).unwrap();
+    assert!(!text.contains(SENTINELS[2]), "no input value echoed");
+    // The wire shape reads back.
+    let back: EventStatus = serde_json::from_value(s[7].clone()).unwrap();
+    assert_eq!(back, parsed.events[7].status());
+}
+
+#[test]
+fn envelope_and_version_errors_stay_batch_level() {
+    // Even next to an unknown kind and a malformed event, a bad envelope refuses the batch.
+    let mut b = example("batch.json");
+    b["events"][0]["kind"] = json!("device.inventory");
+    b["events"][1] = json!("garbage");
+    type Mutation = Box<dyn Fn(&mut Value)>;
+    let cases: Vec<(Mutation, ValidationError)> = vec![
+        (
+            Box::new(|b| b["deviceId"] = json!("PC-OF-KEV")),
+            ValidationError::InvalidValue("deviceId"),
+        ),
+        (
+            Box::new(|b| b["schemaVersion"] = json!(2)),
+            ValidationError::UnsupportedVersion,
+        ),
+        (
+            Box::new(|b| b["extra"] = json!(1)),
+            ValidationError::Malformed,
+        ),
+        (
+            Box::new(|b| b["events"] = json!({})),
+            ValidationError::Malformed,
+        ),
+        (
+            Box::new(|b| b["events"] = json!([])),
+            ValidationError::InvalidValue("events"),
+        ),
+        (
+            Box::new(|b| b["events"] = Value::Array(vec![json!(1); MAX_BATCH_EVENTS + 1])),
+            ValidationError::TooLarge,
+        ),
+    ];
+    for (mutate, err) in cases {
+        let mut bad = b.clone();
+        mutate(&mut bad);
+        assert_eq!(Batch::parse(&batch_bytes(&bad)), Err(err));
+    }
+    let parsed = Batch::parse(&batch_bytes(&b)).unwrap();
+    assert_eq!(parsed.events[0].outcome, EventOutcome::Ignored);
+    assert_eq!(
+        parsed.events[1].outcome,
+        EventOutcome::Rejected(ValidationError::Malformed)
+    );
+    assert_eq!(parsed.accepted().count(), 1);
 }
 
 // ---------------------------------------------------------------------------------------------

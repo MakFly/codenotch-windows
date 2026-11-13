@@ -6,7 +6,10 @@ mod common;
 use codenotch_core::analytics::{HourlyUsage, RootOwners};
 use codenotch_core::model::{ActivityState, ReadingStatus, SessionInfo, WindowKind};
 use codenotch_core::TeamsVisibility;
-use codenotch_core::{FakeHttp, LimitWindow, ProviderKind, Reading, TeamsPayer, TokenCounts};
+use codenotch_core::{
+    FakeHttp, LimitWindow, PlanCode, ProviderKind, Reading, TeamsPayer, TokenCounts,
+};
+use codenotch_teams::pairing::Declaration;
 use codenotch_teams::state::StateFile;
 use codenotch_teams::sync::BACKFILL_SECS;
 use codenotch_teams::{pairing, InviteCode, Origin, PairError, Policy, TeamsSync};
@@ -188,8 +191,11 @@ fn sentinels_never_reach_the_wire_the_disk_or_debug() {
         DEVICE_TOKEN,
         &policy,
         "c1",
-        TeamsPayer::Member,
-        Some(21.6),
+        &Declaration {
+            plan: codenotch_core::model::teams_plan(&ProviderKind::Claude, Some(PROMPT)),
+            payer: TeamsPayer::Member,
+            price_eur_month: Some(21.6),
+        },
     )
     .unwrap();
     pairing::detach(&fake, &origin, DEVICE_TOKEN).unwrap();
@@ -222,8 +228,10 @@ fn sentinels_never_reach_the_wire_the_disk_or_debug() {
     }
 
     // What did go out: the closed values, and only them.
-    let batch = codenotch_teams_schema::Batch::parse(requests[0].body.as_deref().unwrap()).unwrap();
-    let text = serde_json::to_string(&batch).unwrap();
+    let body = requests[0].body.as_deref().unwrap();
+    let batch = codenotch_teams_schema::Batch::parse(body).unwrap();
+    assert!(batch.events.iter().all(|e| e.accepted().is_some()));
+    let text = String::from_utf8_lossy(body);
     assert!(text.contains("\"plan\":\"unknown\""));
     assert!(text.contains("\"model\":\"unknown\""));
     assert!(text.contains("\"id\":\"session\"") && text.contains("\"id\":\"seven_day\""));
@@ -307,8 +315,11 @@ fn declaration_is_checked_locally() {
                 "t",
                 &policy,
                 "c1",
-                TeamsPayer::Member,
-                price
+                &Declaration {
+                    plan: PlanCode::Unknown,
+                    payer: TeamsPayer::Member,
+                    price_eur_month: price,
+                },
             ),
             Err(PairError::Refused)
         );
@@ -322,8 +333,11 @@ fn declaration_is_checked_locally() {
             "t",
             &policy,
             "c1",
-            TeamsPayer::Company,
-            None
+            &Declaration {
+                plan: PlanCode::Unknown,
+                payer: TeamsPayer::Company,
+                price_eur_month: None,
+            },
         ),
         Err(PairError::Refused)
     );
@@ -337,21 +351,100 @@ fn declaration_is_checked_locally() {
         "t",
         &policy,
         "x1",
-        TeamsPayer::Company,
-        None,
+        &Declaration {
+            plan: PlanCode::Plus,
+            payer: TeamsPayer::Company,
+            price_eur_month: None,
+        },
     )
     .unwrap();
     let body: serde_json::Value =
         serde_json::from_slice(http.requests()[0].body.as_deref().unwrap()).unwrap();
     let mut keys: Vec<&String> = body.as_object().unwrap().keys().collect();
     keys.sort();
-    assert_eq!(keys, ["accountRef", "payer", "priceEurMonth"]);
+    assert_eq!(keys, ["accountRef", "payer", "plan", "priceEurMonth"]);
     assert_eq!(
         body["accountRef"],
         codenotch_teams::account_ref(DEVICE, "x1")
     );
+    assert_eq!(body["plan"], "plus");
     assert_eq!(body["payer"], "company");
     assert!(body["priceEurMonth"].is_null());
+}
+
+#[test]
+fn declaration_carries_a_closed_plan_and_no_free_text() {
+    let mut f = fixture();
+    // Account fields full of private values.
+    for a in &mut f.config.accounts {
+        a.name = EMAIL.into();
+    }
+    let origin = Origin::parse(ORIGIN).unwrap();
+    let policy = Policy::new(&f.config, &f.owners, DEVICE, H0);
+    // The plan as the page derives it from a reading label: free text, a path or an e-mail
+    // become `unknown`; a known label becomes its code.
+    for (label, code) in [
+        (Some(PROMPT), "unknown"),
+        (Some(PATH), "unknown"),
+        (Some(EMAIL), "unknown"),
+        (None, "unknown"),
+        (Some("Max 20x"), "max_20x"),
+    ] {
+        let plan = codenotch_core::model::teams_plan(&ProviderKind::Claude, label);
+        let http = SeqHttp::new(vec![Reply::Status(200, "{}".into())]);
+        pairing::declare_account(
+            &http,
+            &origin,
+            "t",
+            &policy,
+            "c1",
+            &Declaration {
+                plan,
+                payer: TeamsPayer::Member,
+                price_eur_month: Some(21.6),
+            },
+        )
+        .unwrap();
+        let bytes = http.requests()[0].body.clone().unwrap();
+        assert_clean("declare body", &bytes);
+        let text = String::from_utf8_lossy(&bytes);
+        assert!(
+            !text.contains('@') && !text.contains('\\'),
+            "no e-mail, no path"
+        );
+        let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(body["plan"], code);
+        // Every value is a closed code, a checked reference or a number.
+        assert!(codenotch_teams_schema::validate::is_account_ref(
+            body["accountRef"].as_str().unwrap()
+        ));
+        assert_eq!(body["payer"], "member");
+        assert_eq!(body["priceEurMonth"], 21.6);
+        assert_eq!(body.as_object().unwrap().len(), 4);
+    }
+    // Providers outside the contract have no plan code.
+    assert_eq!(
+        codenotch_core::model::teams_plan(&ProviderKind::Glm, Some("Pro")),
+        PlanCode::Unknown
+    );
+    // A plan of the other provider is refused before any request.
+    let http = SeqHttp::new(vec![]);
+    assert_eq!(
+        pairing::declare_account(
+            &http,
+            &origin,
+            "t",
+            &policy,
+            "c1",
+            &Declaration {
+                plan: PlanCode::Plus,
+                payer: TeamsPayer::Company,
+                price_eur_month: None,
+            },
+        ),
+        Err(PairError::Refused)
+    );
+    assert!(http.requests().is_empty());
 }
 
 #[test]

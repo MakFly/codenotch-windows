@@ -13,7 +13,7 @@ use crate::widgets::{
 use codenotch_core::format;
 use codenotch_core::model::{TeamsState, TeamsVisibility};
 use codenotch_core::secrets::SecretValue;
-use codenotch_core::{Command, Lang, Snapshot, TeamsPayer};
+use codenotch_core::{Command, Lang, PlanCode, Snapshot, TeamsPayer};
 use codenotch_ui_kit::Theme;
 use gpui::prelude::FluentBuilder;
 use gpui::{
@@ -524,8 +524,20 @@ impl SettingsView {
             .update(cx, |s, cx| s.set_value("", window, cx));
     }
 
-    /// Send the payer (and the price when the member pays) of one shared account.
+    /// Send the plan, the payer (and the price when the member pays) of one shared account.
+    /// The plan is the one the page shows from the latest reading, as a closed code
+    /// (`unknown` when there is none or it is not a plan of the contract).
     pub(crate) fn teams_declare(&mut self, id: &str, cx: &mut Context<Self>) {
+        let plan = self
+            .model
+            .read(cx)
+            .snapshot
+            .account(id)
+            .map(|v| {
+                let label = v.reading.as_ref().and_then(|r| r.plan.as_deref());
+                codenotch_core::model::teams_plan(&v.account.provider, label)
+            })
+            .unwrap_or(PlanCode::Unknown);
         let payer = self
             .teams_payer
             .get(id)
@@ -559,6 +571,7 @@ impl SettingsView {
         self.send(
             Command::TeamsDeclareAccount {
                 account_id: id.to_string(),
+                plan,
                 payer,
                 price_eur_month: price,
             },

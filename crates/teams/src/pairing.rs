@@ -8,7 +8,7 @@
 //! out) and refused when it repeats the invite code or the device token.
 
 use codenotch_core::{
-    HttpClient, HttpRequest, HttpResponse, SecretValue, TeamsPayer, TeamsVisibility,
+    HttpClient, HttpRequest, HttpResponse, PlanCode, SecretValue, TeamsPayer, TeamsVisibility,
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -167,25 +167,43 @@ pub fn pair(
     })
 }
 
-/// `POST /v1/accounts/declare`: who pays for a shared account's plan and, when the member
-/// pays, the monthly price they declare. Only the account reference, the payer and a number
-/// leave; an account that is not shared, or a negative / non-finite price, is refused
-/// before any request.
+/// What the member declares about one shared account.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Declaration {
+    /// Closed plan code (`unknown` allowed).
+    pub plan: PlanCode,
+    pub payer: TeamsPayer,
+    /// Monthly price the member declares when they pay (`None` = not declared).
+    pub price_eur_month: Option<f64>,
+}
+
+/// `POST /v1/accounts/declare`: a shared account's plan (closed code, `unknown` allowed),
+/// who pays for it and, when the member pays, the monthly price they declare. Only the
+/// account reference, two closed codes and a number leave. An account that is not shared, a
+/// plan of another provider, or a negative / non-finite price is refused before any request.
 pub fn declare_account(
     http: &dyn HttpClient,
     origin: &Origin,
     token: &str,
     policy: &Policy,
     account_id: &str,
-    payer: TeamsPayer,
-    price_eur_month: Option<f64>,
+    declaration: &Declaration,
 ) -> Result<(), PairError> {
+    let Declaration {
+        plan,
+        payer,
+        price_eur_month,
+    } = *declaration;
     let shared = policy.account(account_id).ok_or(PairError::Refused)?;
+    if !plan.allowed_for(shared.provider) {
+        return Err(PairError::Refused);
+    }
     if price_eur_month.is_some_and(|p| !p.is_finite() || p < 0.0 || p > 100_000.0) {
         return Err(PairError::Refused);
     }
     let body = json!({
         "accountRef": shared.account_ref,
+        "plan": plan.as_str(),
         "payer": match payer {
             TeamsPayer::Company => "company",
             TeamsPayer::Member => "member",

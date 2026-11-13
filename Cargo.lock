@@ -1049,6 +1049,7 @@ name = "codenotch-core"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "codenotch-teams-schema",
  "dirs 6.0.0",
  "log",
  "native-tls",

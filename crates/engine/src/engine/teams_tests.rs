@@ -370,6 +370,7 @@ fn off_means_no_request_no_file_no_worker() {
         Command::TeamsAllowBackfill(true),
         Command::TeamsDeclareAccount {
             account_id: "c1".into(),
+            plan: codenotch_core::PlanCode::Unknown,
             payer: TeamsPayer::Company,
             price_eur_month: None,
         },
@@ -696,6 +697,30 @@ fn a_full_queue_drops_observations_without_blocking() {
     }
     assert_eq!(r.e.teams.dropped, 10);
     drop(release);
+    r.e.teams_shutdown();
+}
+
+#[test]
+fn declaration_sends_the_plan_code() {
+    let server = Arc::new(Server::default());
+    let mut r = rig(true, &server);
+    r.pair(INVITE_A, "Team A");
+    r.e.command(Command::TeamsDeclareAccount {
+        account_id: "c1".into(),
+        plan: codenotch_core::PlanCode::Max,
+        payer: TeamsPayer::Member,
+        price_eur_month: Some(90.0),
+    });
+    let declared = |s: &Server| {
+        s.requests()
+            .into_iter()
+            .find(|q| q.url.ends_with("/v1/accounts/declare"))
+    };
+    r.pump(|_| declared(&server).is_some());
+    let b = body(&declared(&server).unwrap());
+    assert_eq!(b["plan"], "max");
+    assert_eq!(b["payer"], "member");
+    assert_eq!(b["priceEurMonth"], 90.0);
     r.e.teams_shutdown();
 }
 

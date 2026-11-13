@@ -30,7 +30,8 @@ use super::{Engine, Msg};
 use crate::Clock;
 use codenotch_core::analytics::{HourlyUsage, RootOwners};
 use codenotch_core::model::{
-    Command, Reading, ReadingStatus, TeamsInvitePreview, TeamsPayer, TeamsState, TeamsStatus,
+    Command, PlanCode, Reading, ReadingStatus, TeamsInvitePreview, TeamsPayer, TeamsState,
+    TeamsStatus,
 };
 use codenotch_core::secrets::{SecretKey, SecretValue};
 use codenotch_core::{Config, Env, HttpClient, Paths};
@@ -158,6 +159,7 @@ pub(crate) enum Job {
     },
     Declare {
         account_id: String,
+        plan: PlanCode,
         payer: TeamsPayer,
         price_eur_month: Option<f64>,
     },
@@ -513,6 +515,7 @@ impl Engine {
             }
             Command::TeamsDeclareAccount {
                 account_id,
+                plan,
                 payer,
                 price_eur_month,
             } => {
@@ -520,6 +523,7 @@ impl Engine {
                     self.notice(MSG_NOT_PAIRED);
                 } else if self.teams_send(Job::Declare {
                     account_id,
+                    plan,
                     payer,
                     price_eur_month,
                 }) {
@@ -946,10 +950,11 @@ impl Worker {
             }
             Job::Declare {
                 account_id,
+                plan,
                 payer,
                 price_eur_month,
             } => {
-                let result = self.declare(generation, &account_id, payer, price_eur_month);
+                let result = self.declare(generation, &account_id, plan, payer, price_eur_month);
                 self.report(generation, Report::Declared(result));
             }
             Job::Erase => {
@@ -993,6 +998,7 @@ impl Worker {
         &mut self,
         generation: u64,
         account_id: &str,
+        plan: PlanCode,
         payer: TeamsPayer,
         price: Option<f64>,
     ) -> Result<(), &'static str> {
@@ -1015,8 +1021,11 @@ impl Worker {
             token.expose(),
             &policy,
             account_id,
-            payer,
-            price,
+            &pairing::Declaration {
+                plan,
+                payer,
+                price_eur_month: price,
+            },
         )
         .map_err(pair_message)
     }

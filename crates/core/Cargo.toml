@@ -11,6 +11,8 @@ publish.workspace = true
 name = "codenotch_core"
 
 [dependencies]
+# Closed value sets of the Teams contract (no I/O, no schemars: default features off).
+codenotch-teams-schema.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 chrono.workspace = true
