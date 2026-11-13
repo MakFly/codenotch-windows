@@ -1145,6 +1145,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "codenotch-teams"
+version = "0.1.0"
+dependencies = [
+ "codenotch-core",
+ "codenotch-teams-schema",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tempfile",
+ "uuid",
+]
+
+[[package]]
 name = "codenotch-teams-schema"
 version = "0.1.0"
 dependencies = [
