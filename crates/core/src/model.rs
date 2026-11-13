@@ -848,6 +848,25 @@ pub struct TeamsStatus {
     pub last_sent_at: Option<i64>,
     /// Last error, English i18n key or short technical reason (no secret).
     pub last_error: Option<String>,
+    /// Server origin of the pairing (`scheme://host[:port]`). `None` = not paired.
+    pub origin: Option<String>,
+    /// The member agreed to also send the usage of the days before pairing.
+    pub backfill: bool,
+    /// An invite read with `Command::TeamsPreviewInvite`, waiting for the member to accept it
+    /// (`Command::TeamsPair`).
+    pub preview: Option<TeamsInvitePreview>,
+    /// A preview, pairing, detach, declaration or erase request is running.
+    pub busy: bool,
+}
+
+/// What an invite shows before the member accepts it. Holds no secret (not the invite code).
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct TeamsInvitePreview {
+    pub team_name: String,
+    /// What the team sees, as the server names it (`named`: usage by member name).
+    pub visibility: String,
+    /// Server origin the invite points to (`scheme://host[:port]`).
+    pub origin: String,
 }
 
 /// Who pays for an account's plan, as the member declares it to the team.

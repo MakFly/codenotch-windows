@@ -303,7 +303,16 @@ impl TeamsSync {
             queued: u32::try_from(self.journal.len()).unwrap_or(u32::MAX),
             last_sent_at: self.state.last_sent_at,
             last_error: self.last_error.map(str::to_string),
+            origin: Some(self.origin.as_str().to_string()),
+            backfill: self.state.backfill,
+            preview: None,
+            busy: false,
         }
+    }
+
+    /// The member agreed to send the days before pairing (see [`allow_backfill`](Self::allow_backfill)).
+    pub fn backfill(&self) -> bool {
+        self.state.backfill
     }
 
     // -----------------------------------------------------------------------------------------

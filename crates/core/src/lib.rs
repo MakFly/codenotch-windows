@@ -58,8 +58,8 @@ pub use i18n::{tr, trf, Lang};
 pub use model::{
     AccountView, ActivityState, Alert, AlertKind, AnalyticsSummary, Command, DailyUsage, Event,
     EventSink, LimitWindow, ModelUsage, ProviderKind, ProviderUsage, Reading, ReadingStatus,
-    SessionInfo, Snapshot, TeamsPayer, TeamsState, TeamsStatus, TokenCounts, UpdateState,
-    WindowKind,
+    SessionInfo, Snapshot, TeamsInvitePreview, TeamsPayer, TeamsState, TeamsStatus, TokenCounts,
+    UpdateState, WindowKind,
 };
 pub use paths::Paths;
 pub use provider::{Env, FetchContext, LocalIdentity, Provider};
