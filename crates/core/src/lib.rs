@@ -42,8 +42,9 @@ pub mod state;
 pub mod system;
 
 pub use analytics::{
-    AnalyticsDetail, HourCell, Series, SeriesBy, SessionActivity, SessionFact, SharedDetail,
-    UsageFact, UsageFilter, UsageTotals, DAYS_PER_MONTH, HEATMAP_DAYS,
+    AnalyticsDetail, HourCell, HourlyUsage, RootOwners, Series, SeriesBy, SessionActivity,
+    SessionFact, SharedDetail, UsageFact, UsageFilter, UsageTotals, DAYS_PER_MONTH, HEATMAP_DAYS,
+    HOURLY_EXPORT_DAYS,
 };
 pub use config::{
     Account, ColorTransition, Config, Edge, NotchSize, Settings, ShowMode, TaskbarMode, ThemeMode,

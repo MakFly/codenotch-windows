@@ -1,11 +1,12 @@
 //! Transcript discovery and the incremental indexer.
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap};
 use std::fs::{File, Metadata};
 use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
+use codenotch_core::analytics::RootOwners;
 use codenotch_core::model::ProviderKind;
 use codenotch_core::{Config, Env};
 
@@ -58,9 +59,33 @@ fn profile_dir(env: &Env, cli: Cli, profile_path: &str) -> PathBuf {
 /// Roots to scan: the default Claude and Codex profiles plus the profile folder of every
 /// enabled Claude / Codex account (duplicates removed).
 pub fn roots(config: &Config, env: &Env) -> Vec<Root> {
-    let mut profiles: Vec<(Cli, PathBuf)> = vec![
-        (Cli::Claude, profile_dir(env, Cli::Claude, "")),
-        (Cli::Codex, profile_dir(env, Cli::Codex, "")),
+    roots_with_owners(config, env)
+        .into_iter()
+        .map(|(root, _)| root)
+        .collect()
+}
+
+/// Every root of [`roots`] (same order, same `source` strings as the cache buckets) with the
+/// ids of the enabled accounts whose profile folder it is. The default profile counts for an
+/// account whose `profilePath` is empty or points at the same folder.
+pub fn root_owners(config: &Config, env: &Env) -> Vec<RootOwners> {
+    roots_with_owners(config, env)
+        .into_iter()
+        .map(|(root, accounts)| RootOwners {
+            source: root.source(),
+            provider: match root.cli {
+                Cli::Claude => ProviderKind::Claude,
+                Cli::Codex => ProviderKind::Codex,
+            },
+            accounts,
+        })
+        .collect()
+}
+
+fn roots_with_owners(config: &Config, env: &Env) -> Vec<(Root, Vec<String>)> {
+    let mut profiles: Vec<(Cli, PathBuf, Option<&str>)> = vec![
+        (Cli::Claude, profile_dir(env, Cli::Claude, ""), None),
+        (Cli::Codex, profile_dir(env, Cli::Codex, ""), None),
     ];
     for account in config.enabled_accounts() {
         let cli = match account.provider {
@@ -68,19 +93,30 @@ pub fn roots(config: &Config, env: &Env) -> Vec<Root> {
             ProviderKind::Codex => Cli::Codex,
             _ => continue,
         };
-        profiles.push((cli, profile_dir(env, cli, &account.profile_path)));
+        profiles.push((
+            cli,
+            profile_dir(env, cli, &account.profile_path),
+            Some(account.id.as_str()),
+        ));
     }
-    let mut seen = HashSet::new();
-    let mut out = Vec::new();
-    for (cli, dir) in profiles {
+    let mut index: HashMap<String, usize> = HashMap::new();
+    let mut out: Vec<(Root, Vec<String>)> = Vec::new();
+    for (cli, dir, account) in profiles {
         let subs: &[&str] = match cli {
             Cli::Claude => &["projects"],
             Cli::Codex => &["sessions", "archived_sessions"],
         };
         for sub in subs {
             let path = dir.join(sub);
-            if seen.insert(dedup_key(&path)) {
-                out.push(Root { path, cli });
+            let i = *index.entry(dedup_key(&path)).or_insert_with(|| {
+                out.push((Root { path, cli }, Vec::new()));
+                out.len() - 1
+            });
+            if let Some(id) = account {
+                let owners = &mut out[i].1;
+                if !owners.iter().any(|o| o == id) {
+                    owners.push(id.to_string());
+                }
             }
         }
     }
@@ -485,5 +521,51 @@ mod tests {
         let s = update(&mut cache, &[root], i64::MAX);
         assert_eq!(s.files, 0);
         assert!(cache.files.is_empty());
+    }
+
+    #[test]
+    fn root_owners_name_the_enabled_accounts_of_each_root() {
+        let dir = tempfile::tempdir().expect("tmp");
+        let env = Env::for_test(dir.path());
+        // No account: the default roots are scanned but belong to nobody.
+        let owners = root_owners(&Config::default(), &env);
+        assert_eq!(owners.len(), 3);
+        assert!(owners.iter().all(|o| o.accounts.is_empty()));
+
+        let mut config = Config::default();
+        let a = codenotch_core::Account::new(ProviderKind::Claude, "default");
+        let mut b = codenotch_core::Account::new(ProviderKind::Claude, "same folder");
+        b.profile_path = env.home_path(".claude").to_string_lossy().into_owned();
+        let mut c = codenotch_core::Account::new(ProviderKind::Codex, "work");
+        c.profile_path = dir.path().join("cx").to_string_lossy().into_owned();
+        let mut d = codenotch_core::Account::new(ProviderKind::Codex, "off");
+        d.enabled = false;
+        let glm = codenotch_core::Account::new(ProviderKind::Glm, "glm");
+        let ids = [a.id.clone(), b.id.clone(), c.id.clone()];
+        config.accounts = vec![a, b, c, d, glm];
+        let owners = root_owners(&config, &env);
+        let sources: Vec<String> = roots(&config, &env).iter().map(Root::source).collect();
+        assert_eq!(
+            owners.iter().map(|o| o.source.clone()).collect::<Vec<_>>(),
+            sources
+        );
+        let of = |suffix: &str| {
+            owners
+                .iter()
+                .find(|o| o.source.ends_with(suffix))
+                .expect("root")
+        };
+        // Shared default Claude profile: two owners.
+        assert_eq!(
+            of(".claude\\projects").accounts,
+            [ids[0].clone(), ids[1].clone()]
+        );
+        assert_eq!(of(".claude\\projects").provider, ProviderKind::Claude);
+        // Default Codex profile: the disabled account does not count.
+        assert!(of(".codex\\sessions").accounts.is_empty());
+        // Both Codex roots of the work profile belong to the work account.
+        assert_eq!(of("cx\\sessions").accounts, [ids[2].clone()]);
+        assert_eq!(of("cx\\archived_sessions").accounts, [ids[2].clone()]);
+        assert_eq!(of("cx\\archived_sessions").provider, ProviderKind::Codex);
     }
 }

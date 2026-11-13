@@ -1,11 +1,12 @@
 //! Aggregation of cached buckets into the analytics report.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::sync::Arc;
 
 use chrono::{Datelike, Duration, NaiveDate, TimeZone, Timelike};
 use codenotch_core::analytics::{
-    fact_days, AnalyticsDetail, HourCell, SessionActivity, SessionFact, SharedDetail, UsageFact,
-    HEATMAP_DAYS,
+    fact_days, AnalyticsDetail, HourCell, HourlyUsage, SessionActivity, SessionFact, SharedDetail,
+    UsageFact, HEATMAP_DAYS, HOURLY_EXPORT_DAYS,
 };
 use codenotch_core::model::{
     AnalyticsSummary, DailyUsage, ModelUsage, ProviderKind, ProviderUsage, TokenCounts,
@@ -201,6 +202,11 @@ pub struct AnalyticsReport {
     pub plans: Vec<PlanComparison>,
     /// Model ids seen in the period without a price.
     pub unpriced_models: Vec<String>,
+    /// Usage per UTC hour × scan root × provider × normalised model over the last
+    /// [`HOURLY_EXPORT_DAYS`] days, oldest first (see [`hourly_usage`]). Not shown by the
+    /// analytics page; not serialised.
+    #[serde(skip)]
+    pub hourly: Arc<Vec<HourlyUsage>>,
     pub stats: ReportStats,
 }
 
@@ -611,8 +617,43 @@ pub fn build<Tz: TimeZone>(
         per_hour,
         plans,
         unpriced_models,
+        hourly: Arc::new(hourly_usage(cache, now)),
         stats: ReportStats::default(),
     }
+}
+
+/// Usage per (UTC hour, scan root, provider, normalised model) over the last
+/// [`HOURLY_EXPORT_DAYS`] days up to `now`, oldest first. Every project and every transcript
+/// file of a root adds to the same row (Codex `sessions` and `archived_sessions` are two
+/// roots); the project is dropped.
+pub fn hourly_usage(cache: &Cache, now: i64) -> Vec<HourlyUsage> {
+    let from = crate::parse::hour_of(now) - i64::from(HOURLY_EXPORT_DAYS) * 86_400;
+    let mut normalised: HashMap<&str, String> = HashMap::new();
+    let mut rows: BTreeMap<(i64, &str, &str, String), Tokens> = BTreeMap::new();
+    for entry in cache.files.values() {
+        for b in &entry.buckets {
+            if b.hour < from || b.hour > now || b.tokens.is_empty() {
+                continue;
+            }
+            let model = normalised
+                .entry(b.model.as_str())
+                .or_insert_with(|| crate::pricing::normalize_model(&b.model))
+                .clone();
+            rows.entry((b.hour, b.source.as_str(), b.cli.as_str(), model))
+                .or_default()
+                .add(&b.tokens);
+        }
+    }
+    rows.into_iter()
+        .map(|((hour, source, cli, model), t)| HourlyUsage {
+            hour,
+            source: source.to_string(),
+            provider: provider_of(cli),
+            model,
+            tokens: to_counts(&t),
+            cache_write_1h: t.cache_write_1h,
+        })
+        .collect()
 }
 
 /// Local (date, weekday 0 = Monday, hour) of a bucket start.
@@ -1220,6 +1261,173 @@ mod tests {
             range.tokens.total(),
             d.facts.iter().map(|f| f.tokens.total()).sum::<u64>()
         );
+    }
+
+    fn sourced(mut b: Bucket, source: &str) -> Bucket {
+        b.source = source.into();
+        b
+    }
+
+    #[test]
+    fn hourly_sums_projects_and_files_on_one_key_and_matches_the_report() {
+        let tz = FixedOffset::east_opt(3600).expect("tz");
+        let now = ts("2026-11-12T10:30:00Z");
+        let w = |input: u64, output: u64, cw: u64, cw1h: u64| Tokens {
+            input,
+            output,
+            cache_write: cw,
+            cache_read: 7,
+            cache_write_1h: cw1h,
+        };
+        let mut a = FileEntry::default();
+        a.buckets.push(sourced(
+            bucket(
+                "2026-11-12T09:00:00Z",
+                "claude",
+                "claude-opus-5-5",
+                "C:\\p1",
+                w(1, 2, 10, 4),
+            ),
+            "R1",
+        ));
+        a.buckets.push(sourced(
+            bucket(
+                "2026-11-12T09:00:00Z",
+                "claude",
+                "claude-opus-5-5-20261101",
+                "C:\\p2",
+                w(10, 20, 0, 0),
+            ),
+            "R1",
+        ));
+        a.buckets.push(sourced(
+            bucket(
+                "2026-11-11T08:00:00Z",
+                "claude",
+                "claude-sonnet-5-5",
+                "C:\\p1",
+                tok(5, 5),
+            ),
+            "R1",
+        ));
+        let mut b = FileEntry::default();
+        // Another file, another project, same hour, root and model: same row.
+        b.buckets.push(sourced(
+            bucket(
+                "2026-11-12T09:00:00Z",
+                "claude",
+                "claude-opus-5-5",
+                "C:\\p3",
+                w(100, 200, 30, 0),
+            ),
+            "R1",
+        ));
+        // Same key on another root: its own row.
+        b.buckets.push(sourced(
+            bucket(
+                "2026-11-12T09:00:00Z",
+                "claude",
+                "claude-opus-5-5",
+                "C:\\p3",
+                tok(1000, 0),
+            ),
+            "R2",
+        ));
+        let mut c = FileEntry::default();
+        c.buckets.push(sourced(
+            bucket(
+                "2026-11-10T23:00:00Z",
+                "codex",
+                "gpt-6-luna",
+                "C:\\cli",
+                tok(3, 4),
+            ),
+            "R3",
+        ));
+        let mut cache = Cache::empty();
+        cache.files.insert("a".into(), a);
+        cache.files.insert("b".into(), b);
+        cache.files.insert("c".into(), c);
+
+        let r = build(
+            &cache,
+            &PriceTable::builtin(),
+            &config(7),
+            &HashMap::new(),
+            now,
+            &tz,
+        );
+        let rows = &*r.hourly;
+        assert_eq!(rows.len(), 4);
+        // Oldest first.
+        assert!(rows.windows(2).all(|p| p[0].hour <= p[1].hour));
+        let key = rows
+            .iter()
+            .find(|h| h.source == "R1" && h.model == "claude-opus-5-5")
+            .expect("row");
+        assert_eq!(key.hour, ts("2026-11-12T09:00:00Z"));
+        assert_eq!(key.provider, ProviderKind::Claude);
+        assert_eq!(
+            (
+                key.tokens.input,
+                key.tokens.output,
+                key.tokens.cache_write,
+                key.tokens.cache_read
+            ),
+            (111, 222, 40, 21)
+        );
+        assert_eq!(key.cache_write_1h, 4);
+        assert_eq!(rows.iter().filter(|h| h.source == "R2").count(), 1);
+
+        // Sums equal the report (every bucket is inside the 7-day period).
+        let mut sum = TokenCounts::default();
+        rows.iter().for_each(|h| sum.add(&h.tokens));
+        assert_eq!(sum, r.total.tokens);
+        assert_eq!(
+            rows.iter().map(|h| h.cache_write_1h).sum::<u64>(),
+            r.total.cache_write_1h
+        );
+        for cli in &r.per_cli {
+            let mut t = TokenCounts::default();
+            rows.iter()
+                .filter(|h| h.provider == cli.provider)
+                .for_each(|h| t.add(&h.tokens));
+            assert_eq!(t, cli.usage.tokens);
+        }
+        // Not serialised with the report.
+        let v = serde_json::to_value(&r).expect("json");
+        assert!(v.get("hourly").is_none());
+    }
+
+    #[test]
+    fn hourly_covers_45_days_up_to_now() {
+        let now = ts("2026-11-12T10:30:00Z");
+        let mut e = FileEntry::default();
+        for (hour, input) in [
+            ("2026-09-28T10:00:00Z", 1), // exactly 45 days before the current hour
+            ("2026-09-28T09:00:00Z", 2), // one hour older: out
+            ("2026-11-12T10:00:00Z", 4), // current hour
+            ("2026-11-12T11:00:00Z", 8), // future: out
+        ] {
+            e.buckets
+                .push(bucket(hour, "codex", "gpt-5", "", tok(input, 0)));
+        }
+        e.buckets.push(bucket(
+            "2026-11-12T10:00:00Z",
+            "codex",
+            "gpt-5",
+            "",
+            Tokens::default(),
+        ));
+        let mut cache = Cache::empty();
+        cache.files.insert("f".into(), e);
+        let rows = hourly_usage(&cache, now);
+        assert_eq!(
+            rows.iter().map(|h| h.tokens.input).collect::<Vec<_>>(),
+            [1, 4]
+        );
+        assert!(rows.iter().all(|h| h.hour % 3600 == 0));
+        assert_eq!(rows[0].source, "r");
     }
 
     #[test]
