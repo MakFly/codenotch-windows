@@ -1,0 +1,13 @@
+{
+  "eventId": "3e9d1a07-6c52-4f8b-b0d4-91a2c7e5f318",
+  "occurredAt": 1794557000,
+  "kind": "quota.snapshot",
+  "payload": {
+    "accountRef": "5b27e0d9c1a4f863",
+    "provider": "codex",
+    "plan": "unknown",
+    "seq": 18,
+    "observedAt": 1794556990,
+    "windows": []
+  }
+}

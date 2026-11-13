@@ -1,0 +1,24 @@
+[package]
+name = "codenotch-teams-schema"
+description = "CodeNotch Teams event contract v1: closed serde types, validation and the generated JSON Schema."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[lib]
+name = "codenotch_teams_schema"
+
+[features]
+# `schema` derives `schemars::JsonSchema` and exposes `schema::generate()`. On by default so
+# `cargo test --workspace` checks the committed schema for drift; consumers that only need the
+# types can use `default-features = false`.
+default = ["schema"]
+schema = ["dep:schemars"]
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+# Already in Cargo.lock (no new third-party crate). Used by this crate only.
+schemars = { version = "1", optional = true }

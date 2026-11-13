@@ -1,0 +1,18 @@
+{
+  "eventId": "0d4b6c1e-5a0f-4e0b-8f51-1c2f9d3a7b60",
+  "occurredAt": 1794556740,
+  "kind": "quota.snapshot",
+  "payload": {
+    "accountRef": "a3f9c07e12b45d68",
+    "provider": "claude",
+    "plan": "max_20x",
+    "seq": 412,
+    "observedAt": 1794556735,
+    "windows": [
+      { "id": "session", "kind": "session", "role": "headline", "usedPercent": 62.0,
+        "resetsAt": 1794567600, "windowSeconds": 18000 },
+      { "id": "seven_day", "kind": "weekly", "role": "weekly", "usedPercent": 41.0,
+        "resetsAt": 1794988800, "windowSeconds": 604800 }
+    ]
+  }
+}

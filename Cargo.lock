@@ -1145,6 +1145,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "codenotch-teams-schema"
+version = "0.1.0"
+dependencies = [
+ "schemars",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "codenotch-ui-kit"
 version = "0.1.0"
 dependencies = [

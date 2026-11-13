@@ -13,6 +13,7 @@ members = [
     "crates/ui-notch",
     "crates/ui-settings",
     "crates/engine",
+    "crates/teams-schema",
     "crates/app",
 ]
 default-members = ["crates/app"]
@@ -41,6 +42,7 @@ codenotch-ui-kit = { path = "crates/ui-kit" }
 codenotch-ui-notch = { path = "crates/ui-notch" }
 codenotch-ui-settings = { path = "crates/ui-settings" }
 codenotch-engine = { path = "crates/engine" }
+codenotch-teams-schema = { path = "crates/teams-schema", default-features = false }
 
 # --- data ---
 serde = { version = "1", features = ["derive"] }

@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "sentAt": 1794556800,
+  "deviceId": "6f1c2a9e-0b7d-4a51-9c7e-2f0d7b1a4e11",
+  "appVersion": "0.1.0",
+  "consentVersion": 1,
+  "dataEpoch": 1,
+  "events": [
+    {
+      "eventId": "0d4b6c1e-5a0f-4e0b-8f51-1c2f9d3a7b60",
+      "occurredAt": 1794556740,
+      "kind": "quota.snapshot",
+      "payload": {
+        "accountRef": "a3f9c07e12b45d68",
+        "provider": "claude",
+        "plan": "max_20x",
+        "seq": 412,
+        "observedAt": 1794556735,
+        "windows": [
+          { "id": "session", "kind": "session", "role": "headline", "usedPercent": 62.0,
+            "resetsAt": 1794567600, "windowSeconds": 18000 },
+          { "id": "seven_day", "kind": "weekly", "role": "weekly", "usedPercent": 41.0,
+            "resetsAt": 1794988800, "windowSeconds": 604800 }
+        ]
+      }
+    },
+    {
+      "eventId": "5c0e7a13-2d44-4b9e-9a61-70c1f2b8d3e9",
+      "occurredAt": 1794556700,
+      "kind": "usage.hour",
+      "payload": {
+        "accountRef": "a3f9c07e12b45d68",
+        "provider": "claude",
+        "model": "claude-opus-5-5",
+        "hourStart": 1794553200,
+        "rev": 3,
+        "tokens": { "input": 18250, "output": 9120, "cacheRead": 412000, "cacheWrite": 36500, "cacheWrite1h": 0 }
+      }
+    },
+    {
+      "eventId": "b7a0e2c4-91d3-4f6a-a5c8-3e1d0f9b2c74",
+      "occurredAt": 1794556800,
+      "kind": "device.heartbeat",
+      "payload": { "queued": 3, "dropped": 0 }
+    }
+  ]
+}
