@@ -233,6 +233,12 @@ pub const DEFAULT_UPDATE_MANIFEST_URL: &str =
 /// pairing then needs `teamsEndpoint`.
 pub const TEAMS_OFFICIAL_ORIGIN: &str = "";
 
+/// [`Settings::teams_available`] for a given official origin: true when `official_origin` or
+/// `teams_endpoint` is non-empty (whitespace ignored).
+pub fn teams_available_with(official_origin: &str, teams_endpoint: &str) -> bool {
+    !official_origin.trim().is_empty() || !teams_endpoint.trim().is_empty()
+}
+
 /// `antigravityLimit`: which lane the Antigravity ring reads.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum AntigravityLimit {
@@ -739,6 +745,12 @@ impl Settings {
             "" => Some(TEAMS_OFFICIAL_ORIGIN.trim()).filter(|o| !o.is_empty()),
             endpoint => Some(endpoint),
         }
+    }
+
+    /// The Teams settings page is shown: a team server is configured (an official origin is
+    /// compiled in, or `teamsEndpoint` is set). Does not change the sync logic.
+    pub fn teams_available(&self) -> bool {
+        teams_available_with(TEAMS_OFFICIAL_ORIGIN, &self.teams_endpoint)
     }
 
     /// The account is excluded from Teams sharing (`teamsExcludedAccounts`).
@@ -1282,6 +1294,21 @@ mod tests {
         assert_eq!(s.teams_origin(), official);
         s.teams_endpoint = "https://teams.example.test".into();
         assert_eq!(s.teams_origin(), Some("https://teams.example.test"));
+    }
+
+    #[test]
+    fn teams_page_needs_a_configured_server() {
+        assert!(!teams_available_with("", ""));
+        assert!(!teams_available_with("  ", "   "));
+        assert!(teams_available_with("", "http://127.0.0.1:8080"));
+        assert!(teams_available_with("https://teams.example.test", ""));
+        let mut s = Settings::default();
+        assert_eq!(
+            s.teams_available(),
+            !TEAMS_OFFICIAL_ORIGIN.trim().is_empty()
+        );
+        s.teams_endpoint = "https://teams.example.test".into();
+        assert!(s.teams_available());
     }
 
     /// Read-only check against the real config file, when present. Run explicitly with

@@ -116,6 +116,16 @@ fn default_bounds(cx: &App) -> Bounds<Pixels> {
     }
 }
 
+/// `page`, or the default page (Accounts) when it is the Teams page and no team server is
+/// configured ([`codenotch_core::Settings::teams_available`]).
+pub(crate) fn reachable_page(page: Page, settings: &codenotch_core::Settings) -> Page {
+    if page == Page::Teams && !settings.teams_available() {
+        Page::Accounts
+    } else {
+        page
+    }
+}
+
 fn open_page(model: Entity<UiModel>, page: Option<Page>, cx: &mut App) {
     let existing = cx.default_global::<SettingsWindow>().open.clone();
     if let Some((handle, weak)) = existing {
@@ -142,6 +152,7 @@ fn open_page(model: Entity<UiModel>, page: Option<Page>, cx: &mut App) {
     let page = page
         .or(cx.default_global::<SettingsWindow>().last_page)
         .unwrap_or(Page::Accounts);
+    let page = reachable_page(page, &model.read(cx).snapshot.config.settings);
     let lang = model.read(cx).snapshot.lang();
     let bounds = default_bounds(cx);
     let options = WindowOptions {

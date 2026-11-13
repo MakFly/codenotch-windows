@@ -300,6 +300,14 @@ pub(crate) const NAV: [Page; 6] = [
     Page::General,
 ];
 
+/// Sidebar pages shown: [`NAV`], without Teams when `teams` is false (no team server
+/// configured, see [`codenotch_core::Settings::teams_available`]).
+pub(crate) fn nav_pages(teams: bool) -> Vec<Page> {
+    NAV.into_iter()
+        .filter(|&p| teams || p != Page::Teams)
+        .collect()
+}
+
 pub(crate) fn page_title(page: Page) -> &'static str {
     match page {
         Page::Onboarding => "Welcome to CodeNotch",
@@ -656,10 +664,17 @@ impl SettingsView {
     }
 
     /// Switch page (sidebar, onboarding end, `open_onboarding` on an open window).
+    /// Sidebar pages shown now (Teams stays listed while it is the page shown, so clearing
+    /// the server address on that page does not pull it from under the user).
+    fn nav_pages(&self) -> Vec<Page> {
+        nav_pages(self.edited.settings.teams_available() || self.page == Page::Teams)
+    }
+
     pub fn go(&mut self, page: Page, window: &mut Window, cx: &mut Context<Self>) {
         // A page opens with no text field focused (a field focused on the page left behind
         // would otherwise still hold the focus — and draw its ring — when it shows again).
         self.release_input_focus(window, cx);
+        let page = crate::reachable_page(page, &self.edited.settings);
         if self.page != page {
             self.flush(cx);
             self.page = page;
@@ -1614,7 +1629,8 @@ impl SettingsView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let last = NAV.len() - 1;
+        let pages = self.nav_pages();
+        let last = pages.len() - 1;
         let next = match event.keystroke.key.as_str() {
             "up" => index.saturating_sub(1),
             "down" => (index + 1).min(last),
@@ -1623,7 +1639,7 @@ impl SettingsView {
             _ => return,
         };
         cx.stop_propagation();
-        self.go(NAV[next], window, cx);
+        self.go(pages[next], window, cx);
         window.focus(&self.nav_focus[next]);
     }
 
@@ -1697,7 +1713,7 @@ impl SettingsView {
             .flex()
             .flex_col()
             .gap(px(4.));
-        for (i, page) in NAV.iter().copied().enumerate() {
+        for (i, page) in self.nav_pages().into_iter().enumerate() {
             let selected = self.page == page;
             let focused = keyboard && self.nav_focus[i].is_focused(window);
             let label = t(lang, page_title(page)).to_string();
@@ -2126,6 +2142,24 @@ impl Render for SettingsView {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn teams_page_hidden_until_a_server_is_configured() {
+        assert!(!nav_pages(false).contains(&Page::Teams));
+        assert_eq!(nav_pages(false).len(), NAV.len() - 1);
+        assert_eq!(nav_pages(true), NAV.to_vec());
+        let mut s = codenotch_core::Settings::default();
+        s.teams_endpoint.clear();
+        let want = if s.teams_available() {
+            Page::Teams
+        } else {
+            Page::Accounts
+        };
+        assert_eq!(crate::reachable_page(Page::Teams, &s), want);
+        assert_eq!(crate::reachable_page(Page::General, &s), Page::General);
+        s.teams_endpoint = "http://127.0.0.1:8080".into();
+        assert_eq!(crate::reachable_page(Page::Teams, &s), Page::Teams);
+    }
 
     #[test]
     fn caption_buttons_map_to_their_native_area_and_glyph() {

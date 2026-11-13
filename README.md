@@ -706,6 +706,9 @@ There is no telemetry, analytics beacon or crash reporting.
 
 ### Team sync
 
+The Settings > Teams page (and `--settings-page=teams`) appears once a team server is configured:
+an official origin compiled in, or a non-empty `teamsEndpoint`.
+
 Off by default. While it is off, or while the PC is not paired, CodeNotch makes no Teams request,
 creates no Teams file and runs no Teams thread. `--demo` and `--once` never use it.
 

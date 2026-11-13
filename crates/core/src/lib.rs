@@ -47,8 +47,9 @@ pub use analytics::{
     HOURLY_EXPORT_DAYS,
 };
 pub use config::{
-    Account, ColorTransition, Config, Edge, NotchSize, Settings, ShowMode, TaskbarMode, ThemeMode,
-    UpdateMode, WeeklyRing, WidgetPlacement, DEFAULT_UPDATE_MANIFEST_URL, TEAMS_OFFICIAL_ORIGIN,
+    teams_available_with, Account, ColorTransition, Config, Edge, NotchSize, Settings, ShowMode,
+    TaskbarMode, ThemeMode, UpdateMode, WeeklyRing, WidgetPlacement, DEFAULT_UPDATE_MANIFEST_URL,
+    TEAMS_OFFICIAL_ORIGIN,
 };
 pub use error::{Error, Result};
 pub use format::Grade;
